@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -122,6 +123,9 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	}
 	if m.host == "" {
 		return nil, fmt.Errorf("host is required")
+	}
+	if !strings.Contains(m.host, ":") {
+		m.host = fmt.Sprintf("%s:%d", m.host, 3306)
 	}
 	if m.schemaName == "" {
 		return nil, fmt.Errorf("schema name is required")
