@@ -554,7 +554,7 @@ func (m *MigrationRunner) getCurrentState() migrationState {
 
 func (m *MigrationRunner) setCurrentState(s migrationState) {
 	atomic.StoreInt32((*int32)(&m.currentState), int32(s))
-	if s > migrationStateCopyRows {
+	if s > migrationStateCopyRows && m.feed != nil {
 		m.feed.SetKeyAboveWatermarkOptimization(false)
 	}
 }
