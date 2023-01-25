@@ -44,6 +44,8 @@ func (s migrationState) String() string {
 		return "checksum"
 	case migrationStateCutOver:
 		return "cutOver"
+	case migrationStateClose:
+		return "close"
 	case migrationStateErrCleanup:
 		return "errCleanup"
 	}
@@ -335,7 +337,7 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
 	if err != nil {
-		return err
+		return fmt.Errorf("could not parse alter table statement: %s", sql)
 	}
 	stmt := &stmtNodes[0]
 	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
@@ -346,10 +348,12 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 		if spec.Tp == ast.AlterTableRenameTable || spec.Tp == ast.AlterTableRenameColumn {
 			return fmt.Errorf("renames are not supported by the shadow table algorithm")
 		}
-		// ALTER TABLE MODIFY COLUMN and ALTER TABLE ALTER COLUMN can be used to rename a column.
+		// ALTER TABLE CHANGE COLUMN can be used to rename a column.
 		// But they can also be used commonly without a rename, so the check needs to be deeper.
-		if spec.Tp == ast.AlterTableModifyColumn || spec.Tp == ast.AlterTableAlterColumn {
-			return fmt.Errorf("need to perform deeper check on spec: %#v\n", spec)
+		if spec.Tp == ast.AlterTableChangeColumn {
+			if spec.NewColumns[0].Name.String() != spec.OldColumnName.String() {
+				return fmt.Errorf("renames are not supported by the shadow table algorithm")
+			}
 		}
 	}
 	return nil // no renames

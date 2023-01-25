@@ -290,6 +290,36 @@ func TestBadAlter(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "renames are not supported")
+
+	// This is a different type of rename,
+	// which is coming via a change
+	m, err = NewMigrationRunner(&Migration{
+		Host:        TestHost,
+		Username:    TestUser,
+		Password:    TestPassword,
+		Database:    TestSchema,
+		Concurrency: 16,
+		Table:       "t1",
+		Alter:       "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
+	})
+	assert.NoError(t, err) // does not parse alter yet.
+	err = m.Run(context.Background())
+	assert.Error(t, err) // alter is invalid
+	assert.ErrorContains(t, err, "renames are not supported")
+
+	// But this is supported (no rename)
+	m, err = NewMigrationRunner(&Migration{
+		Host:        TestHost,
+		Username:    TestUser,
+		Password:    TestPassword,
+		Database:    TestSchema,
+		Concurrency: 16,
+		Table:       "t1",
+		Alter:       "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
+	})
+	assert.NoError(t, err) // does not parse alter yet.
+	err = m.Run(context.Background())
+	assert.NoError(t, err) // its valid, no rename
 }
 
 // TestChangeDatatypeLossyNoAutoInc is a good test of the how much the
