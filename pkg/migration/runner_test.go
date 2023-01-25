@@ -688,6 +688,115 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+func TestCheckpointDifferentRestoreOptions(t *testing.T) {
+	tbl := `CREATE TABLE t1 (
+		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		id2 INT NOT NULL,
+		pad VARCHAR(100) NOT NULL default 0)`
+
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow, _t1_cp`)
+	runSQL(t, tbl)
+	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1`)
+	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
+	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
+	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 LIMIT 100000`) // ~100k rows
+
+	preSetup := func(alter string) *MigrationRunner {
+		m, err := NewMigrationRunner(&Migration{
+			Host:        TestHost,
+			Username:    TestUser,
+			Password:    TestPassword,
+			Database:    TestSchema,
+			Concurrency: 16,
+			Table:       "t1",
+			Alter:       alter,
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "initial", m.getCurrentState().String())
+		// Usually we would call m.Run() but we want to step through
+		// the migration process manually.
+		m.db, err = sql.Open("mysql", m.dsn())
+		assert.NoError(t, err)
+		// Get Table Info
+		m.table = table.NewTableInfo(m.schemaName, m.tableName)
+		err = m.table.RunDiscovery(m.db)
+		assert.NoError(t, err)
+		// Attach the correct chunker.
+		err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
+		assert.NoError(t, err)
+		assert.NoError(t, m.dropOldTable())
+		return m
+	}
+
+	m := preSetup("ADD COLUMN id3 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
+	// migrationRunner.Run usually calls m.Setup() here.
+	// Which first checks if the table can be restored from checkpoint.
+	// Because this is the first run, it can't.
+
+	assert.Error(t, m.resumeFromCheckpoint())
+
+	// So we proceed with the initial steps.
+	assert.NoError(t, m.createShadowTable())
+	assert.NoError(t, m.alterShadowTable())
+	assert.NoError(t, m.createCheckpointTable())
+	assert.NoError(t, m.table.Chunker.Open())
+	logger := log.New(log.LoggingConfig{})
+	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+	var err error
+	m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	assert.NoError(t, err)
+	err = m.feed.Run()
+	assert.NoError(t, err)
+
+	// Now we are ready to start copying rows.
+	// Instead of calling m.copyRows() we will step through it manually.
+	// Since we want to checkpoint after a few chunks.
+
+	m.copier.CopyRowsStartTime = time.Now()
+	m.setCurrentState(migrationStateCopyRows)
+	assert.Equal(t, "copyRows", m.getCurrentState().String())
+
+	// first chunk.
+	chunk1, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	chunk2, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	chunk3, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	// There is no watermark yet.
+	_, err = m.table.Chunker.GetLowWatermark()
+	assert.Error(t, err)
+	// Dump checkpoint also returns an error for the same reason.
+	assert.Error(t, m.dumpCheckpoint())
+
+	// Because it's multi-threaded, we can't guarantee the order of the chunks.
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk1))
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk3))
+
+	// The watermark should exist now, because migrateChunk()
+	// gives feedback back to table.
+
+	watermark, err := m.table.Chunker.GetLowWatermark()
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	// Dump a checkpoint
+	assert.NoError(t, m.dumpCheckpoint())
+
+	// Close the db connection since m is to be destroyed.
+	assert.NoError(t, m.db.Close())
+
+	// Now lets imagine that everything fails and we need to start
+	// from checkpoint again.
+
+	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
+	assert.Error(t, m.resumeFromCheckpoint()) // it should error because the ALTER does not match.
+}
+
 // TestE2EBinlogSubscribing is a complex test that uses the lower level interface
 // to step through the table while subscribing to changes that we will
 // be making to the table between chunks. It is effectively an

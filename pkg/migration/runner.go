@@ -402,7 +402,7 @@ func (m *MigrationRunner) createCheckpointTable() error {
 	if err != nil {
 		return err
 	}
-	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, copy_rows_at TEXT, binlog_name VARCHAR(255), binlog_pos INT, copy_rows BIGINT)",
+	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, copy_rows_at TEXT, binlog_name VARCHAR(255), binlog_pos INT, copy_rows BIGINT, alter_statement TEXT)",
 		m.table.SchemaName, cpName)
 	_, err = m.db.Exec(query)
 	if err != nil {
@@ -458,16 +458,18 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 		return err
 	}
 
-	query = fmt.Sprintf("SELECT copy_rows_at, binlog_name, binlog_pos, copy_rows FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
+	query = fmt.Sprintf("SELECT copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
 		m.schemaName, cpName)
-	var copyRowsAt, binlogName string
+	var copyRowsAt, binlogName, alterStatement string
 	var binlogPos int
 	var copyRows int64
-	err = m.db.QueryRow(query).Scan(&copyRowsAt, &binlogName, &binlogPos, &copyRows)
+	err = m.db.QueryRow(query).Scan(&copyRowsAt, &binlogName, &binlogPos, &copyRows, &alterStatement)
 	if err != nil {
 		return err
 	}
-
+	if m.alterStatement != alterStatement {
+		return fmt.Errorf("alter statement in checkpoint table does not match the alter statement specified here")
+	}
 	// Populate the objects that would have been set in the other funcs.
 	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
 	if err := m.shadowTable.RunDiscovery(m.db); err != nil {
@@ -585,9 +587,9 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 		"copy-rows":     copyRows,
 	}).Info("checkpoint")
 
-	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows) VALUES (?, ?, ?, ?)",
+	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
-	_, err = m.db.Exec(query, lowWatermark, binlog.Name, binlog.Pos, copyRows)
+	_, err = m.db.Exec(query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
 	return err
 }
 
