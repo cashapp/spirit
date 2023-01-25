@@ -1,0 +1,11 @@
+TODO:
+- Study cut-over algorithm in gh-ost to make sure we are doing it right.
+- Add a check to see if any other DDL for the table is discovered in the replication feed. If it is, all bets should be off and the migration fails.
+- Add in github.com/platinummonkey/go-concurrency-limits for throttling.
+- Some of the argument lists to create a NewCopier or NewReplicationClient have gotten long. I should change it to accept a struct as input.
+- The tests require a MySQL server on port 8.0.30 to run. I should make them not fail in BK if it's not available, and find a way to script so it can be.
+
+TODO (non technical):
+- Decide on a name. Keep spirit?
+- Rollout plan - easiest cases first, target staging for all cases supported? What's next? opt in using LD flag per service? Target only some cases?
+- I assume we should open source, but on what timeline? Great benefit to others who have our use-case (larger tables and no read-replicas). However, some risk of support obligations. Typically not practical to say "no support".
