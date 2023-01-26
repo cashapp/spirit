@@ -1,9 +1,17 @@
-TODO:
+Blocking:
 - Study cut-over algorithm in gh-ost to make sure we are doing it right.
-- Add a check to see if any other DDL for the table is discovered in the replication feed. If it is, all bets should be off and the migration fails.
-- Add in github.com/platinummonkey/go-concurrency-limits for throttling.
-- Some of the argument lists to create a NewCopier or NewReplicationClient have gotten long. I should change it to accept a struct as input.
 - The tests require a MySQL server on port 8.0.30 to run. I should make them not fail in BK if it's not available, and find a way to script so it can be.
+
+TBD:
+- Add a check to see if any other DDL for the table is discovered in the replication feed. If it is, all bets should be off and the migration fails.
+- Implement retryable transaction in dbconn (rather than retryable stmt - consider deadlocks).
+- Add code to periodically advance the migration position in the binlog. This reduces memory usage and covers the case that the binlogs might disappear on a long running migration.
+
+Non-blocking:
+- Some of the argument lists to create a NewCopier or NewReplicationClient have gotten long. I should change it to accept a struct as input.
+- Change logger to be an interface so there is no dependency on gap Logger.
+- Add in github.com/platinummonkey/go-concurrency-limits for throttling (need to determine if this will work: if the throttling is based on request time, it is variable anyway based on Feedback. Currently in staging we are using 1 thread because there is no replica monitor available.)
+
 
 TODO (non technical):
 - Decide on a name. Keep spirit?
