@@ -175,6 +175,12 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 		}).Info("apply complete")
 		return nil // success!
 	}
+	// Perform preflight basic checks. These are features that are required
+	// for the migration to proceed.
+	if err := m.preflightChecks(); err != nil {
+		return err
+	}
+
 	// Perform setup steps, including resuming from a checkpoint (if available)
 	// and creating the shadow and checkpoint tables.
 	// The replication client is also created here.
@@ -439,6 +445,28 @@ func (m *MigrationRunner) Close() error {
 		m.feed.Close()
 	}
 	return m.db.Close()
+}
+
+func (m *MigrationRunner) preflightChecks() error {
+	var binlogFormat, innodbAutoincLockMode, binlogRowImage string
+	err := m.db.QueryRow("SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage)
+	if err != nil {
+		return err
+	}
+	if binlogFormat != "ROW" {
+		return fmt.Errorf("binlog_format must be ROW")
+	}
+	if innodbAutoincLockMode != "2" {
+		// This is required because otherwise a long running INSERT .. SELECT
+		// from the default 500ms task could lock the table for more than expected.
+		return fmt.Errorf("innodb_autoinc_lock_mode must be 2")
+	}
+	if binlogRowImage != "FULL" {
+		// This might not be required, but is the only option that has been tested so far.
+		// To keep the testing scope reduced for now, it is required.
+		return fmt.Errorf("binlog_row_image must be FULL")
+	}
+	return nil
 }
 
 func (m *MigrationRunner) resumeFromCheckpoint() error {
