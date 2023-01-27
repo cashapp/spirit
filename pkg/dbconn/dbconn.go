@@ -2,15 +2,21 @@
 package dbconn
 
 import (
+	"context"
 	"database/sql"
-	"time"
+	"fmt"
 
 	my "github.com/go-mysql/errors"
+	"github.com/squareup/spirit/pkg/utils"
 )
 
-const maxRetries = 5
+const (
+	maxRetries         = 5
+	errLockWaitTimeout = 1205
+	errDeadlock        = 1213
+)
 
-func StandardizeTrx(trx *sql.Tx) error {
+func standardizeTrx(trx *sql.Tx) error {
 	_, err := trx.Exec("SET time_zone='+00:00'")
 	if err != nil {
 		return err
@@ -37,19 +43,86 @@ func StandardizeTrx(trx *sql.Tx) error {
 	return nil
 }
 
-func TrxExecWithRetry(trx *sql.Tx, stmt string) (res sql.Result, err error) {
+// RetryableTransaction retries all statements in a transaction, retrying if a statement
+// errors, or there is a deadlock. It will retry up to maxRetries times.
+func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings bool, stmts ...string) (int64, error) {
+	var err error
+	var trx *sql.Tx
+	var rowsAffected int64
+RETRYLOOP:
 	for i := 0; i < maxRetries; i++ {
-		res, err = trx.Exec(stmt)
-		if err != nil {
-			_, myerr := my.Error(err)
-			if my.CanRetry(myerr) || my.MySQLErrorCode(err) == 1205 {
-				// Sleep for a bit and retry.
-				time.Sleep(100 * time.Millisecond)
+		// Start a transaction
+		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
+			continue RETRYLOOP // retry
+		}
+		// Standardize it.
+		if err = standardizeTrx(trx); err != nil {
+			utils.ErrInErr(trx.Rollback()) // Rollback
+			continue RETRYLOOP             // retry
+		}
+		// Execute all statements.
+		for _, stmt := range stmts {
+			if stmt == "" {
 				continue
 			}
-			break // error is non-retryable
+			// For simplicity a "retryable" error means rollback the transaction and start the transaction again,
+			// not just retry the statement. This is because it gets complicated in cases where the statement could
+			// succeed but then there is a deadlock later on. The myerror library also doesn't differentiate between
+			// retryable (new transaction) and retryable (same transaction)
+			var res sql.Result
+			if res, err = trx.Exec(stmt); err != nil {
+				_, myerr := my.Error(err)
+				if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout || my.MySQLErrorCode(err) == errDeadlock {
+					utils.ErrInErr(trx.Rollback()) // Rollback
+					continue RETRYLOOP             // retry
+				}
+				utils.ErrInErr(trx.Rollback()) // Rollback
+				return rowsAffected, err
+			}
+			// Even though there was no ERROR we still need to inspect SHOW WARNINGS
+			// This is because many of the statements use INSERT IGNORE.
+			warningRes, err := trx.Query("SHOW WARNINGS") //nolint: execinquery
+			if err != nil {
+				utils.ErrInErr(trx.Rollback()) // Rollback
+				return rowsAffected, err
+			}
+			var level, code, message string
+			for warningRes.Next() {
+				err = warningRes.Scan(&level, &code, &message)
+				if err != nil {
+					utils.ErrInErr(trx.Rollback()) // Rollback
+					return rowsAffected, err
+				}
+				// We won't receive out of range warnings (1264)
+				// because the SQL mode has been unset. This is important
+				// because a historical value like 0000-00-00 00:00:00
+				// might exist in the table and needs to be copied.
+				if code == "1062" && ignoreDupKeyWarnings {
+					continue // ignore duplicate key warnings
+				} else {
+					utils.ErrInErr(trx.Rollback())
+					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s", message)
+				}
+			}
+			// As long as it is a statement that supports affected rows (err == nil)
+			// Get the number of rows affected and add it to the total balance.
+			count, err := res.RowsAffected()
+			if err == nil { // supported
+				rowsAffected += count
+			}
 		}
-		break // err is nil
+		if err != nil {
+			utils.ErrInErr(trx.Rollback()) // Rollback
+			continue RETRYLOOP
+		}
+		// Commit it.
+		if err = trx.Commit(); err != nil {
+			utils.ErrInErr(trx.Rollback())
+			continue RETRYLOOP
+		}
+		// Success!
+		return rowsAffected, nil
 	}
-	return res, err
+	// We failed too many times, return the last error
+	return rowsAffected, err
 }

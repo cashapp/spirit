@@ -71,3 +71,9 @@ func UnhashKey(key string) string {
 	}
 	return "(" + strings.Join(str, ",") + ")"
 }
+
+// ErrInErr is a wrapper func to not nest too deeply in an error being handled
+// inside of an already error path. Not catching the error makes linters unhappy,
+// but because it's already in an error path, there's not much to do.
+func ErrInErr(_ error) {
+}

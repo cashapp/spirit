@@ -246,27 +246,16 @@ func (c *Client) Flush(ctx context.Context) error {
 // It runs the actual SQL statements using DELETE FROM and REPLACE INTO syntax.
 // This is called under a mutex from Flush().
 func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string) error {
-	trx, err := c.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	if err != nil {
-		return err
-	}
-	// Set the TZ, SQL mode and charset.
-	if err := dbconn.StandardizeTrx(trx); err != nil {
-		return err
-	}
+	var deleteStmt, replaceStmt string
 	if len(*deleteKeys) > 0 {
-		deleteStmt := fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
+		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
 			c.shadowTable.QuotedName(),
 			strings.Join(c.shadowTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(*deleteKeys),
 		)
-		_, err := dbconn.TrxExecWithRetry(trx, deleteStmt)
-		if err != nil {
-			return err
-		}
 	}
 	if len(*replaceKeys) > 0 {
-		replaceStmt := fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE (%s) IN (%s)",
+		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE (%s) IN (%s)",
 			c.shadowTable.QuotedName(),
 			utils.IntersectColumns(c.table, c.shadowTable, false),
 			utils.IntersectColumns(c.table, c.shadowTable, false),
@@ -274,13 +263,10 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string)
 			strings.Join(c.shadowTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(*replaceKeys),
 		)
-		_, err := dbconn.TrxExecWithRetry(trx, replaceStmt)
-		if err != nil {
-			return err
-		}
 	}
-	// Finally commit the transaction.
-	if err := trx.Commit(); err != nil {
+	// This will start + commit the transaction
+	// And retry it if there are deadlocks etc.
+	if _, err := dbconn.RetryableTransaction(ctx, c.db, false, deleteStmt, replaceStmt); err != nil {
 		return err
 	}
 	// Reset the deleteKeys and replaceKeys so they can be used again.

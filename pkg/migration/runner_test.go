@@ -62,6 +62,31 @@ func TestVarbinary(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
+// TestDataFromBadSqlMode tests that data previously inserted like 0000-00-00 can still be migrated.
+func TestDataFromBadSqlMode(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
+	table := `CREATE TABLE t1 (
+		id int not null primary key auto_increment,
+		d date NOT NULL,
+		t timestamp NOT NULL
+	)`
+	runSQL(t, table)
+	runSQL(t, "INSERT IGNORE INTO t1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
+	m, err := NewMigrationRunner(&Migration{
+		Host:        TestHost,
+		Username:    TestUser,
+		Password:    TestPassword,
+		Database:    TestSchema,
+		Concurrency: 16,
+		Table:       "t1",
+		Alter:       "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)                         // everything is specified correctly.
+	assert.NoError(t, m.Run(context.Background())) // pk is compatible.
+	assert.False(t, m.usedInstantDDL)              // not possible
+	assert.NoError(t, m.Close())
+}
+
 func TestChangeDatatypeNoData(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS mytable`)
 	table := `CREATE TABLE mytable (

@@ -4,7 +4,6 @@ Blocking:
 
 TBD:
 - Add a check to see if any other DDL for the table is discovered in the replication feed. If it is, all bets should be off and the migration fails.
-- Implement retryable transaction in dbconn (rather than retryable stmt - consider deadlocks).
 - Add code to periodically advance the migration position in the binlog. This reduces memory usage and covers the case that the binlogs might disappear on a long running migration.
 
 Non-blocking:

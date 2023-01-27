@@ -28,7 +28,7 @@ func NewTrxPool(ctx context.Context, db *sql.DB, count int) (*TrxPool, error) {
 			return nil, err
 		}
 		// Set SQL mode, charset, etc.
-		if err := StandardizeTrx(trx); err != nil {
+		if err := standardizeTrx(trx); err != nil {
 			return nil, err
 		}
 		checksumTxns = append(checksumTxns, trx)
