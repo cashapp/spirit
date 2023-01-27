@@ -81,6 +81,7 @@ type MigrationRunner struct {
 	// Configurable Options that might be passed in
 	// defaults will be set in NewMigrationRunner()
 	optConcurrency           int
+	optChecksumConcurrency   int
 	optTargetChunkMs         int64
 	optAttemptInplaceDDL     bool
 	optChecksum              bool
@@ -107,6 +108,7 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 		startTime:                time.Now(),
 		alterStatement:           migration.Alter,
 		optConcurrency:           migration.Concurrency,
+		optChecksumConcurrency:   migration.ChecksumConcurrency,
 		optTargetChunkMs:         migration.TargetChunkMs,
 		optAttemptInplaceDDL:     migration.AttemptInplaceDDL,
 		optChecksum:              migration.Checksum,
@@ -120,6 +122,9 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	}
 	if m.optConcurrency == 0 {
 		m.optConcurrency = 4
+	}
+	if m.optChecksumConcurrency == 0 {
+		m.optChecksumConcurrency = m.optConcurrency
 	}
 	if m.host == "" {
 		return nil, fmt.Errorf("host is required")
@@ -575,7 +580,7 @@ func (m *MigrationRunner) checksum(ctx context.Context) error {
 	if err := table4checker.Chunker.Open(); err != nil {
 		return err
 	}
-	checker, err := checksum.NewChecker(m.db, table4checker, m.shadowTable, m.optConcurrency, m.feed, m.logger)
+	checker, err := checksum.NewChecker(m.db, table4checker, m.shadowTable, m.optChecksumConcurrency, m.feed, m.logger)
 	if err != nil {
 		return err
 	}

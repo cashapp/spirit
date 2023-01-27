@@ -13,6 +13,7 @@ type Migration struct {
 	Table                 string `name:"table" help:"Table" optional:"" default:"stock"`
 	Alter                 string `name:"alter" help:"The alter statement to run on the table" optional:"" default:"engine=innodb"`
 	Concurrency           int    `name:"concurrency" help:"Number of concurrent copy tasks" optional:"" default:"4"`
+	ChecksumConcurrency   int    `name:"checksum-concurrency" help:"Number of concurrent checksum tasks, zero means use same value as Concurrency" optional:"" default:"0"`
 	TargetChunkMs         int64  `name:"target-chunk-ms" help:"The target chunk exec time in milliseconds" optional:"" default:"500"`
 	AttemptInplaceDDL     bool   `name:"attempt-inplace-ddl" help:"Attempt inplace DDL (only safe without replicas or with Aurora Global)" optional:"" default:"false"`
 	Checksum              bool   `name:"checksum" help:"Checksum shadow table before final cut-over" optional:"" default:"true"`
