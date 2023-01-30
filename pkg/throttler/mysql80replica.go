@@ -6,14 +6,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 )
 
 type MySQL80Replica struct {
 	replica          *sql.DB
 	lagToleranceInMs int64
 	currentLagInMs   int64
-	logger           *log.Logger
+	logger           log.FieldLogger
 }
 
 var _ Throttler = &MySQL80Replica{}

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
@@ -33,10 +33,10 @@ type Copier struct {
 	EtaRowsPerSecond  int64
 	isInvalid         bool
 	Throttler         throttler.Throttler
-	logger            *log.Logger
+	logger            log.FieldLogger
 }
 
-func NewCopier(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, finalChecksum bool, logger *log.Logger) (*Copier, error) {
+func NewCopier(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, finalChecksum bool, logger log.FieldLogger) (*Copier, error) {
 	if concurrency == 0 {
 		concurrency = 4
 	}

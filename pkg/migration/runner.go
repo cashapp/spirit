@@ -5,15 +5,15 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
-
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
+	log "github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
@@ -90,15 +90,16 @@ type MigrationRunner struct {
 	optReplicaMaxLagMs       int64
 
 	// Attached logger
-	logger *log.Logger
+	logger log.FieldLogger
 }
 
 func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	// This might be replaced later.
-	logger := log.New(log.LoggingConfig{
-		ForceColor: true,
-		Level:      "info",
-	})
+	logger := &log.Logger{
+		Out:       os.Stderr,
+		Formatter: new(log.TextFormatter),
+		Level:     log.InfoLevel,
+	}
 	m := &MigrationRunner{
 		host:                     migration.Host,
 		username:                 migration.Username,
@@ -144,7 +145,7 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	return m, nil
 }
 
-func (m *MigrationRunner) SetLogger(logger *log.Logger) {
+func (m *MigrationRunner) SetLogger(logger log.FieldLogger) {
 	m.logger = logger
 }
 

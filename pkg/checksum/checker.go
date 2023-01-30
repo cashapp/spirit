@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
@@ -25,11 +25,11 @@ type Checker struct {
 	db          *sql.DB
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
-	logger      *log.Logger
+	logger      log.FieldLogger
 }
 
 // NewChecker creates a new checksum object.
-func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, feed *repl.Client, logger *log.Logger) (*Checker, error) {
+func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, feed *repl.Client, logger log.FieldLogger) (*Checker, error) {
 	if concurrency == 0 {
 		concurrency = 4
 	}

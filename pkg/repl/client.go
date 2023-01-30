@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -45,10 +45,10 @@ type Client struct {
 
 	disableKeyAboveWatermarkOptimization bool
 
-	logger *log.Logger
+	logger log.FieldLogger
 }
 
-func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger *log.Logger) *Client {
+func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger log.FieldLogger) *Client {
 	return &Client{
 		db:             db,
 		host:           host,

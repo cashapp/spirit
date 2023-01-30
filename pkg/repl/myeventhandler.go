@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 
 	"github.com/go-mysql-org/go-mysql/canal"
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 )
 
 type MyEventHandler struct {

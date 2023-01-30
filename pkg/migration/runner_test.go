@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
@@ -548,7 +548,7 @@ func TestETA(t *testing.T) {
 		AttemptInplaceDDL: true,
 	})
 	assert.NoError(t, err)
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	m.copier, err = copier.NewCopier(nil, nil, nil, 4, true, logger)
 	assert.NoError(t, err)
 
@@ -620,7 +620,7 @@ func TestCheckpoint(t *testing.T) {
 		assert.NoError(t, m.alterShadowTable())
 		assert.NoError(t, m.createCheckpointTable())
 		assert.NoError(t, m.table.Chunker.Open())
-		logger := log.New(log.LoggingConfig{})
+		logger := log.New()
 		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		var err error
 		m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
@@ -766,7 +766,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.alterShadowTable())
 	assert.NoError(t, m.createCheckpointTable())
 	assert.NoError(t, m.table.Chunker.Open())
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 	var err error
 	m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
@@ -881,7 +881,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.alterShadowTable())
 		assert.NoError(t, m.createCheckpointTable())
 		assert.NoError(t, m.table.Chunker.Open())
-		logger := log.New(log.LoggingConfig{})
+		logger := log.New()
 		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 		assert.NoError(t, err)

@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/squareup/gap-core/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 )
@@ -51,7 +51,7 @@ func TestBasicChecksum(t *testing.T) {
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	assert.NoError(t, t1.Chunker.Open())
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, feed.Run())
 
@@ -74,7 +74,7 @@ func TestBasicValidation(t *testing.T) {
 	assert.NoError(t, t1.RunDiscovery(db))
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, feed.Run())
 
@@ -108,7 +108,7 @@ func TestCorruptChecksum(t *testing.T) {
 	assert.NoError(t, t1.Chunker.Open())
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, feed.Run())
 
@@ -133,7 +133,7 @@ func TestBoundaryCases(t *testing.T) {
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
-	logger := log.New(log.LoggingConfig{})
+	logger := log.New()
 	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, feed.Run())
 
