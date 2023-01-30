@@ -48,6 +48,8 @@ type Client struct {
 
 	disableKeyAboveWatermarkOptimization bool
 
+	TableChangeNotificationCallback func()
+
 	logger log.FieldLogger
 }
 
@@ -69,6 +71,14 @@ func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
 	defer c.Unlock()
 
 	c.disableKeyAboveWatermarkOptimization = !newVal
+}
+
+// We don't return an error because this is in async code,
+// It's not safe to know it will be caught correctly.
+func (c *Client) tableChanged() {
+	if c.TableChangeNotificationCallback != nil {
+		c.TableChangeNotificationCallback()
+	}
 }
 
 // SetPos is used for resuming from a checkpoint.
@@ -296,7 +306,6 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string)
 
 func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 	c.logger.Info("starting to flush changeset")
-
 	for {
 		// Repeat in a loop until the changeset length is trivial
 		if err := c.Flush(ctx); err != nil {

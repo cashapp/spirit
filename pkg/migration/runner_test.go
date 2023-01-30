@@ -36,6 +36,7 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 	})
 	assert.NoError(t, err)                       // everything is specified.
 	assert.Error(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
+	assert.NoError(t, m.Close())
 }
 
 func TestVarbinary(t *testing.T) {
@@ -132,6 +133,7 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 	})
 	assert.NoError(t, err)                       // everything is specified correctly.
 	assert.Error(t, m.Run(context.Background())) // value 'b' can no convert cleanly to int.
+	assert.NoError(t, m.Close())
 }
 
 func TestOnline(t *testing.T) {
@@ -155,6 +157,7 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, m.Run(context.TODO()))
 	assert.False(t, m.usedInplaceDDL) // not possible
+	assert.NoError(t, m.Close())
 
 	// Create another table.
 	runSQL(t, `DROP TABLE IF EXISTS mytable2`)
@@ -179,6 +182,7 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, m.usedInplaceDDL) // uses instant DDL first
 	assert.True(t, m.usedInstantDDL)
+	assert.NoError(t, m.Close())
 
 	// Finally, this will work.
 	runSQL(t, `DROP TABLE IF EXISTS mytable3`)
@@ -203,7 +207,8 @@ func TestOnline(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInstantDDL) // not possible
-	assert.True(t, m.usedInplaceDDL)  // as requested
+	assert.True(t, m.usedInplaceDDL)  // as
+	assert.NoError(t, m.Close())
 }
 
 func TestTableLength(t *testing.T) {
@@ -227,6 +232,7 @@ func TestTableLength(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "is too long")
+	assert.NoError(t, m.Close())
 
 	// There is another condition where the error will be in dropping the _old table first
 	// if the character limit is exceeded in that query.
@@ -243,6 +249,7 @@ func TestTableLength(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "is too long")
+	assert.NoError(t, m.Close())
 }
 
 func TestMigrationStateString(t *testing.T) {
@@ -300,6 +307,7 @@ func TestBadAlter(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "badalter")
+	assert.NoError(t, m.Close())
 
 	// Renames are not supported.
 	m, err = NewMigrationRunner(&Migration{
@@ -315,6 +323,7 @@ func TestBadAlter(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "renames are not supported")
+	assert.NoError(t, m.Close())
 
 	// This is a different type of rename,
 	// which is coming via a change
@@ -331,6 +340,7 @@ func TestBadAlter(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "renames are not supported")
+	assert.NoError(t, m.Close())
 
 	// But this is supported (no rename)
 	m, err = NewMigrationRunner(&Migration{
@@ -345,6 +355,7 @@ func TestBadAlter(t *testing.T) {
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
 	assert.NoError(t, err) // its valid, no rename
+	assert.NoError(t, m.Close())
 }
 
 // TestChangeDatatypeLossyNoAutoInc is a good test of the how much the
@@ -386,6 +397,7 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "Out of range value") // Error 1264: Out of range value for column 'id' at row 1
 	assert.True(t, m.copier.CopyChunksCount < 10)      // should be very low
+	assert.NoError(t, m.Close())
 }
 
 // TestChangeDatatypeLossy3 has an auto-increment column which limits
@@ -420,6 +432,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err) // works because there are no violations.
 	assert.Equal(t, int64(1), m.copier.CopyChunksCount)
+	assert.NoError(t, m.Close())
 }
 
 // TestChangeDatatypeLossyFailEarly tests a scenario where there is an error
@@ -452,6 +465,7 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err) // there is a violation where row 1 is NULL
+	assert.NoError(t, m.Close())
 }
 
 // TestAddUniqueIndex is a really interesting test *because* resuming from checkpoint
@@ -484,7 +498,8 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
-	assert.Error(t, err) // not unique
+	assert.Error(t, err)         // not unique
+	assert.NoError(t, m.Close()) // need to close now otherwise we'll get an error on re-opening it.
 
 	runSQL(t, "DELETE FROM mytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewMigrationRunner(&Migration{
@@ -499,6 +514,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err) // works fine.
+	assert.NoError(t, m.Close())
 }
 
 // Test a non-integer primary key.
@@ -525,6 +541,7 @@ func TestChangeNonIntPK(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }
 
 func TestETA(t *testing.T) {
@@ -564,6 +581,7 @@ func TestETA(t *testing.T) {
 	m.copier.CopyRowsCount = 10000
 	assert.Equal(t, "16m30s", m.getETAFromRowsPerSecond(false))
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
+	assert.NoError(t, m.Close())
 }
 
 func TestCheckpoint(t *testing.T) {

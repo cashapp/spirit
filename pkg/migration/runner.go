@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -99,6 +100,9 @@ type MigrationRunner struct {
 	optDisableTrivialChunker bool
 	optReplicaDSN            string
 	optReplicaMaxLagMs       int64
+
+	// We want to block periodic flushes while we're doing a checksums etc
+	periodicFlushLock sync.Mutex
 
 	// Attached logger
 	logger log.FieldLogger
@@ -220,9 +224,12 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	// to block for more time. Once the copy-rows task is complete, we try
 	// to catch up on the binary log as much as possible before proceeding.
 	m.setCurrentState(migrationStateApplyChangeset)
+	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
 	if err := m.feed.FlushUntilTrivial(ctx); err != nil {
 		return err
 	}
+	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
+
 	// The checksum is optional, but it is ONLINE after an initial lock
 	// for consistency. It is the main way that we determine that
 	// this program is safe to use even when immature.
@@ -332,6 +339,40 @@ func (m *MigrationRunner) setup() error {
 				return err
 			}
 		}
+	}
+
+	// Make sure the definition of the table never changes.
+	// If it does, we could be in trouble.
+	m.feed.TableChangeNotificationCallback = m.tableChangeNotification
+
+	return nil
+}
+
+func (m *MigrationRunner) tableChangeNotification() {
+	// It's an async message, so we don't know the current state
+	// from which this "notification" was generated, but typically if our
+	// current state is now in cutover, we can ignore it.
+	if m.getCurrentState() >= migrationStateCutOver {
+		return
+	}
+	m.setCurrentState(migrationStateErrCleanup)
+	// Write this to the logger, so it can be captured by the initiator.
+	m.logger.Error("table definition changed during migration")
+	// Invalidate the checkpoint, so we don't try to resume.
+	// If we don't do this, the migration will permanently be blocked from proceeding.
+	// Letting it start again is the better choice.
+	if err := m.dropCheckpoint(); err != nil {
+		m.logger.WithError(err).Error("could not remove checkpoint")
+	}
+	// We can't do anything about it, just panic
+	panic("table definition changed during migration")
+}
+
+func (m *MigrationRunner) dropCheckpoint() error {
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.checkpointTable.QuotedName())
+	_, err := m.db.Exec(query)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -643,6 +684,10 @@ func (m *MigrationRunner) dumpCheckpointContinuously() {
 	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
 	for range ticker.C {
+		// Continue to checkpoint until we exit copy-rows.
+		// Ideally in future we can continue further than this,
+		// but unfortunately this currently results in a
+		// "watermark not ready" error.
 		if m.getCurrentState() > migrationStateCopyRows {
 			return
 		}
@@ -658,16 +703,27 @@ func (m *MigrationRunner) periodicFlush(ctx context.Context) {
 	ticker := time.NewTicker(binlogPerodicFlushInterval)
 	defer ticker.Stop()
 	for range ticker.C {
+		// We only want to continuously flush during copy-rows.
+		// During checkpoint we only lock the source table, so if we
+		// are in a periodic flush we can't be writing data to the shadow table.
+		// If we do, then we'll need to lock it as well so that the read-view is consistent.
+		m.periodicFlushLock.Lock()
 		if m.getCurrentState() > migrationStateCopyRows {
+			m.periodicFlushLock.Unlock()
 			return
 		}
 		startLoop := time.Now()
 		m.logger.Info("starting periodic flush of binary log")
+		// The periodic flush does not respect the throttler. It is only single-threaded
+		// by design (chunked into 10K rows). Since we want to advance the binlog position
+		// we allow this to run, and then expect that if it is under load the throttler
+		// will kick in and slow down the copy-rows.
 		if err := m.feed.Flush(ctx); err != nil {
 			m.logger.WithFields(log.Fields{
 				"error": err,
 			}).Error("error flushing binary log")
 		}
+		m.periodicFlushLock.Unlock()
 		m.logger.WithFields(log.Fields{
 			"duration": time.Since(startLoop),
 		}).Info("finished periodic flush of binary log")

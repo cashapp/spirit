@@ -60,9 +60,10 @@ func (h *MyEventHandler) OnRotate(header *replication.EventHeader, rotateEvent *
 
 // OnTableChanged is called when a table is changed via DDL.
 // This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
-// TODO: call back to the migration if:
-// h.client.table.SchemaName == schema && h.client.table.TableName == table
-// h.client.table.SchemaName == schema && h.client.shadowTable.TableName == table
 func (h *MyEventHandler) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
+	if (h.client.table.SchemaName == schema && h.client.table.TableName == table) ||
+		(h.client.shadowTable.SchemaName == schema && h.client.shadowTable.TableName == table) {
+		h.client.tableChanged()
+	}
 	return nil
 }

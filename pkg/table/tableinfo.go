@@ -179,7 +179,11 @@ func (t *TableInfo) RunDiscovery(db *sql.DB) error {
 // discoverRowEstimate is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
 func (t *TableInfo) discoverRowEstimate(db *sql.DB) error {
-	err := db.QueryRow("SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
+	_, err := db.Exec("ANALYZE TABLE " + t.QuotedName())
+	if err != nil {
+		return err
+	}
+	err = db.QueryRow("SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
 	if err != nil {
 		return fmt.Errorf("err: are you sure table %s exists?", t.QuotedName())
 	}
