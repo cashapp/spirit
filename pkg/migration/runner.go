@@ -33,6 +33,17 @@ const (
 	migrationStateErrCleanup
 )
 
+const (
+	checkpointDumpInterval  = 5 * time.Second
+	tableStatUpdateInterval = 5 * time.Minute
+	statusInterval          = 2 * time.Second
+	copyEstimateInterval    = 5 * time.Second
+	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
+	// Longer values require more memory, but permit more merging.
+	// I expect we will change this to 1hr-24hr in future.
+	binlogPerodicFlushInterval = 30 * time.Second
+)
+
 func (s migrationState) String() string {
 	switch s {
 	case migrationStateInitial:
@@ -197,6 +208,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	go m.dumpStatus()                        // start periodically writing status
 	go m.dumpCheckpointContinuously()        // start periodically dumping the checkpoint.
 	go m.updateTableStatisticsContinuously() // update the min/max and estimated rows.
+	go m.periodicFlush(ctx)                  // advance the binary log position periodically.
 
 	// Perform the main copy rows task. This is where the majority
 	// of migrations usually spend time.
@@ -514,7 +526,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	// Create a binlog subscriber
 	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
 
-	m.feed.SetStartingPos(&mysql.Position{
+	m.feed.SetPos(&mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),
 	})
@@ -628,7 +640,7 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 }
 
 func (m *MigrationRunner) dumpCheckpointContinuously() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if m.getCurrentState() > migrationStateCopyRows {
@@ -642,8 +654,28 @@ func (m *MigrationRunner) dumpCheckpointContinuously() {
 	}
 }
 
+func (m *MigrationRunner) periodicFlush(ctx context.Context) {
+	ticker := time.NewTicker(binlogPerodicFlushInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if m.getCurrentState() > migrationStateCopyRows {
+			return
+		}
+		startLoop := time.Now()
+		m.logger.Info("starting periodic flush of binary log")
+		if err := m.feed.Flush(ctx); err != nil {
+			m.logger.WithFields(log.Fields{
+				"error": err,
+			}).Error("error flushing binary log")
+		}
+		m.logger.WithFields(log.Fields{
+			"duration": time.Since(startLoop),
+		}).Info("finished periodic flush of binary log")
+	}
+}
+
 func (m *MigrationRunner) updateTableStatisticsContinuously() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(tableStatUpdateInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if m.getCurrentState() > migrationStateCopyRows {
@@ -660,7 +692,7 @@ func (m *MigrationRunner) updateTableStatisticsContinuously() {
 func (m *MigrationRunner) dumpStatus() {
 	go m.estimateRowsPerSecondLoop()
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(statusInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if m.getCurrentState() > migrationStateCopyRows {
@@ -682,7 +714,7 @@ func (m *MigrationRunner) estimateRowsPerSecondLoop() {
 	// We take 10 second averages not 1 second
 	// because with parallel copy it bounces around a lot.
 	prevRowsCount := atomic.LoadInt64(&m.copier.CopyRowsCount)
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(copyEstimateInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if m.getCurrentState() > migrationStateCopyRows {

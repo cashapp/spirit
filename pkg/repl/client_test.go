@@ -144,7 +144,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 
 	logger := log.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
-	client.SetStartingPos(&mysql.Position{
+	client.SetPos(&mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
 	})
@@ -211,6 +211,6 @@ func TestReplClientOpts(t *testing.T) {
 	assert.NoError(t, client.Flush(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 0)
 
-	// Currently the binlog never advances, this might change in the future.
-	assert.Equal(t, startingPos, client.GetBinlogApplyPosition())
+	// The binlog position should have changed.
+	assert.NotEqual(t, startingPos, client.GetBinlogApplyPosition())
 }

@@ -29,10 +29,13 @@ type Client struct {
 	username string
 	password string
 
-	binlogChangset      map[string]bool // bool is deleted
-	binlogChangsetDelta int64           // a special "fix" for keys that have been popped off.
-	binlogStartingPos   *mysql.Position
-	canal               *canal.Canal
+	binlogChangeset      map[string]bool // bool is deleted
+	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off.
+	binlogPosSynced      *mysql.Position // safely written to shadow table
+	binlogPosInMemory    *mysql.Position // available in the binlog binlogChangeset
+	lastLogFileName      string          // last log file name we've seen in a rotation event
+
+	canal *canal.Canal
 
 	changesetRowsCount      int64
 	changesetRowsEventCount int64 // eliminated by optimizations
@@ -50,14 +53,14 @@ type Client struct {
 
 func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger log.FieldLogger) *Client {
 	return &Client{
-		db:             db,
-		host:           host,
-		table:          table,
-		shadowTable:    shadowTable,
-		username:       username,
-		password:       password,
-		binlogChangset: make(map[string]bool),
-		logger:         logger,
+		db:              db,
+		host:            host,
+		table:           table,
+		shadowTable:     shadowTable,
+		username:        username,
+		password:        password,
+		binlogChangeset: make(map[string]bool),
+		logger:          logger,
 	}
 }
 
@@ -68,25 +71,25 @@ func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
 	c.disableKeyAboveWatermarkOptimization = !newVal
 }
 
-func (c *Client) SetStartingPos(pos *mysql.Position) {
+// SetPos is used for resuming from a checkpoint.
+func (c *Client) SetPos(pos *mysql.Position) {
 	c.Lock()
 	defer c.Unlock()
-
-	c.binlogStartingPos = pos
+	c.binlogPosSynced = pos
 }
 
 func (c *Client) GetBinlogApplyPosition() *mysql.Position {
 	c.Lock()
 	defer c.Unlock()
 
-	return c.binlogStartingPos
+	return c.binlogPosSynced
 }
 
 func (c *Client) GetDeltaLen() int {
 	c.Lock()
 	defer c.Unlock()
 
-	return len(c.binlogChangset) + int(c.binlogChangsetDelta)
+	return len(c.binlogChangeset) + int(c.binlogChangesetDelta)
 }
 
 // pksToRowValueConstructor constructs a statement like this:
@@ -132,8 +135,8 @@ func (c *Client) Run() (err error) {
 	})
 	// All we need to do synchronously is get a position before
 	// the table migration starts. Then we can start copying data.
-	if c.binlogStartingPos == nil {
-		c.binlogStartingPos, err = c.getCurrentBinlogPosition()
+	if c.binlogPosSynced == nil {
+		c.binlogPosSynced, err = c.getCurrentBinlogPosition()
 		if err != nil {
 			return fmt.Errorf("failed to get binlog position, is binary logging enabled?")
 		}
@@ -142,6 +145,9 @@ func (c *Client) Run() (err error) {
 		// Position is not impossible so we can return a synchronous error.
 		return fmt.Errorf("binlog position is impossible, the source may have already purged it")
 	}
+
+	c.binlogPosInMemory = c.binlogPosSynced
+	c.lastLogFileName = c.binlogPosInMemory.Name
 
 	// Call start canal as a go routine.
 	go c.startCanal()
@@ -173,7 +179,7 @@ func (c *Client) binlogPositionIsImpossible() bool {
 				return true
 			}
 		}
-		if logname == c.binlogStartingPos.Name {
+		if logname == c.binlogPosSynced.Name {
 			return false // We just need presence of the log file for success
 		}
 	}
@@ -184,10 +190,10 @@ func (c *Client) binlogPositionIsImpossible() bool {
 func (c *Client) startCanal() {
 	// Start canal as a routine
 	c.logger.WithFields(log.Fields{
-		"log-file": c.binlogStartingPos.Name,
-		"log-pos":  c.binlogStartingPos.Pos,
+		"log-file": c.binlogPosSynced.Name,
+		"log-pos":  c.binlogPosSynced.Pos,
 	}).Debug("starting binary log subscription")
-	if err := c.canal.RunFrom(*c.binlogStartingPos); err != nil {
+	if err := c.canal.RunFrom(*c.binlogPosSynced); err != nil {
 		// Canal has failed! In future we might be able to reconnect and resume
 		// if canal does not do so itself. For now, we just fail the migration
 		// since we can resume from checkpoint anyway.
@@ -204,20 +210,30 @@ func (c *Client) Close() {
 	}
 }
 
+func (c *Client) updatePosInMemory(pos uint32) {
+	c.Lock()
+	defer c.Unlock()
+	c.binlogPosInMemory = &mysql.Position{
+		Name: c.lastLogFileName,
+		Pos:  pos,
+	}
+}
+
 func (c *Client) Flush(ctx context.Context) error {
 	c.Lock()
-	setToFlush := c.binlogChangset
-	c.binlogChangset = make(map[string]bool) // set new value
-	c.Unlock()                               // unlock immediately so others can write to the changeset
+	setToFlush := c.binlogChangeset
+	posOfFlush := c.binlogPosInMemory
+	c.binlogChangeset = make(map[string]bool) // set new value
+	c.Unlock()                                // unlock immediately so others can write to the changeset
 	// The changeset delta is because the status output is based on len(binlogChangeset)
 	// which just got reset to zero. We need some way to communicate roughly in status output
 	// there is other pending work while this func is running. We'll reset the delta
 	// to zero when this func exits.
-	atomic.StoreInt64(&c.binlogChangsetDelta, int64(len(setToFlush)))
+	atomic.StoreInt64(&c.binlogChangesetDelta, int64(len(setToFlush)))
 
 	defer func() {
 		atomic.AddInt64(&c.changesetRowsCount, int64(len(setToFlush)))
-		atomic.StoreInt64(&c.binlogChangsetDelta, int64(0)) // reset the delta
+		atomic.StoreInt64(&c.binlogChangesetDelta, int64(0)) // reset the delta
 	}()
 
 	// We must now apply the changeset setToFlush to the shadow table.
@@ -235,10 +251,13 @@ func (c *Client) Flush(ctx context.Context) error {
 			if err := c.doFlush(ctx, &deleteKeys, &replaceKeys); err != nil {
 				return err
 			}
-			atomic.AddInt64(&c.binlogChangsetDelta, -10000)
+			atomic.AddInt64(&c.binlogChangesetDelta, -10000)
 		}
 	}
 	err := c.doFlush(ctx, &deleteKeys, &replaceKeys)
+	// Update the synced binlog position to the posOfFlush
+	// uses a mutex.
+	c.SetPos(posOfFlush)
 	return err
 }
 
@@ -290,7 +309,7 @@ func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 		}
 
 		c.Lock()
-		changetSetLen := len(c.binlogChangset)
+		changetSetLen := len(c.binlogChangeset)
 		c.Unlock()
 		if changetSetLen < binlogTrivialThreshold {
 			break
@@ -311,5 +330,5 @@ func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
 	c.Lock()
 	defer c.Unlock()
 
-	c.binlogChangset[utils.HashKey(key)] = deleted
+	c.binlogChangeset[utils.HashKey(key)] = deleted
 }

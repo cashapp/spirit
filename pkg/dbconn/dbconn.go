@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand"
+	"time"
 
 	my "github.com/go-mysql/errors"
 	"github.com/squareup/spirit/pkg/utils"
@@ -53,12 +55,14 @@ RETRYLOOP:
 	for i := 0; i < maxRetries; i++ {
 		// Start a transaction
 		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
+			backoff(i)
 			continue RETRYLOOP // retry
 		}
 		// Standardize it.
 		if err = standardizeTrx(trx); err != nil {
 			utils.ErrInErr(trx.Rollback()) // Rollback
-			continue RETRYLOOP             // retry
+			backoff(i)
+			continue RETRYLOOP // retry
 		}
 		// Execute all statements.
 		for _, stmt := range stmts {
@@ -74,7 +78,8 @@ RETRYLOOP:
 				_, myerr := my.Error(err)
 				if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout || my.MySQLErrorCode(err) == errDeadlock {
 					utils.ErrInErr(trx.Rollback()) // Rollback
-					continue RETRYLOOP             // retry
+					backoff(i)
+					continue RETRYLOOP // retry
 				}
 				utils.ErrInErr(trx.Rollback()) // Rollback
 				return rowsAffected, err
@@ -113,11 +118,13 @@ RETRYLOOP:
 		}
 		if err != nil {
 			utils.ErrInErr(trx.Rollback()) // Rollback
+			backoff(i)
 			continue RETRYLOOP
 		}
 		// Commit it.
 		if err = trx.Commit(); err != nil {
 			utils.ErrInErr(trx.Rollback())
+			backoff(i)
 			continue RETRYLOOP
 		}
 		// Success!
@@ -125,4 +132,10 @@ RETRYLOOP:
 	}
 	// We failed too many times, return the last error
 	return rowsAffected, err
+}
+
+// backoff sleeps a few milliseconds before retrying.
+func backoff(i int) {
+	randFactor := i * rand.Intn(10) * int(time.Millisecond)
+	time.Sleep(time.Duration(randFactor))
 }

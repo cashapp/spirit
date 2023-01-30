@@ -4,6 +4,7 @@ import (
 	"sync/atomic"
 
 	"github.com/go-mysql-org/go-mysql/canal"
+	"github.com/go-mysql-org/go-mysql/replication"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -44,5 +45,24 @@ func (h *MyEventHandler) OnRow(e *canal.RowsEvent) error {
 			}).Error("unknown action")
 		}
 	}
+	h.client.updatePosInMemory(e.Header.LogPos)
+	return nil
+}
+
+// OnRotate is called when a rotate event is discovered via replication.
+// We use this to capture the log file name, since only the position is caught on the row event.
+func (h *MyEventHandler) OnRotate(header *replication.EventHeader, rotateEvent *replication.RotateEvent) error {
+	h.client.Lock()
+	defer h.client.Unlock()
+	h.client.lastLogFileName = string(rotateEvent.NextLogName)
+	return nil
+}
+
+// OnTableChanged is called when a table is changed via DDL.
+// This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
+// TODO: call back to the migration if:
+// h.client.table.SchemaName == schema && h.client.table.TableName == table
+// h.client.table.SchemaName == schema && h.client.shadowTable.TableName == table
+func (h *MyEventHandler) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
 	return nil
 }

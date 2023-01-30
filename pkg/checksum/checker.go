@@ -99,7 +99,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	c.logger.Info("running checksum operation")
+	c.logger.Info("starting checksum operation, this will require a table lock")
 	serverLock, err := dbconn.NewServerLock(ctx, c.db, c.table)
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	if err = serverLock.Close(); err != nil {
 		return err
 	}
-	c.logger.Info("table unlocked checksum")
+	c.logger.Info("table unlocked, starting checksum")
 
 	g := new(errgroup.Group)
 	g.SetLimit(c.concurrency)
