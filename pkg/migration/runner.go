@@ -514,9 +514,11 @@ func (m *MigrationRunner) preflightChecks() error {
 		return fmt.Errorf("binlog_format must be ROW")
 	}
 	if innodbAutoincLockMode != "2" {
-		// This is required because otherwise a long running INSERT .. SELECT
-		// from the default 500ms task could lock the table for more than expected.
-		return fmt.Errorf("innodb_autoinc_lock_mode must be 2")
+		// This is strongly encouraged because otherwise running parallel threads is pointless.
+		// i.e. on a test with 2 threads running INSERT INTO new SELECT * FROM old WHERE <range>
+		// the inserts will run in serial when there is an autoinc column on new and innodbAutoincLockMode != "2"
+		// This is the auto-inc lock. It won't show up in SHOW PROCESSLIST that they are serial.
+		m.logger.Warn("innodb_autoinc_lock_mode != 2. This will cause the migration to run slower than expected because concurrent inserts to the new table will be serialized.")
 	}
 	if binlogRowImage != "FULL" {
 		// This might not be required, but is the only option that has been tested so far.
