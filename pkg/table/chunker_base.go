@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 )
 
 const (

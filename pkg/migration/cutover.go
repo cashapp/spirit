@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
@@ -18,12 +18,12 @@ type CutOver struct {
 	table       *table.TableInfo
 	shadowTable *table.TableInfo
 	feed        *repl.Client
-	logger      log.FieldLogger
+	logger      *log.Logger
 }
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // shadow table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger log.FieldLogger) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger *log.Logger) (*CutOver, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed must be non-nil")
 	}

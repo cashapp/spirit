@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,7 +13,7 @@ import (
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
@@ -105,16 +104,15 @@ type MigrationRunner struct {
 	periodicFlushLock sync.Mutex
 
 	// Attached logger
-	logger log.FieldLogger
+	logger *log.Logger
 }
 
 func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	// This might be replaced later.
-	logger := &log.Logger{
-		Out:       os.Stderr,
-		Formatter: new(log.TextFormatter),
-		Level:     log.InfoLevel,
-	}
+	logger := log.New(log.LoggingConfig{
+		ForceColor: true,
+		Level:      "info",
+	})
 	m := &MigrationRunner{
 		host:                     migration.Host,
 		username:                 migration.Username,
@@ -160,7 +158,7 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	return m, nil
 }
 
-func (m *MigrationRunner) SetLogger(logger log.FieldLogger) {
+func (m *MigrationRunner) SetLogger(logger *log.Logger) {
 	m.logger = logger
 }
 

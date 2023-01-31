@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 )
 
 type simplifiedKeyType int
@@ -40,14 +40,14 @@ type TableInfo struct {
 	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
 	Chunker             Chunker
 
-	logger log.FieldLogger
+	logger *log.Logger
 }
 
 func NewTableInfo(schema, table string) *TableInfo {
 	return &TableInfo{
 		SchemaName: schema,
 		TableName:  table,
-		logger:     log.New(),
+		logger:     log.New(log.LoggingConfig{}),
 	}
 }
 
@@ -83,7 +83,7 @@ func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{}
 	return pkCols
 }
 
-func (t *TableInfo) AttachChunker(chunkerTargetMs int64, disableTrivialChunker bool, logger log.FieldLogger) error {
+func (t *TableInfo) AttachChunker(chunkerTargetMs int64, disableTrivialChunker bool, logger *log.Logger) error {
 	// If the row count is low we just attach
 	// "the trivial chunker" (i.e. the chunker base)
 	// which will return everything as one chunk.

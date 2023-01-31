@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +39,7 @@ func TestCutOver(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "t1")
 	t1shadow := table.NewTableInfo("test", "_t1_shadow")
-	logger := log.New()
+	logger := log.New(log.LoggingConfig{})
 	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
@@ -65,7 +65,7 @@ func TestCutOver(t *testing.T) {
 func TestInvalidOptions(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	logger := log.New()
+	logger := log.New(log.LoggingConfig{})
 
 	// Invalid options
 	_, err = NewCutOver(db, nil, nil, nil, logger)

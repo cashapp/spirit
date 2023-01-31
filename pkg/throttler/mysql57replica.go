@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 )
 
 type MySQL57Replica struct {

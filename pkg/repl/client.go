@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -50,10 +50,10 @@ type Client struct {
 
 	TableChangeNotificationCallback func()
 
-	logger log.FieldLogger
+	logger *log.Logger
 }
 
-func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger log.FieldLogger) *Client {
+func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger *log.Logger) *Client {
 	return &Client{
 		db:              db,
 		host:            host,

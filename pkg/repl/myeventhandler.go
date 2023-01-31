@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/replication"
-	log "github.com/sirupsen/logrus"
+	"github.com/squareup/gap-core/log"
 )
 
 type MyEventHandler struct {
