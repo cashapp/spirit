@@ -21,6 +21,10 @@ type CutOver struct {
 	logger      *log.Logger
 }
 
+const (
+	maxRetries = 5
+)
+
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // shadow table, and a replication feed which is used to ensure consistency before the cut over.
 func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger *log.Logger) (*CutOver, error) {
@@ -40,6 +44,24 @@ func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Clie
 }
 
 func (c *CutOver) Run(ctx context.Context) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		c.logger.WithFields(log.Fields{
+			"maxRetries": maxRetries,
+			"retries":    i,
+		}).Warn("Attempting final cut over operation")
+		if err = c.cutover(ctx); err != nil {
+			c.logger.WithError(err).Warning("cutover failed")
+			continue
+		}
+		c.logger.Warn("final cut over operation complete")
+		return nil
+	}
+	c.logger.Error("cutover failed, and retries exhausted")
+	return err
+}
+
+func (c *CutOver) cutover(ctx context.Context) error {
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
@@ -48,7 +70,6 @@ func (c *CutOver) Run(ctx context.Context) error {
 	}
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	c.logger.Info("Running final cut over operation")
 	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
 	if err != nil {
 		return err
@@ -70,14 +91,17 @@ func (c *CutOver) Run(ctx context.Context) error {
 	// This helps prevent an issue where the rename fails. Instead, just before
 	// the cutover.Run() executes, we DROP the _old table if it exists. This leaves
 	// a very brief race, which is unlikely.
+	// gh-ost also uses a LOCK TABLES .. WRITE which is a stronger lock than used here (LOCK TABLES .. READ)
+	// so there is a reasonable chance that on a busy system the TableLock is successful but the rename fails.
+	// Rather than try and upgrade the lock, we instead try and retry the cut-over operation
+	// again in a loop. This seems like a reasonable trade-off.
 	g := new(errgroup.Group)
 	g.Go(func() error {
 		oldTableName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, c.table.TableName+"_old")
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName(), oldTableName,
 			c.shadowTable.QuotedName(), c.table.QuotedName())
-		_, err := c.db.Exec(query)
-		return err
+		return dbconn.DBExec(ctx, c.db, query)
 	})
 	// We can now unlock the table to allow the rename to go through.
 	// Include a ROLLBACK before returning because of MDL.
@@ -88,6 +112,5 @@ func (c *CutOver) Run(ctx context.Context) error {
 	if err := g.Wait(); err != nil {
 		return err // rename not successful.
 	}
-	c.logger.Info("Final cut over operation complete")
 	return nil
 }

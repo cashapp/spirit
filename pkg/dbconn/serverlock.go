@@ -37,7 +37,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 		// has a brief race.
 		logger.WithFields(log.Fields{
 			"timeout": mdlLockWaitTimeout,
-		}).Warn("trying up acquire table lock")
+		}).Warn("trying to acquire table lock")
 		// TODO: We acquire a READ LOCK which I believe is sufficient (just need to prevent modifications to table).
 		// Ghost however, acquires a WRITE LOCK. We can't do that because the slowly arriving
 		// changes in BlockWait() will block because they won't be able to read the source table.

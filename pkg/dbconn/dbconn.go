@@ -44,6 +44,10 @@ func standardizeTrx(trx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
+	_, err = trx.Exec("SET lock_wait_timeout=?", mdlLockWaitTimeout)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -140,4 +144,19 @@ RETRYLOOP:
 func backoff(i int) {
 	randFactor := i * rand.Intn(10) * int(time.Millisecond)
 	time.Sleep(time.Duration(randFactor))
+}
+
+// DBExec is like db.Exec but sets the lock timeout to low in advance.
+// Does not require retry, or return a result.
+func DBExec(ctx context.Context, db *sql.DB, query string) error {
+	trx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer utils.ErrInErr(trx.Commit()) // release
+	if err := standardizeTrx(trx); err != nil {
+		return err
+	}
+	_, err = trx.Exec(query)
+	return err
 }
