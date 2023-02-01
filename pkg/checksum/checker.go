@@ -100,10 +100,12 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewServerLock(ctx, c.db, c.table)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
 	if err != nil {
 		return err
 	}
+	defer serverLock.Close()
+
 	// To guarantee that Flush() is effective we need to make sure
 	// that the canal routine to read the binlog is not delayed. Otherwise
 	// we could have a scenario where additional changes arrive after flushChangeSet below

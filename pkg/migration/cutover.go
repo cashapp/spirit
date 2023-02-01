@@ -49,10 +49,12 @@ func (c *CutOver) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("Running final cut over operation")
-	serverLock, err := dbconn.NewServerLock(ctx, c.db, c.table)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
 	if err != nil {
 		return err
 	}
+	defer serverLock.Close()
+
 	// Before we flush the change set we need to make sure
 	// canal is equal to at least the binary log position we read.
 	if err := c.feed.BlockWait(); err != nil {
@@ -64,9 +66,10 @@ func (c *CutOver) Run(ctx context.Context) error {
 		return err
 	}
 	// In a new connection, swap the tables.
-	// TODO: study the gh-ost algorithm. I don't think it's this simple.
-	// This also preserves _old which might not be intended.
-	// We should probably drop it.
+	// In gh-ost they ensure that _old is pre-created and locked (aka a sentry table).
+	// This helps prevent an issue where the rename fails. Instead, just before
+	// the cutover.Run() executes, we DROP the _old table if it exists. This leaves
+	// a very brief race, which is unlikely.
 	g := new(errgroup.Group)
 	g.Go(func() error {
 		oldTableName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, c.table.TableName+"_old")

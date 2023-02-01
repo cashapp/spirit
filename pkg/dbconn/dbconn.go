@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	maxRetries         = 5
-	errLockWaitTimeout = 1205
-	errDeadlock        = 1213
+	maxRetries            = 5
+	errLockWaitTimeout    = 1205
+	errDeadlock           = 1213
+	innodbLockWaitTimeout = 1 // usually fine, since it's a lock on a row.
+	mdlLockWaitTimeout    = 3 // safer to make slightly longer.
 )
 
 func standardizeTrx(trx *sql.Tx) error {
@@ -38,7 +40,7 @@ func standardizeTrx(trx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	_, err = trx.Exec("SET innodb_lock_wait_timeout=1")
+	_, err = trx.Exec("SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout)
 	if err != nil {
 		return err
 	}

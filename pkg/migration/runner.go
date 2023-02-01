@@ -244,6 +244,11 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Drop the _old table if it exists. This ensures
+	// that the rename will succeed (although there is a brief race)
+	if err := m.dropOldTable(); err != nil {
+		return err
+	}
 	if err := cutover.Run(ctx); err != nil {
 		return err
 	}

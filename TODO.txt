@@ -1,5 +1,4 @@
 Blocking:
-- Study cut-over algorithm in gh-ost to make sure we are doing it right.
 - The tests require a MySQL server on port 8.0.30 to run. I should make them not fail in BK if it's not available, and find a way to script so it can be.
 
 Non-blocking:
