@@ -153,7 +153,6 @@ func DBExec(ctx context.Context, db *sql.DB, query string) error {
 	if err != nil {
 		return err
 	}
-	defer utils.ErrInErr(trx.Commit()) // release
 	if err := standardizeTrx(trx); err != nil {
 		return err
 	}

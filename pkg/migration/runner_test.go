@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -973,4 +974,41 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.Equal(t, "checksum", m.getCurrentState().String())
 		// All done!
 	}
+}
+
+// TestForRemainingTableArtifacts tests that the _{name}_old table is left after
+// the migration is complete, but no _cp or _shadow table.
+func TestForRemainingTableArtifacts(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_shadow, _remainingtbl_old, _remainingtbl_cp`)
+	table := `CREATE TABLE remainingtbl (
+		uuid varchar(40) NOT NULL,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (uuid)
+	)`
+	runSQL(t, table)
+
+	m, err := NewMigrationRunner(&Migration{
+		Host:        TestHost,
+		Username:    TestUser,
+		Password:    TestPassword,
+		Database:    TestSchema,
+		Concurrency: 16,
+		Table:       "remainingtbl",
+		Alter:       "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)                       // everything is specified.
+	assert.Error(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
+	assert.NoError(t, m.Close())
+
+	// Now we should have a _remainingtbl_old table and a remainingtbl table
+	// but no _remainingtbl_shadow table or _remainingtbl_cp table.
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	db, err := sql.Open("mysql", dsn)
+	assert.NoError(t, err)
+	defer db.Close()
+	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
+	var tables string
+	db.QueryRow(stmt).Scan(&tables)
+	assert.Equal(t, "remainingtbl,_remainingtbl_old", tables)
+
 }
