@@ -13,7 +13,8 @@ import (
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/parser/ast"
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/go-log/loggers"
+	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
@@ -104,15 +105,11 @@ type MigrationRunner struct {
 	periodicFlushLock sync.Mutex
 
 	// Attached logger
-	logger *log.Logger
+	logger loggers.Advanced
 }
 
 func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
-	// This might be replaced later.
-	logger := log.New(log.LoggingConfig{
-		ForceColor: true,
-		Level:      "info",
-	})
+
 	m := &MigrationRunner{
 		host:                     migration.Host,
 		username:                 migration.Username,
@@ -129,7 +126,7 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 		optDisableTrivialChunker: migration.DisableTrivialChunker,
 		optReplicaDSN:            migration.ReplicaDSN,
 		optReplicaMaxLagMs:       migration.ReplicaMaxLagMs,
-		logger:                   logger,
+		logger:                   logrus.New(),
 	}
 	if m.optTargetChunkMs == 0 {
 		m.optTargetChunkMs = 100
@@ -158,7 +155,7 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	return m, nil
 }
 
-func (m *MigrationRunner) SetLogger(logger *log.Logger) {
+func (m *MigrationRunner) SetLogger(logger loggers.Advanced) {
 	m.logger = logger
 }
 
@@ -188,10 +185,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	// has been successful and the DDL is complete.
 	err = m.attemptMySQLDDL()
 	if err == nil {
-		m.logger.WithFields(log.Fields{
-			"instant-ddl": m.usedInstantDDL,
-			"inplace-ddl": m.usedInplaceDDL,
-		}).Info("apply complete")
+		m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v", m.usedInstantDDL, m.usedInplaceDDL)
 		return nil // success!
 	}
 	// Perform preflight basic checks. These are features that are required
@@ -252,12 +246,12 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	if err := cutover.Run(ctx); err != nil {
 		return err
 	}
-	m.logger.WithFields(log.Fields{
-		"instant-ddl":  m.usedInstantDDL,
-		"inplace-ddl":  m.usedInplaceDDL,
-		"total-chunks": m.copier.CopyChunksCount,
-		"duration":     time.Since(m.startTime).String(),
-	}).Info("apply complete")
+	m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v total-chunks: %v duration: %v",
+		m.usedInstantDDL,
+		m.usedInplaceDDL,
+		m.copier.CopyChunksCount,
+		time.Since(m.startTime).String(),
+	)
 	return nil
 }
 
@@ -365,7 +359,7 @@ func (m *MigrationRunner) tableChangeNotification() {
 	// If we don't do this, the migration will permanently be blocked from proceeding.
 	// Letting it start again is the better choice.
 	if err := m.dropCheckpoint(); err != nil {
-		m.logger.WithError(err).Error("could not remove checkpoint")
+		m.logger.Errorf("could not remove checkpoint. err: %v", err)
 	}
 	// We can't do anything about it, just panic
 	panic("table definition changed during migration")
@@ -445,7 +439,8 @@ func (m *MigrationRunner) alterShadowTable() error {
 }
 
 func (m *MigrationRunner) dropOldTable() error {
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, m.table.TableName+"_old")
+	oldName := fmt.Sprintf("_%s_old", m.table.TableName)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, oldName)
 	_, err := m.db.Exec(query)
 	return err
 }
@@ -599,10 +594,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	// and still be able to start from scratch.
 	// Start the binary log feed just before copy rows starts.
 	if err := m.feed.Run(); err != nil {
-		m.logger.WithFields(log.Fields{
-			"log-file": binlogName,
-			"log-pos":  binlogPos,
-		}).Warn("resuming from checkpoint failed because resuming from the previous binlog position failed")
+		m.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
 	// Success from this point on
@@ -613,13 +605,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	if err := m.table.Chunker.OpenAtWatermark(copyRowsAt); err != nil {
 		return err // could not open table
 	}
-
-	m.logger.WithFields(log.Fields{
-		"low-watermark": copyRowsAt,
-		"log-file":      binlogName,
-		"log-pos":       binlogPos,
-		"copy-rows":     copyRows,
-	}).Warn("resuming from checkpoint")
+	m.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", copyRowsAt, binlogName, binlogPos, copyRows)
 	return nil
 }
 
@@ -671,14 +657,7 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 		return err // it might not be ready, we can try again.
 	}
 	copyRows := atomic.LoadInt64(&m.copier.CopyRowsCount)
-
-	m.logger.WithFields(log.Fields{
-		"low-watermark": lowWatermark,
-		"log-file":      binlog.Name,
-		"log-pos":       binlog.Pos,
-		"copy-rows":     copyRows,
-	}).Info("checkpoint")
-
+	m.logger.Infof("checkpoint: low-watermark: %d log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
 	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
 	_, err = m.db.Exec(query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
@@ -697,9 +676,7 @@ func (m *MigrationRunner) dumpCheckpointContinuously() {
 			return
 		}
 		if err := m.dumpCheckpoint(); err != nil {
-			m.logger.WithFields(log.Fields{
-				"error": err,
-			}).Error("error writing checkpoint")
+			m.logger.Errorf("error writing checkpoint: %v", err)
 		}
 	}
 }
@@ -724,14 +701,10 @@ func (m *MigrationRunner) periodicFlush(ctx context.Context) {
 		// we allow this to run, and then expect that if it is under load the throttler
 		// will kick in and slow down the copy-rows.
 		if err := m.feed.Flush(ctx); err != nil {
-			m.logger.WithFields(log.Fields{
-				"error": err,
-			}).Error("error flushing binary log")
+			m.logger.Errorf("error flushing binary log: %v", err)
 		}
 		m.periodicFlushLock.Unlock()
-		m.logger.WithFields(log.Fields{
-			"duration": time.Since(startLoop),
-		}).Info("finished periodic flush of binary log")
+		m.logger.Infof("finished periodic flush of binary log in %v", time.Since(startLoop))
 	}
 }
 
@@ -743,9 +716,7 @@ func (m *MigrationRunner) updateTableStatisticsContinuously() {
 			return
 		}
 		if err := m.table.UpdateTableStatistics(m.db); err != nil {
-			m.logger.WithFields(log.Fields{
-				"error": err,
-			}).Error("error updating table statistics")
+			m.logger.Errorf("error updating table statistics: %v", err)
 		}
 	}
 }
@@ -760,14 +731,14 @@ func (m *MigrationRunner) dumpStatus() {
 			return
 		}
 		pct := float64(atomic.LoadInt64(&m.copier.CopyRowsCount)) / float64(m.table.EstimatedRows) * 100
-		m.logger.WithFields(log.Fields{
-			"state":               m.getCurrentState().String(),
-			"copy-progress":       fmt.Sprintf("%.2f%%", pct),
-			"binlog-deltas":       m.feed.GetDeltaLen(),
-			"time-total":          time.Since(m.startTime).String(),
-			"eta":                 m.getETAFromRowsPerSecond(pct > 99.9),
-			"copier-is-throttled": m.copier.Throttler.IsThrottled(),
-		}).Info("migration status")
+		m.logger.Infof("migration status: state=%s, copy-progress=%s, binlog-deltas=%v, time-total=%v, eta=%v, copier-is-throttled=%v",
+			m.getCurrentState().String(),
+			fmt.Sprintf("%.2f%%", pct),
+			m.feed.GetDeltaLen(),
+			time.Since(m.startTime).String(),
+			m.getETAFromRowsPerSecond(pct > 99.9),
+			m.copier.Throttler.IsThrottled(),
+		)
 	}
 }
 
@@ -794,7 +765,7 @@ func (m *MigrationRunner) getETAFromRowsPerSecond(due bool) string {
 		return "Due" // in apply rows phase or checksum
 	}
 	if rowsPerSecond == 0 {
-		return "-" // not enough data yet, or in last phase
+		return "TBD" // not enough data yet, or in last phase
 	}
 
 	remainingRows := m.table.EstimatedRows - uint64(atomic.LoadInt64(&m.copier.CopyRowsCount))

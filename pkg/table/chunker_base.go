@@ -7,8 +7,6 @@ import (
 	"reflect"
 	"sync"
 	"time"
-
-	"github.com/squareup/gap-core/log"
 )
 
 const (
@@ -162,15 +160,13 @@ func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
 	// and don't wait for more feedback.
 	if int64(d) > (t.ChunkerTargetMs * DynamicPanicFactor * int64(time.Millisecond)) {
 		newTarget := uint64(float64(t.chunkSize) / float64(DynamicPanicFactor*2))
-
-		t.Ti.logger.WithFields(log.Fields{
-			"time":            d,
-			"threshold":       time.Duration(t.ChunkerTargetMs * DynamicPanicFactor * int64(time.Millisecond)),
-			"target-rows":     t.chunkSize,
-			"target-ms":       t.ChunkerTargetMs,
-			"new-target-rows": newTarget,
-		}).Debug("high chunk processing time")
-
+		t.Ti.logger.Infof("high chunk processing time. time: %s threshold: %s target-rows: %v target-ms: %v new-target-rows: %v",
+			d,
+			time.Duration(t.ChunkerTargetMs*DynamicPanicFactor*int64(time.Millisecond)),
+			t.chunkSize,
+			t.ChunkerTargetMs,
+			newTarget,
+		)
 		t.updateChunkerTarget(newTarget)
 		return
 	}

@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -50,10 +50,10 @@ type Client struct {
 
 	TableChangeNotificationCallback func()
 
-	logger *log.Logger
+	logger loggers.Advanced
 }
 
-func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger *log.Logger) *Client {
+func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger loggers.Advanced) *Client {
 	return &Client{
 		db:              db,
 		host:            host,
@@ -199,17 +199,12 @@ func (c *Client) binlogPositionIsImpossible() bool {
 // Called as a go routine.
 func (c *Client) startCanal() {
 	// Start canal as a routine
-	c.logger.WithFields(log.Fields{
-		"log-file": c.binlogPosSynced.Name,
-		"log-pos":  c.binlogPosSynced.Pos,
-	}).Debug("starting binary log subscription")
+	c.logger.Debugf("starting binary log subscription. log-file: %s log-pos: %d", c.binlogPosSynced.Name, c.binlogPosSynced.Pos)
 	if err := c.canal.RunFrom(*c.binlogPosSynced); err != nil {
 		// Canal has failed! In future we might be able to reconnect and resume
 		// if canal does not do so itself. For now, we just fail the migration
 		// since we can resume from checkpoint anyway.
-		c.logger.WithFields(log.Fields{
-			"error": err,
-		}).Error("canal has failed!")
+		c.logger.Errorf("canal has failed. error: %v", err)
 		panic("canal has failed")
 	}
 }

@@ -4,7 +4,7 @@ package throttler
 import (
 	"database/sql"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 )
 
 type Throttler interface {
@@ -17,7 +17,7 @@ type Throttler interface {
 // NewReplicationThrottler returns a Throttler that is appropriate for the
 // current replica. It will return a MySQL80Replica throttler if the version is detected
 // as 8.0, and a MySQL57Replica throttler otherwise.
-func NewReplicationThrottler(replica *sql.DB, lagToleranceInMs int64, logger *log.Logger) (Throttler, error) {
+func NewReplicationThrottler(replica *sql.DB, lagToleranceInMs int64, logger loggers.Advanced) (Throttler, error) {
 	var version string
 	if err := replica.QueryRow("select substr(version(), 1, 1)").Scan(&version); err != nil {
 		return nil, err
