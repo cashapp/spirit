@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -17,8 +18,8 @@ import (
 )
 
 func TestVarcharNonBinaryComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_shadow`)
+	table := `CREATE TABLE nonbinarycompatt1 (
 		uuid varchar(40) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (uuid)
@@ -31,7 +32,7 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "nonbinarycompatt1",
 		Alter:       "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                       // everything is specified.
@@ -40,21 +41,21 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 }
 
 func TestVarbinary(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_shadow`)
+	table := `CREATE TABLE varbinaryt1 (
 		uuid varbinary(40) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (uuid)
 	)`
 	runSQL(t, table)
-	runSQL(t, "INSERT INTO t1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
+	runSQL(t, "INSERT INTO varbinaryt1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
 	m, err := NewMigrationRunner(&Migration{
 		Host:        TestHost,
 		Username:    TestUser,
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "varbinaryt1",
 		Alter:       "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
@@ -65,21 +66,21 @@ func TestVarbinary(t *testing.T) {
 
 // TestDataFromBadSqlMode tests that data previously inserted like 0000-00-00 can still be migrated.
 func TestDataFromBadSqlMode(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_shadow`)
+	table := `CREATE TABLE badsqlt1 (
 		id int not null primary key auto_increment,
 		d date NOT NULL,
 		t timestamp NOT NULL
 	)`
 	runSQL(t, table)
-	runSQL(t, "INSERT IGNORE INTO t1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
+	runSQL(t, "INSERT IGNORE INTO badsqlt1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
 	m, err := NewMigrationRunner(&Migration{
 		Host:        TestHost,
 		Username:    TestUser,
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "badsqlt1",
 		Alter:       "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
@@ -89,8 +90,8 @@ func TestDataFromBadSqlMode(t *testing.T) {
 }
 
 func TestChangeDatatypeNoData(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mytable`)
-	table := `CREATE TABLE mytable (
+	runSQL(t, `DROP TABLE IF EXISTS cdatatypemytable`)
+	table := `CREATE TABLE cdatatypemytable (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
@@ -103,7 +104,7 @@ func TestChangeDatatypeNoData(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable",
+		Table:       "cdatatypemytable",
 		Alter:       "CHANGE b b INT", //nolint: dupword
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
@@ -113,22 +114,22 @@ func TestChangeDatatypeNoData(t *testing.T) {
 }
 
 func TestChangeDatatypeDataLoss(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mytable`)
-	table := `CREATE TABLE mytable (
+	runSQL(t, `DROP TABLE IF EXISTS cdatalossmytable`)
+	table := `CREATE TABLE cdatalossmytable (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
-	runSQL(t, "INSERT INTO mytable (name, b) VALUES ('a', 'b')")
+	runSQL(t, "INSERT INTO cdatalossmytable (name, b) VALUES ('a', 'b')")
 	m, err := NewMigrationRunner(&Migration{
 		Host:        TestHost,
 		Username:    TestUser,
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable",
+		Table:       "cdatalossmytable",
 		Alter:       "CHANGE b b INT", //nolint: dupword
 	})
 	assert.NoError(t, err)                       // everything is specified correctly.
@@ -137,8 +138,8 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 }
 
 func TestOnline(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mytable`)
-	table := `CREATE TABLE mytable (
+	runSQL(t, `DROP TABLE IF EXISTS testonline`)
+	table := `CREATE TABLE testonline (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
@@ -151,7 +152,7 @@ func TestOnline(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable",
+		Table:       "testonline",
 		Alter:       "CHANGE COLUMN b b int(11) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
@@ -160,8 +161,8 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Create another table.
-	runSQL(t, `DROP TABLE IF EXISTS mytable2`)
-	table = `CREATE TABLE mytable2 (
+	runSQL(t, `DROP TABLE IF EXISTS testonline2`)
+	table = `CREATE TABLE testonline2 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
@@ -174,7 +175,7 @@ func TestOnline(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable2",
+		Table:       "testonline2",
 		Alter:       "ADD c int(11) NOT NULL",
 	})
 	assert.NoError(t, err)
@@ -185,8 +186,8 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Finally, this will work.
-	runSQL(t, `DROP TABLE IF EXISTS mytable3`)
-	table = `CREATE TABLE mytable3 (
+	runSQL(t, `DROP TABLE IF EXISTS testonline3`)
+	table = `CREATE TABLE testonline3 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
@@ -199,7 +200,7 @@ func TestOnline(t *testing.T) {
 		Password:          TestPassword,
 		Database:          TestSchema,
 		Concurrency:       16,
-		Table:             "mytable3",
+		Table:             "testonline3",
 		Alter:             "ADD INDEX(b)",
 		AttemptInplaceDDL: true,
 	})
@@ -287,8 +288,8 @@ func TestBadOptions(t *testing.T) {
 }
 
 func TestBadAlter(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS bot1`)
+	table := `CREATE TABLE bot1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
@@ -300,7 +301,7 @@ func TestBadAlter(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "bot1",
 		Alter:       "badalter",
 	})
 	assert.NoError(t, err) // does not parse alter yet.
@@ -316,7 +317,7 @@ func TestBadAlter(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "bot1",
 		Alter:       "RENAME COLUMN name TO name2, ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
@@ -333,7 +334,7 @@ func TestBadAlter(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "bot1",
 		Alter:       "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
@@ -349,7 +350,7 @@ func TestBadAlter(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "t1",
+		Table:       "bot1",
 		Alter:       "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
 	})
 	assert.NoError(t, err) // does not parse alter yet.
@@ -474,18 +475,18 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 // 1) *FORCE* checksum to be enabled on resume from checkpoint
 // 2) If checksum is not enabled, duplicate key errors are elevated to errors.
 func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mytable`)
-	table := `CREATE TABLE mytable (
+	runSQL(t, `DROP TABLE IF EXISTS uniqmytable`)
+	table := `CREATE TABLE uniqmytable (
 				id int(11) NOT NULL AUTO_INCREMENT,
 				name varchar(255) NOT NULL,
 				b varchar(255) NOT NULL,
 				PRIMARY KEY (id)
 			)`
 	runSQL(t, table)
-	runSQL(t, "INSERT INTO mytable (name, b) VALUES ('a', REPEAT('a', 200))")
-	runSQL(t, "INSERT INTO mytable (name, b) VALUES ('a', REPEAT('b', 200))")
-	runSQL(t, "INSERT INTO mytable (name, b) VALUES ('a', REPEAT('c', 200))")
-	runSQL(t, "INSERT INTO mytable (name, b) VALUES ('a', REPEAT('a', 200))") // duplicate
+	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))")
+	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('b', 200))")
+	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('c', 200))")
+	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))") // duplicate
 
 	m, err := NewMigrationRunner(&Migration{
 		Host:        TestHost,
@@ -493,7 +494,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable",
+		Table:       "uniqmytable",
 		Alter:       "ADD UNIQUE INDEX b (b)",
 	})
 	assert.NoError(t, err)
@@ -501,14 +502,14 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	assert.Error(t, err)         // not unique
 	assert.NoError(t, m.Close()) // need to close now otherwise we'll get an error on re-opening it.
 
-	runSQL(t, "DELETE FROM mytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
+	runSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewMigrationRunner(&Migration{
 		Host:        TestHost,
 		Username:    TestUser,
 		Password:    TestPassword,
 		Database:    TestSchema,
 		Concurrency: 16,
-		Table:       "mytable",
+		Table:       "uniqmytable",
 		Alter:       "ADD UNIQUE INDEX b (b)",
 	})
 	assert.NoError(t, err)
@@ -585,19 +586,19 @@ func TestETA(t *testing.T) {
 }
 
 func TestCheckpoint(t *testing.T) {
-	tables := []string{`CREATE TABLE t1 (
+	tables := []string{`CREATE TABLE cpt1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`,
 	}
 	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow, _t1_cp`)
+		runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_shadow, _cpt1_cp`)
 		runSQL(t, tbl)
-		runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
-		runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1`)
-		runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
-		runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
-		runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 LIMIT 100000`) // ~100k rows
+		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
+		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
 		preSetup := func() *MigrationRunner {
 			m, err := NewMigrationRunner(&Migration{
@@ -606,7 +607,7 @@ func TestCheckpoint(t *testing.T) {
 				Password:    TestPassword,
 				Database:    TestSchema,
 				Concurrency: 16,
-				Table:       "t1",
+				Table:       "cpt1",
 				Alter:       "ENGINE=InnoDB",
 			})
 			assert.NoError(t, err)
@@ -732,18 +733,18 @@ func TestCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
-	tbl := `CREATE TABLE t1 (
+	tbl := `CREATE TABLE cpt1difft1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow, _t1_cp`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _cpt1difft1_cp`)
 	runSQL(t, tbl)
-	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
-	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1`)
-	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
-	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 b JOIN t1 c`)
-	runSQL(t, `insert into t1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM t1 a JOIN t1 LIMIT 100000`) // ~100k rows
+	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
+	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
+	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
+	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 LIMIT 100000`) // ~100k rows
 
 	preSetup := func(alter string) *MigrationRunner {
 		m, err := NewMigrationRunner(&Migration{
@@ -752,7 +753,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 			Password:    TestPassword,
 			Database:    TestSchema,
 			Concurrency: 16,
-			Table:       "t1",
+			Table:       "cpt1difft1",
 			Alter:       alter,
 		})
 		assert.NoError(t, err)
@@ -847,11 +848,11 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 func TestE2EBinlogSubscribing(t *testing.T) {
 	// Need to test both composite and non composite keys.
 	// Possibly more like mem comparable varbinary.
-	tables := []string{`CREATE TABLE t1 (
+	tables := []string{`CREATE TABLE e2et1 (
 	id1 INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 	id2 INT NOT NULL,
 	pad int NOT NULL default 0)`,
-		`CREATE TABLE t1 (
+		`CREATE TABLE e2et1 (
 		id1 int NOT NULL,
 		id2 int not null,
 		pad int NOT NULL  default 0,
@@ -859,11 +860,11 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 	}
 
 	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
+		runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_shadow`)
 		runSQL(t, tbl)
-		runSQL(t, `insert into t1 (id1, id2) values (1, 1)`)
-		runSQL(t, `insert into t1 (id1, id2) values (2, 1)`)
-		runSQL(t, `insert into t1 (id1, id2) values (3, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (1, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (2, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
 
 		m, err := NewMigrationRunner(&Migration{
 			Host:                  TestHost,
@@ -871,7 +872,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			Password:              TestPassword,
 			Database:              TestSchema,
 			Concurrency:           16,
-			Table:                 "t1",
+			Table:                 "e2et1",
 			Alter:                 "ENGINE=InnoDB",
 			DisableTrivialChunker: true,
 		})
@@ -926,7 +927,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// Now insert some data.
 		// This will be ignored by the binlog subscription.
 		// Because it's ahead of the high watermark.
-		runSQL(t, `insert into t1 (id1, id2) values (4, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (4, 1)`)
 		assert.True(t, m.table.Chunker.KeyAboveHighWatermark(4))
 
 		// Give it a chance, since we need to read from the binary log to populate this
@@ -941,12 +942,12 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 
 		// Now insert some data.
 		// This should be picked up by the binlog subscription.
-		runSQL(t, `insert into t1 (id1, id2) values (5, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
 		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(5))
 		sleep() // wait for binlog
 		assert.Equal(t, 1, m.feed.GetDeltaLen())
 
-		runSQL(t, `delete from t1 where id1 = 1`)
+		runSQL(t, `delete from e2et1 where id1 = 1`)
 		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(1))
 		sleep() // wait for binlog
 		assert.Equal(t, 2, m.feed.GetDeltaLen())
@@ -958,7 +959,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 
 		// Some data is inserted later, even though the last chunk is done.
 		// We still care to pick it up.
-		runSQL(t, `insert into t1 (id1, id2) values (6, 1)`)
+		runSQL(t, `insert into e2et1 (id1, id2) values (6, 1)`)
 		// the pointer should be at maxint64 for safety. this ensures
 		// that any keyAboveHighWatermark checks return false
 		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(uint64(math.MaxUint64)))
@@ -973,4 +974,40 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.Equal(t, "checksum", m.getCurrentState().String())
 		// All done!
 	}
+}
+
+// TestForRemainingTableArtifacts tests that the _{name}_old table is left after
+// the migration is complete, but no _cp or _shadow table.
+func TestForRemainingTableArtifacts(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_shadow, _remainingtbl_old, _remainingtbl_cp`)
+	table := `CREATE TABLE remainingtbl (
+		id INT NOT NULL PRIMARY KEY,
+		name varchar(255) NOT NULL
+	)`
+	runSQL(t, table)
+
+	m, err := NewMigrationRunner(&Migration{
+		Host:        TestHost,
+		Username:    TestUser,
+		Password:    TestPassword,
+		Database:    TestSchema,
+		Concurrency: 16,
+		Table:       "remainingtbl",
+		Alter:       "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)                         // everything is specified.
+	assert.NoError(t, m.Run(context.Background())) // it's an accepted type.
+	assert.NoError(t, m.Close())
+
+	// Now we should have a _remainingtbl_old table and a remainingtbl table
+	// but no _remainingtbl_shadow table or _remainingtbl_cp table.
+	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	db, err := sql.Open("mysql", dsn)
+	assert.NoError(t, err)
+	defer db.Close()
+	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
+	var tables string
+	db.QueryRow(stmt).Scan(&tables)
+	assert.Equal(t, "_remainingtbl_old,remainingtbl", tables)
+
 }

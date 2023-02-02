@@ -36,18 +36,18 @@ func runSQL(t *testing.T, stmt string) {
 }
 
 func TestCopier(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
+	runSQL(t, "DROP TABLE IF EXISTS copiert1, copiert2")
+	runSQL(t, "CREATE TABLE copiert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE copiert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT INTO copiert1 VALUES (1, 2, 3)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "copiert1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "copiert2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := log.New(log.LoggingConfig{})
@@ -58,24 +58,24 @@ func TestCopier(t *testing.T) {
 
 	// Verify that t2 has one row.
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM t2").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM copiert2").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
 
 func TestThrottler(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
+	runSQL(t, "DROP TABLE IF EXISTS throttlert1, throttlert2")
+	runSQL(t, "CREATE TABLE throttlert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE throttlert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT INTO throttlert1 VALUES (1, 2, 3)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "throttlert1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "throttlert2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := log.New(log.LoggingConfig{})
@@ -87,24 +87,24 @@ func TestThrottler(t *testing.T) {
 
 	// Verify that t2 has one row.
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM t2").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM throttlert2").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
 
 func TestCopierUniqueDestination(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a), UNIQUE(b))")
-	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3), (2,2,3)")
+	runSQL(t, "DROP TABLE IF EXISTS copieruniqt1, copieruniqt2")
+	runSQL(t, "CREATE TABLE copieruniqt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE copieruniqt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a), UNIQUE(b))")
+	runSQL(t, "INSERT INTO copieruniqt1 VALUES (1, 2, 3), (2,2,3)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "copieruniqt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "copieruniqt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// if the checksum is FALSE, the unique violation will cause an error.
@@ -117,10 +117,10 @@ func TestCopierUniqueDestination(t *testing.T) {
 	// however, if the checksum is TRUE, the unique violation will be ignored.
 	// This is because it's not possible to differentiate between a resume from checkpoint
 	// causing a duplicate key, and the DDL being applied causing it.
-	t1 = table.NewTableInfo("test", "t1")
+	t1 = table.NewTableInfo("test", "copieruniqt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 = table.NewTableInfo("test", "t2")
+	t2 = table.NewTableInfo("test", "copieruniqt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	copier, err = NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
@@ -129,18 +129,18 @@ func TestCopierUniqueDestination(t *testing.T) {
 }
 
 func TestCopierLossyDataTypeConversion(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c VARCHAR(255), PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 'aaa'), (2,2,'bbb')")
+	runSQL(t, "DROP TABLE IF EXISTS datatpt1, datatpt2")
+	runSQL(t, "CREATE TABLE datatpt1 (a INT NOT NULL, b INT, c VARCHAR(255), PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE datatpt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT INTO datatpt1 VALUES (1, 2, 'aaa'), (2,2,'bbb')")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "datatpt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "datatpt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
@@ -153,18 +153,18 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 }
 
 func TestCopierNullToNotNullConversion(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT NOT NULL, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 123), (2,2,NULL)")
+	runSQL(t, "DROP TABLE IF EXISTS null2notnullt1, null2notnullt2")
+	runSQL(t, "CREATE TABLE null2notnullt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE null2notnullt2 (a INT NOT NULL, b INT, c INT NOT NULL, PRIMARY KEY (a))")
+	runSQL(t, "INSERT INTO null2notnullt1 VALUES (1, 2, 123), (2,2,NULL)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "null2notnullt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "null2notnullt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
@@ -177,18 +177,18 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 }
 
 func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO t1 VALUES (1, 2, '0000-00-00')")
+	runSQL(t, "DROP TABLE IF EXISTS invaliddt1, invaliddt2")
+	runSQL(t, "CREATE TABLE invaliddt1 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE invaliddt2 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
+	runSQL(t, "INSERT IGNORE INTO invaliddt1 VALUES (1, 2, '0000-00-00')")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "invaliddt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "invaliddt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
@@ -200,24 +200,24 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	assert.NoError(t, err)
 	// Verify that t2 has one row.
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM t2").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM invaliddt2").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
 
 func TestLockWaitTimeoutIsRetyable(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO t1 VALUES (1, 2, 3)")
+	runSQL(t, "DROP TABLE IF EXISTS lockt1, lockt2")
+	runSQL(t, "CREATE TABLE lockt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE lockt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT IGNORE INTO lockt1 VALUES (1, 2, 3)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "lockt1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "lockt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Lock table t2 for 2 seconds.
@@ -225,7 +225,7 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 	go func() {
 		tx, err := db.Begin()
 		assert.NoError(t, err)
-		_, err = tx.Exec("SELECT * FROM t2 WHERE a = 1 FOR UPDATE")
+		_, err = tx.Exec("SELECT * FROM lockt2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		err = tx.Rollback()
@@ -240,18 +240,18 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 }
 
 func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO t1 VALUES (1, 2, 3)")
+	runSQL(t, "DROP TABLE IF EXISTS lock2t1, lock2t2")
+	runSQL(t, "CREATE TABLE lock2t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT IGNORE INTO lock2t1 VALUES (1, 2, 3)")
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo("test", "lock2t1")
 	assert.NoError(t, t1.RunDiscovery(db))
 	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t2 := table.NewTableInfo("test", "t2")
+	t2 := table.NewTableInfo("test", "lock2t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Lock again but for 10 seconds.
@@ -259,7 +259,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	go func() {
 		tx, err := db.Begin()
 		assert.NoError(t, err)
-		_, err = tx.Exec("SELECT * FROM t2 WHERE a = 1 FOR UPDATE")
+		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
 		time.Sleep(10 * time.Second)
 		err = tx.Rollback()

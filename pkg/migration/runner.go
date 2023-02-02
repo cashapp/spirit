@@ -445,7 +445,8 @@ func (m *MigrationRunner) alterShadowTable() error {
 }
 
 func (m *MigrationRunner) dropOldTable() error {
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, m.table.TableName+"_old")
+	oldName := fmt.Sprintf("_%s_old", m.table.TableName)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, oldName)
 	_, err := m.db.Exec(query)
 	return err
 }

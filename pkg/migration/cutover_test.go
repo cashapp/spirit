@@ -17,14 +17,14 @@ func dsn() string {
 }
 
 func TestCutOver(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow, t1_old`)
-	tbl := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_shadow, _cutovert1_old`)
+	tbl := `CREATE TABLE cutovert1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	tbl = `CREATE TABLE _t1_shadow (
+	tbl = `CREATE TABLE _cutovert1_shadow (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
@@ -32,13 +32,13 @@ func TestCutOver(t *testing.T) {
 	runSQL(t, tbl)
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
-	runSQL(t, `INSERT INTO t1 VALUES (1, 2), (2,2)`)
+	runSQL(t, `INSERT INTO cutovert1 VALUES (1, 2), (2,2)`)
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
-	t1shadow := table.NewTableInfo("test", "_t1_shadow")
+	t1 := table.NewTableInfo("test", "cutovert1")
+	t1shadow := table.NewTableInfo("test", "_cutovert1_shadow")
 	logger := log.New(log.LoggingConfig{})
 	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
 	// the feed must be started.
@@ -54,10 +54,10 @@ func TestCutOver(t *testing.T) {
 	// and t1_old has 2 row.
 	// Verify that t2 has one row.
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM t1").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM cutovert1").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, count)
-	err = db.QueryRow("SELECT COUNT(*) FROM t1_old").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM _cutovert1_old").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, count)
 }

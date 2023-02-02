@@ -97,9 +97,10 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	// again in a loop. This seems like a reasonable trade-off.
 	g := new(errgroup.Group)
 	g.Go(func() error {
-		oldTableName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, c.table.TableName+"_old")
+		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
+		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
-			c.table.QuotedName(), oldTableName,
+			c.table.QuotedName(), oldQuotedName,
 			c.shadowTable.QuotedName(), c.table.QuotedName())
 		return dbconn.DBExec(ctx, c.db, query)
 	})
