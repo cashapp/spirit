@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
 
-	"github.com/squareup/gap-core/log"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
@@ -46,7 +46,7 @@ func TestReplClient(t *testing.T) {
 	t2 := table.NewTableInfo("test", "replt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, client.Run())
 
@@ -84,7 +84,7 @@ func TestReplClientComplex(t *testing.T) {
 	t2 := table.NewTableInfo("test", "replcomplext2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, client.Run())
 
@@ -142,7 +142,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	t2 := table.NewTableInfo("test", "replresumet2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	client.SetPos(&mysql.Position{
 		Name: "impossible",
@@ -165,7 +165,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	t2 := table.NewTableInfo("test", "replresumepointt2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestReplClientOpts(t *testing.T) {
 	t2 := table.NewTableInfo("test", "replclientoptst2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
 	assert.NoError(t, client.Run())
 

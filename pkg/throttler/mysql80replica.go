@@ -6,14 +6,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 )
 
 type MySQL80Replica struct {
 	replica          *sql.DB
 	lagToleranceInMs int64
 	currentLagInMs   int64
-	logger           *log.Logger
+	logger           loggers.Advanced
 }
 
 var _ Throttler = &MySQL80Replica{}
@@ -32,9 +32,7 @@ func (l *MySQL80Replica) Start() error {
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := l.UpdateLag(); err != nil {
-				l.logger.WithFields(log.Fields{
-					"error": err,
-				}).Error("error getting lag")
+				l.logger.Errorf("error getting lag: %s", err.Error())
 			}
 		}
 	}()
@@ -58,10 +56,7 @@ func (l *MySQL80Replica) UpdateLag() error {
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)
 	if l.IsThrottled() {
-		l.logger.WithFields(log.Fields{
-			"lag":       atomic.LoadInt64(&l.currentLagInMs),
-			"tolerance": l.lagToleranceInMs,
-		}).Warn("replication delayed, copier is now being throttled")
+		l.logger.Warnf("replication delayed, copier is now being throttled. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagToleranceInMs)
 	}
 	return nil
 }
@@ -79,8 +74,5 @@ func (l *MySQL80Replica) BlockWait() {
 		}
 		time.Sleep(1 * time.Second)
 	}
-	l.logger.WithFields(log.Fields{
-		"lag":       atomic.LoadInt64(&l.currentLagInMs),
-		"tolerance": l.lagToleranceInMs,
-	}).Warn("lag monitor timed out")
+	l.logger.Warnf("lag monitor timed out. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagToleranceInMs)
 }

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/squareup/gap-core/log"
+	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
 
@@ -50,7 +50,7 @@ func TestCopier(t *testing.T) {
 	t2 := table.NewTableInfo("test", "copiert2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -78,7 +78,7 @@ func TestThrottler(t *testing.T) {
 	t2 := table.NewTableInfo("test", "throttlert2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -108,7 +108,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// if the checksum is FALSE, the unique violation will cause an error.
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, false, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -144,7 +144,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -168,7 +168,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -192,7 +192,7 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	// Checksum flag does not affect this error.
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -231,7 +231,7 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 		err = tx.Rollback()
 		assert.NoError(t, err)
 	}()
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -266,7 +266,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	copier, err := NewCopier(db, t1, t2, 0, true, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, t1.Chunker.Open())
@@ -282,7 +282,7 @@ func TestCopierValidation(t *testing.T) {
 	t2 := table.NewTableInfo("test", "t2")
 
 	// if the checksum is FALSE, the unique violation will cause an error.
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	_, err = NewCopier(db, t1, nil, 0, false, logger)
 	assert.Error(t, err)
 	_, err = NewCopier(db, t1, t2, 0, false, logger)

@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/replication"
-	"github.com/squareup/gap-core/log"
 )
 
 type MyEventHandler struct {
@@ -40,9 +39,7 @@ func (h *MyEventHandler) OnRow(e *canal.RowsEvent) error {
 		case canal.DeleteAction:
 			h.client.keyHasChanged(key, true)
 		default:
-			h.client.logger.WithFields(log.Fields{
-				"action": e.Action,
-			}).Error("unknown action")
+			h.client.logger.Errorf("unknown action: %v", e.Action)
 		}
 	}
 	h.client.updatePosInMemory(e.Header.LogPos)

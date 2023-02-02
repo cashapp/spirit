@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 
 	my "github.com/go-mysql/errors"
 
@@ -15,7 +15,7 @@ import (
 type TableLock struct {
 	table   *table.TableInfo
 	lockTxn *sql.Tx
-	logger  *log.Logger
+	logger  loggers.Advanced
 }
 
 // NewTableLock creates a new server wide lock on a table.
@@ -24,7 +24,7 @@ type TableLock struct {
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
-func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logger *log.Logger) (*TableLock, error) {
+func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
 	_, err := lockTxn.Exec("SET SESSION lock_wait_timeout = ?", mdlLockWaitTimeout)
 	if err != nil {
@@ -35,9 +35,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 		// this might prevent a weird case that we don't handle yet.
 		// instead, we DROP IF EXISTS just before the rename, which
 		// has a brief race.
-		logger.WithFields(log.Fields{
-			"timeout": mdlLockWaitTimeout,
-		}).Warn("trying to acquire table lock")
+		logger.Warnf("trying to acquire table lock, timeout: %d", mdlLockWaitTimeout)
 		// TODO: We acquire a READ LOCK which I believe is sufficient (just need to prevent modifications to table).
 		// Ghost however, acquires a WRITE LOCK. We can't do that because the slowly arriving
 		// changes in BlockWait() will block because they won't be able to read the source table.
@@ -46,9 +44,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 			// See if the error is retryable, many are
 			_, myerr := my.Error(err)
 			if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout {
-				logger.WithFields(log.Fields{
-					"error": err,
-				}).Warn("failed trying to acquire table lock, backing off and retrying...")
+				logger.Warnf("failed trying to acquire table lock, backing off and retrying: %v", err)
 				backoff(i)
 				continue
 			}
