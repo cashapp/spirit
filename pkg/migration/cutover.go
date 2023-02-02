@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
@@ -18,7 +18,7 @@ type CutOver struct {
 	table       *table.TableInfo
 	shadowTable *table.TableInfo
 	feed        *repl.Client
-	logger      *log.Logger
+	logger      loggers.Advanced
 }
 
 const (
@@ -27,7 +27,7 @@ const (
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // shadow table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger *log.Logger) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, fmt.Errorf("feed must be non-nil")
 	}
@@ -46,12 +46,9 @@ func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Clie
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
 	for i := 0; i < maxRetries; i++ {
-		c.logger.WithFields(log.Fields{
-			"maxRetries": maxRetries,
-			"retries":    i,
-		}).Warn("Attempting final cut over operation")
+		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxRetries)
 		if err = c.cutover(ctx); err != nil {
-			c.logger.WithError(err).Warning("cutover failed")
+			c.logger.Warnf("cutover failed. err: %s", err.Error())
 			continue
 		}
 		c.logger.Warn("final cut over operation complete")

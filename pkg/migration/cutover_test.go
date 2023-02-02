@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +39,7 @@ func TestCutOver(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "cutovert1")
 	t1shadow := table.NewTableInfo("test", "_cutovert1_shadow")
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
@@ -85,7 +85,7 @@ func TestMDLLockFails(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "mdllocks")
 	t1shadow := table.NewTableInfo("test", "_mdllocks_shadow")
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
@@ -111,7 +111,7 @@ func TestMDLLockFails(t *testing.T) {
 func TestInvalidOptions(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	logger := log.New(log.LoggingConfig{})
+	logger := logrus.New()
 
 	// Invalid options
 	_, err = NewCutOver(db, nil, nil, nil, logger)

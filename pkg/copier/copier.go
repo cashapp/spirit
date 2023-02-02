@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/go-log/loggers"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
@@ -33,10 +33,10 @@ type Copier struct {
 	EtaRowsPerSecond  int64
 	isInvalid         bool
 	Throttler         throttler.Throttler
-	logger            *log.Logger
+	logger            loggers.Advanced
 }
 
-func NewCopier(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, finalChecksum bool, logger *log.Logger) (*Copier, error) {
+func NewCopier(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, finalChecksum bool, logger loggers.Advanced) (*Copier, error) {
 	if concurrency == 0 {
 		concurrency = 4
 	}
@@ -71,11 +71,7 @@ func (c *Copier) MigrateChunk(ctx context.Context, chunk *table.Chunk) error {
 		c.table.QuotedName(),
 		chunk.String(),
 	)
-	c.logger.WithFields(log.Fields{
-		"chunk": chunk.String(),
-		"query": query,
-	}).Debug("running chunk")
-
+	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
 	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, query); err != nil {

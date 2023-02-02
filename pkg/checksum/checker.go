@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/squareup/gap-core/log"
+	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
@@ -25,11 +25,11 @@ type Checker struct {
 	db          *sql.DB
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
-	logger      *log.Logger
+	logger      loggers.Advanced
 }
 
 // NewChecker creates a new checksum object.
-func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, feed *repl.Client, logger *log.Logger) (*Checker, error) {
+func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, feed *repl.Client, logger loggers.Advanced) (*Checker, error) {
 	if concurrency == 0 {
 		concurrency = 4
 	}
@@ -56,9 +56,7 @@ func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int
 func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
 	trx := trxPool.Get()
 	defer trxPool.Put(trx)
-	c.logger.WithFields(log.Fields{
-		"chunk": chunk.String(),
-	}).Debug("checksuming chunk")
+	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		utils.IntersectColumns(c.table, c.shadowTable, true),
 		c.table.QuotedName(),
