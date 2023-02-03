@@ -1,4 +1,4 @@
-name: CI
+name: MySQL 8.0.30
 on:
   push:
     branches: [ main ]
@@ -15,8 +15,8 @@ jobs:
         with:
           go-version: 1.19
 
-      - name: Deploy MySQL 8.0
-        run: script/dbdeployer_install.sh
+      - name: Deploy MySQL
+        run: scripts/dbdeployer_install_8.sh
 
       - name: Test
-        run: go test -v ./...
+        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8030)/test" go test -v ./...

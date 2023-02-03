@@ -3,9 +3,10 @@ package migration
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"os"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
@@ -13,7 +14,11 @@ import (
 )
 
 func dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		panic("MYSQL_DSN is not set")
+	}
+	return dsn
 }
 
 func TestCutOver(t *testing.T) {
@@ -40,7 +45,9 @@ func TestCutOver(t *testing.T) {
 	t1 := table.NewTableInfo("test", "cutovert1")
 	t1shadow := table.NewTableInfo("test", "_cutovert1_shadow")
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -86,7 +93,9 @@ func TestMDLLockFails(t *testing.T) {
 	t1 := table.NewTableInfo("test", "mdllocks")
 	t1shadow := table.NewTableInfo("test", "_mdllocks_shadow")
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -118,7 +127,9 @@ func TestInvalidOptions(t *testing.T) {
 	assert.Error(t, err)
 	t1 := table.NewTableInfo("test", "t1")
 	t1shadow := table.NewTableInfo("test", "t1_shadow")
-	feed := repl.NewClient(db, TestHost, t1, t1shadow, TestUser, TestPassword, logger)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
 	_, err = NewCutOver(db, nil, t1shadow, feed, logger)
 	assert.Error(t, err)
 }

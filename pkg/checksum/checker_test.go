@@ -3,10 +3,10 @@ package checksum
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"os"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 
 	"github.com/stretchr/testify/assert"
@@ -15,20 +15,16 @@ import (
 	"github.com/squareup/spirit/pkg/table"
 )
 
-const (
-	TestHost     = "127.0.0.1:8030"
-	TestSchema   = "test"
-	TestUser     = "msandbox"
-	TestPassword = "msandbox"
-)
-
 func dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		panic("MYSQL_DSN is not set")
+	}
+	return dsn
 }
 
 func runSQL(t *testing.T, stmt string) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 	_, err = db.Exec(stmt)
@@ -52,7 +48,10 @@ func TestBasicChecksum(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 	assert.NoError(t, t1.Chunker.Open())
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, 4, feed, logger)
@@ -75,7 +74,10 @@ func TestBasicValidation(t *testing.T) {
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
 	_, err = NewChecker(db, nil, t2, 0, feed, logger)
@@ -109,7 +111,10 @@ func TestCorruptChecksum(t *testing.T) {
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, 4, feed, logger)
@@ -134,7 +139,10 @@ func TestBoundaryCases(t *testing.T) {
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	logger := logrus.New()
-	feed := repl.NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, 4, feed, logger)

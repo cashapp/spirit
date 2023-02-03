@@ -1,8 +1,6 @@
 #!/bin/bash
 set -xe
 
-echo "hello world";
-
 sudo apt install -y libncurses5
 
 go install github.com/datacharmer/dbdeployer@latest

@@ -2,8 +2,8 @@ package table
 
 import (
 	"database/sql"
-	"fmt"
 	"math"
+	"os"
 	"testing"
 	"time"
 
@@ -392,15 +392,12 @@ func TestDynamicChunking(t *testing.T) {
 
 // These tests require a DB connection.
 
-const (
-	TestHost     = "127.0.0.1:8030"
-	TestSchema   = "test"
-	TestUser     = "msandbox"
-	TestPassword = "msandbox"
-)
-
 func dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		panic("MYSQL_DSN is not set")
+	}
+	return dsn
 }
 
 func newTableInfo4Test(schema, table string) *TableInfo {
@@ -525,7 +522,7 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 		PRIMARY KEY (id),
 		UNIQUE KEY b_token (b_token),
 		KEY c_token (c_token)
-	  ) ENGINE=InnoDB AUTO_INCREMENT=3000001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`
+	  ) ENGINE=InnoDB AUTO_INCREMENT=3000001 DEFAULT CHARSET=utf8mb4`
 	runSQL(t, `drop table if exists balances`)
 	runSQL(t, table)
 
