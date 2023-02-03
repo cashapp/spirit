@@ -3,26 +3,23 @@ package repl
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"os"
 	"testing"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	_ "github.com/go-sql-driver/mysql"
+	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	TestHost     = "127.0.0.1:8030"
-	TestSchema   = "test"
-	TestUser     = "msandbox"
-	TestPassword = "msandbox"
-)
-
 func dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		panic("MYSQL_DSN is not set")
+	}
+	return dsn
 }
 
 func runSQL(t *testing.T, stmt string) {
@@ -47,7 +44,9 @@ func TestReplClient(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := logrus.New()
-	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, client.Run())
 
 	// Insert into t1.
@@ -85,7 +84,9 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := logrus.New()
-	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, client.Run())
 
 	// Insert into t1, but because there is no read yet, the key is above the watermark
@@ -143,7 +144,9 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := logrus.New()
-	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	client.SetPos(&mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
@@ -166,7 +169,9 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := logrus.New()
-	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
 	pos.Pos = 4
@@ -194,7 +199,9 @@ func TestReplClientOpts(t *testing.T) {
 	assert.NoError(t, t2.RunDiscovery(db))
 
 	logger := logrus.New()
-	client := NewClient(db, TestHost, t1, t2, TestUser, TestPassword, logger)
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, client.Run())
 
 	// Disable key above watermark.

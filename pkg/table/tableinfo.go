@@ -173,6 +173,7 @@ func (t *TableInfo) RunDiscovery(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	t.primaryKeyType = removeWidth(t.primaryKeyType)
 	t.primaryKeyIsAutoInc = (extra == "auto_increment")
 	return t.discoverMinMax(db)
 }

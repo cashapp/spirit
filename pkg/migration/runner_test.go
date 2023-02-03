@@ -3,11 +3,11 @@ package migration
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"math"
 	"testing"
 	"time"
 
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/copier"
@@ -25,12 +25,14 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		PRIMARY KEY (uuid)
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "nonbinarycompatt1",
 		Alter:       "ENGINE=InnoDB",
@@ -49,11 +51,13 @@ func TestVarbinary(t *testing.T) {
 	)`
 	runSQL(t, table)
 	runSQL(t, "INSERT INTO varbinaryt1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "varbinaryt1",
 		Alter:       "ENGINE=InnoDB",
@@ -74,11 +78,13 @@ func TestDataFromBadSqlMode(t *testing.T) {
 	)`
 	runSQL(t, table)
 	runSQL(t, "INSERT IGNORE INTO badsqlt1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "badsqlt1",
 		Alter:       "ENGINE=InnoDB",
@@ -98,11 +104,13 @@ func TestChangeDatatypeNoData(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "cdatatypemytable",
 		Alter:       "CHANGE b b INT", //nolint: dupword
@@ -123,11 +131,13 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 	)`
 	runSQL(t, table)
 	runSQL(t, "INSERT INTO cdatalossmytable (name, b) VALUES ('a', 'b')")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "cdatalossmytable",
 		Alter:       "CHANGE b b INT", //nolint: dupword
@@ -146,11 +156,13 @@ func TestOnline(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "testonline",
 		Alter:       "CHANGE COLUMN b b int(11) NOT NULL", //nolint: dupword
@@ -170,10 +182,10 @@ func TestOnline(t *testing.T) {
 	)`
 	runSQL(t, table)
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "testonline2",
 		Alter:       "ADD c int(11) NOT NULL",
@@ -182,7 +194,9 @@ func TestOnline(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInplaceDDL) // uses instant DDL first
-	assert.True(t, m.usedInstantDDL)
+
+	// TODO: can only check this against 8.0
+	// assert.True(t, m.usedInstantDDL)
 	assert.NoError(t, m.Close())
 
 	// Finally, this will work.
@@ -195,10 +209,10 @@ func TestOnline(t *testing.T) {
 	)`
 	runSQL(t, table)
 	m, err = NewMigrationRunner(&Migration{
-		Host:              TestHost,
-		Username:          TestUser,
-		Password:          TestPassword,
-		Database:          TestSchema,
+		Host:              cfg.Addr,
+		Username:          cfg.User,
+		Password:          cfg.Passwd,
+		Database:          cfg.DBName,
 		Concurrency:       16,
 		Table:             "testonline3",
 		Alter:             "ADD INDEX(b)",
@@ -221,11 +235,13 @@ func TestTableLength(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "thisisareallylongtablenamethisisareallylongtablename60charac",
 		Alter:       "ENGINE=InnoDB",
@@ -239,10 +255,10 @@ func TestTableLength(t *testing.T) {
 	// There is another condition where the error will be in dropping the _old table first
 	// if the character limit is exceeded in that query.
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "thisisareallylongtablenamethisisareallylongtablename64characters",
 		Alter:       "ENGINE=InnoDB",
@@ -267,20 +283,22 @@ func TestBadOptions(t *testing.T) {
 	_, err := NewMigrationRunner(&Migration{})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "host is required")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 
 	_, err = NewMigrationRunner(&Migration{
-		Host: TestHost,
+		Host: cfg.Addr,
 	})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "schema name is required")
 	_, err = NewMigrationRunner(&Migration{
-		Host:     TestHost,
+		Host:     cfg.Addr,
 		Database: "mytable",
 	})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "table name is required")
 	_, err = NewMigrationRunner(&Migration{
-		Host:     TestHost,
+		Host:     cfg.Addr,
 		Database: "mytable",
 		Table:    "mytable",
 	})
@@ -296,11 +314,13 @@ func TestBadAlter(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "bot1",
 		Alter:       "badalter",
@@ -313,10 +333,10 @@ func TestBadAlter(t *testing.T) {
 
 	// Renames are not supported.
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "bot1",
 		Alter:       "RENAME COLUMN name TO name2, ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
@@ -330,10 +350,10 @@ func TestBadAlter(t *testing.T) {
 	// This is a different type of rename,
 	// which is coming via a change
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "bot1",
 		Alter:       "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
@@ -346,10 +366,10 @@ func TestBadAlter(t *testing.T) {
 
 	// But this is supported (no rename)
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "bot1",
 		Alter:       "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
@@ -384,11 +404,13 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	runSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (1, 'a', REPEAT('a', 200))")          // will pass in migration
 	runSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))") // will fail in migration
 
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:                  TestHost,
-		Username:              TestUser,
-		Password:              TestPassword,
-		Database:              TestSchema,
+		Host:                  cfg.Addr,
+		Username:              cfg.User,
+		Password:              cfg.Passwd,
+		Database:              cfg.DBName,
 		Concurrency:           16,
 		Table:                 "lossychange2",
 		Alter:                 "CHANGE COLUMN id id INT NOT NULL auto_increment", //nolint: dupword
@@ -420,11 +442,13 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	runSQL(t, "INSERT INTO lossychange3 (name, b) VALUES ('a', REPEAT('a', 200))")
 	runSQL(t, "INSERT INTO lossychange3 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
 
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "lossychange3",
 		Alter:       "CHANGE COLUMN b b varchar(200) NOT NULL", //nolint: dupword
@@ -455,11 +479,13 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 	runSQL(t, "INSERT INTO lossychange4 (name) VALUES ('a')")
 	runSQL(t, "INSERT INTO lossychange4 (name, b) VALUES ('a', REPEAT('a', 200))")
 	runSQL(t, "INSERT INTO lossychange4 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "lossychange4",
 		Alter:       "CHANGE COLUMN b b varchar(255) NOT NULL", //nolint: dupword
@@ -489,11 +515,13 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('c', 200))")
 	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))") // duplicate
 
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "uniqmytable",
 		Alter:       "ADD UNIQUE INDEX b (b)",
@@ -505,10 +533,10 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 
 	runSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "uniqmytable",
 		Alter:       "ADD UNIQUE INDEX b (b)",
@@ -531,11 +559,13 @@ func TestChangeNonIntPK(t *testing.T) {
 		)`
 	runSQL(t, table)
 	runSQL(t, "INSERT INTO nonintpk (pk, name, b) VALUES (UUID(), 'a', REPEAT('a', 5))")
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "nonintpk",
 		Alter:       "CHANGE COLUMN b b VARCHAR(255) NOT NULL", //nolint: dupword
@@ -556,11 +586,13 @@ func TestETA(t *testing.T) {
 	)`
 	runSQL(t, table)
 
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 	m, err := NewMigrationRunner(&Migration{
-		Host:              TestHost,
-		Username:          TestUser,
-		Password:          TestPassword,
-		Database:          TestSchema,
+		Host:              cfg.Addr,
+		Username:          cfg.User,
+		Password:          cfg.Passwd,
+		Database:          cfg.DBName,
 		Concurrency:       16,
 		Table:             "t1",
 		Alter:             "ADD INDEX(b)",
@@ -592,6 +624,9 @@ func TestCheckpoint(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`,
 	}
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
 	for _, tbl := range tables {
 		runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_shadow, _cpt1_cp`)
 		runSQL(t, tbl)
@@ -603,10 +638,10 @@ func TestCheckpoint(t *testing.T) {
 
 		preSetup := func() *MigrationRunner {
 			m, err := NewMigrationRunner(&Migration{
-				Host:        TestHost,
-				Username:    TestUser,
-				Password:    TestPassword,
-				Database:    TestSchema,
+				Host:        cfg.Addr,
+				Username:    cfg.User,
+				Password:    cfg.Passwd,
+				Database:    cfg.DBName,
 				Concurrency: 16,
 				Table:       "cpt1",
 				Alter:       "ENGINE=InnoDB",
@@ -746,13 +781,15 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 LIMIT 100000`) // ~100k rows
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 
 	preSetup := func(alter string) *MigrationRunner {
 		m, err := NewMigrationRunner(&Migration{
-			Host:        TestHost,
-			Username:    TestUser,
-			Password:    TestPassword,
-			Database:    TestSchema,
+			Host:        cfg.Addr,
+			Username:    cfg.User,
+			Password:    cfg.Passwd,
+			Database:    cfg.DBName,
 			Concurrency: 16,
 			Table:       "cpt1difft1",
 			Alter:       alter,
@@ -788,7 +825,6 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.table.Chunker.Open())
 	logger := logrus.New()
 	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-	var err error
 	m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 	assert.NoError(t, err)
 	err = m.feed.Run()
@@ -859,6 +895,8 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		pad int NOT NULL  default 0,
 		PRIMARY KEY (id1, id2))`,
 	}
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 
 	for _, tbl := range tables {
 		runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_shadow`)
@@ -868,10 +906,10 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
 
 		m, err := NewMigrationRunner(&Migration{
-			Host:                  TestHost,
-			Username:              TestUser,
-			Password:              TestPassword,
-			Database:              TestSchema,
+			Host:                  cfg.Addr,
+			Username:              cfg.User,
+			Password:              cfg.Passwd,
+			Database:              cfg.DBName,
 			Concurrency:           16,
 			Table:                 "e2et1",
 			Alter:                 "ENGINE=InnoDB",
@@ -986,12 +1024,14 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 		name varchar(255) NOT NULL
 	)`
 	runSQL(t, table)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
 
 	m, err := NewMigrationRunner(&Migration{
-		Host:        TestHost,
-		Username:    TestUser,
-		Password:    TestPassword,
-		Database:    TestSchema,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
 		Concurrency: 16,
 		Table:       "remainingtbl",
 		Alter:       "ENGINE=InnoDB",
@@ -1002,8 +1042,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
 	// but no _remainingtbl_shadow table or _remainingtbl_cp table.
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`

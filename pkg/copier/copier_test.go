@@ -3,7 +3,7 @@ package copier
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -15,20 +15,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const (
-	TestHost     = "127.0.0.1:8030"
-	TestSchema   = "test"
-	TestUser     = "msandbox"
-	TestPassword = "msandbox"
-)
-
 func dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
+	dsn := os.Getenv("MYSQL_DSN")
+	if dsn == "" {
+		panic("MYSQL_DSN is not set")
+	}
+	return dsn
 }
 
 func runSQL(t *testing.T, stmt string) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s", TestUser, TestPassword, TestHost, TestSchema)
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 	_, err = db.Exec(stmt)
