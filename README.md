@@ -1,6 +1,6 @@
 # What is this?
 
-This is a clone of gh-ost (gh-ost -> spirit) that I hacked up quickly. Originally it didn't do very much, but it's actually **now feature complete**. It just needs more tests, and verification that the final cut-over algorithm is correct.
+This is a clone of gh-ost (gh-ost -> spirit) that I hacked up quickly. Originally it didn't do very much, but it's actually **now feature complete**.
 
 ## How is this different from gh-ost?
 
