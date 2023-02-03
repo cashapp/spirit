@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
@@ -1047,7 +1046,6 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	defer db.Close()
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
 	var tables string
-	db.QueryRow(stmt).Scan(&tables)
+	assert.NoError(t, db.QueryRow(stmt).Scan(&tables))
 	assert.Equal(t, "_remainingtbl_old,remainingtbl", tables)
-
 }

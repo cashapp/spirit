@@ -109,7 +109,6 @@ type MigrationRunner struct {
 }
 
 func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
-
 	m := &MigrationRunner{
 		host:                     migration.Host,
 		username:                 migration.Username,
