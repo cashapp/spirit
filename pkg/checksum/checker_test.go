@@ -18,7 +18,7 @@ import (
 func dsn() string {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
-		panic("MYSQL_DSN is not set")
+		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
 	}
 	return dsn
 }

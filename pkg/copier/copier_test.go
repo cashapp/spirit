@@ -18,7 +18,8 @@ import (
 func dsn() string {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
-		panic("MYSQL_DSN is not set")
+		// DSN is not set, use the default.
+		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
 	}
 	return dsn
 }
@@ -250,14 +251,14 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	t2 := table.NewTableInfo("test", "lock2t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
-	// Lock again but for 10 seconds.
+	// Lock again but for 12 seconds.
 	// This will cause a failure.
 	go func() {
 		tx, err := db.Begin()
 		assert.NoError(t, err)
 		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
-		time.Sleep(10 * time.Second)
+		time.Sleep(12 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
 	}()
