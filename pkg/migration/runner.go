@@ -657,7 +657,7 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 		return err // it might not be ready, we can try again.
 	}
 	copyRows := atomic.LoadInt64(&m.copier.CopyRowsCount)
-	m.logger.Infof("checkpoint: low-watermark: %d log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
+	m.logger.Infof("checkpoint: low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
 	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
 	_, err = m.db.Exec(query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
