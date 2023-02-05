@@ -31,9 +31,6 @@ func (h *MyEventHandler) OnRow(e *canal.RowsEvent) error {
 			continue // key can be ignored
 		}
 		switch e.Action {
-		// TODO: check if the modification to the table was a DDL
-		// If there were any other DDLs, we need to abandon this.
-		// It's not safe to continue.
 		case canal.InsertAction, canal.UpdateAction:
 			h.client.keyHasChanged(key, false)
 		case canal.DeleteAction:
