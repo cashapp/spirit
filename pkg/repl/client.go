@@ -279,7 +279,7 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string)
 		)
 	}
 	if len(*replaceKeys) > 0 {
-		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE (%s) IN (%s)",
+		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
 			c.shadowTable.QuotedName(),
 			utils.IntersectColumns(c.table, c.shadowTable, false),
 			utils.IntersectColumns(c.table, c.shadowTable, false),

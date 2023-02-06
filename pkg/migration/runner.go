@@ -217,6 +217,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	m.setCurrentState(migrationStateApplyChangeset)
 	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
 	if err := m.feed.FlushUntilTrivial(ctx); err != nil {
+		m.periodicFlushLock.Unlock() // need to yield before returning.
 		return err
 	}
 	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
