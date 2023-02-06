@@ -27,8 +27,9 @@ func (m *Migration) Run() error {
 	if err != nil {
 		return err
 	}
+	defer migration.Close()
 	if err := migration.Run(context.TODO()); err != nil {
 		return err
 	}
-	return migration.Close() // clean up
+	return nil
 }
