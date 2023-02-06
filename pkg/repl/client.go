@@ -132,7 +132,7 @@ func (c *Client) Run() (err error) {
 	cfg.Password = c.password
 	cfg.Logger = c.logger
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
-
+	cfg.Dump.ExecutionPath = "" // skip dump
 	c.canal, err = canal.NewCanal(cfg)
 	if err != nil {
 		return err
