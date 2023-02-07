@@ -133,7 +133,7 @@ func (c *Checker) Run(ctx context.Context) error {
 
 	g := new(errgroup.Group)
 	g.SetLimit(c.concurrency)
-	for i := 0; !c.table.Chunker.IsRead() && c.isHealthy(); i++ {
+	for !c.table.Chunker.IsRead() && c.isHealthy() {
 		g.Go(func() error {
 			chunk, err := c.table.Chunker.Next()
 			if err != nil {

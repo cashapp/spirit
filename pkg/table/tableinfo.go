@@ -128,7 +128,7 @@ func (t *TableInfo) AttachChunker(chunkerTargetMs int64, disableTrivialChunker b
 func (t *TableInfo) RunDiscovery(db *sql.DB) error {
 	// Discover row estimate
 	if err := t.discoverRowEstimate(db); err != nil {
-		return fmt.Errorf("err: are you sure table %s exists?", t.QuotedName())
+		return err
 	}
 	// Discover columns
 	rows, err := db.Query("SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
@@ -187,7 +187,7 @@ func (t *TableInfo) discoverRowEstimate(db *sql.DB) error {
 	}
 	err = db.QueryRow("SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
 	if err != nil {
-		return fmt.Errorf("err: are you sure table %s exists?", t.QuotedName())
+		return err
 	}
 	return nil
 }
