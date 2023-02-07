@@ -34,9 +34,10 @@ func TestReplClient(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replt1, replt2")
+	runSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_cp")
 	runSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _replt1_cp (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo("test", "replt1")
 	assert.NoError(t, t1.RunDiscovery(db))
@@ -68,9 +69,11 @@ func TestReplClientComplex(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2")
+	runSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_cp")
 	runSQL(t, "CREATE TABLE replcomplext1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replcomplext2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _replcomplext1_cp (a int)") // just used to advance binlog
+
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
@@ -134,9 +137,10 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2")
+	runSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_cp")
 	runSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replresumet2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _replresumet1_cp (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo("test", "replresumet1")
 	assert.NoError(t, t1.RunDiscovery(db))
@@ -183,9 +187,11 @@ func TestReplClientOpts(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2")
+	runSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_cp")
 	runSQL(t, "CREATE TABLE replclientoptst1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replclientoptst2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _replclientoptst1_cp (a int)") // just used to advance binlog
+
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")

@@ -322,12 +322,35 @@ func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 	return nil
 }
 
+// BlockWait blocks until the canal has caught up to the current binlog position.
 func (c *Client) BlockWait() error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {
 		return err
 	}
-	return c.canal.WaitUntilPos(targetPos, 24*14*time.Hour)
+	for {
+		if err := c.injectBinlogNoise(); err != nil {
+			return err
+		}
+		canalPos := c.canal.SyncedPosition()
+		if canalPos.Compare(targetPos) >= 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
+// injectBinlogNoise is used to inject some noise into the binlog stream
+// This helps ensure that we are "past" a binary log position if there is some off-by-one
+// problem where the most recent canal event is not yet updating the canal SyncedPosition,
+// and there are no current changes on the MySQL server to advance itself.
+// Note: We can not update the table or the shadowTable, because this intentionally
+// causes a panic (c.tableChanged() is called).
+func (c *Client) injectBinlogNoise() error {
+	stmt := fmt.Sprintf("ALTER TABLE _%s_cp AUTO_INCREMENT=0", c.table.TableName)
+	_, err := c.db.Exec(stmt)
+	return err
 }
 
 func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
