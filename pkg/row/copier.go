@@ -1,7 +1,7 @@
-// Package copier copies rows from one table to another.
+// Package row copies rows from one table to another.
 // it makes use of tableinfo.Chunker, and does the parallelism
 // and retries here. It fails on the first error.
-package copier
+package row
 
 import (
 	"context"

@@ -16,8 +16,8 @@ import (
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/checksum"
-	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
+	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
 )
@@ -80,7 +80,7 @@ type MigrationRunner struct {
 
 	currentState migrationState // must use atomic to get/set
 	feed         *repl.Client   // feed contains all binlog subscription activity.
-	copier       *copier.Copier
+	copier       *row.Copier
 
 	// Track some key statistics.
 	startTime time.Time
@@ -115,7 +115,6 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 		password:                 migration.Password,
 		schemaName:               migration.Database,
 		tableName:                migration.Table,
-		startTime:                time.Now(),
 		alterStatement:           migration.Alter,
 		optConcurrency:           migration.Concurrency,
 		optChecksumConcurrency:   migration.ChecksumConcurrency,
@@ -159,6 +158,7 @@ func (m *MigrationRunner) SetLogger(logger loggers.Advanced) {
 }
 
 func (m *MigrationRunner) Run(ctx context.Context) error {
+	m.startTime = time.Now()
 	m.logger.Infof("Starting spirit migration")
 
 	// Create a database connection
@@ -166,6 +166,9 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	var err error
 	m.db, err = sql.Open("mysql", m.dsn())
 	if err != nil {
+		return err
+	}
+	if err := m.db.Ping(); err != nil {
 		return err
 	}
 
@@ -312,7 +315,7 @@ func (m *MigrationRunner) setup() error {
 			return err
 		}
 		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
-		m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
+		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
 		if err != nil {
 			return err
 		}
@@ -585,7 +588,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
 	// have the checksum enabled to apply all changes safely.
 	m.optChecksum = true
-	m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
+	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
 	if err != nil {
 		return err
 	}

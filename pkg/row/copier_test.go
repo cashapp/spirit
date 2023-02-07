@@ -1,4 +1,4 @@
-package copier
+package row
 
 import (
 	"context"

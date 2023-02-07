@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
-	"github.com/squareup/spirit/pkg/copier"
 	"github.com/squareup/spirit/pkg/repl"
+	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
 
 	"github.com/stretchr/testify/assert"
@@ -599,7 +599,7 @@ func TestETA(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	logger := logrus.New()
-	m.copier, err = copier.NewCopier(nil, nil, nil, 4, true, logger)
+	m.copier, err = row.NewCopier(nil, nil, nil, 4, true, logger)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "Due", m.getETAFromRowsPerSecond(true))
@@ -677,7 +677,7 @@ func TestCheckpoint(t *testing.T) {
 		logger := logrus.New()
 		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		var err error
-		m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 		assert.NoError(t, err)
 		err = m.feed.Run()
 		assert.NoError(t, err)
@@ -824,7 +824,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.table.Chunker.Open())
 	logger := logrus.New()
 	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-	m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 	assert.NoError(t, err)
 	err = m.feed.Run()
 	assert.NoError(t, err)
@@ -940,7 +940,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.table.Chunker.Open())
 		logger := logrus.New()
 		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-		m.copier, err = copier.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 		assert.NoError(t, err)
 		err = m.feed.Run()
 		assert.NoError(t, err)
