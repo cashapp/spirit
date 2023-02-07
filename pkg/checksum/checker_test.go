@@ -32,9 +32,10 @@ func runSQL(t *testing.T, stmt string) {
 }
 
 func TestBasicChecksum(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
+	runSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_cp")
 	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _t1_cp (a INT)") // for binlog advancement
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 
@@ -60,9 +61,10 @@ func TestBasicChecksum(t *testing.T) {
 }
 
 func TestBasicValidation(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
+	runSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_cp")
 	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _t1_cp (a INT)") // for binlog advancement
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 
@@ -94,9 +96,10 @@ func TestBasicValidation(t *testing.T) {
 }
 
 func TestCorruptChecksum(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS t1, t2")
+	runSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_cp")
 	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _t1_cp (a INT)") // for binlog advancement
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (2, 2, 3)") // corrupt
