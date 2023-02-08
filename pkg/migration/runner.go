@@ -79,7 +79,7 @@ type MigrationRunner struct {
 	checkpointTable *table.TableInfo
 
 	currentState migrationState // must use atomic to get/set
-	feed         *repl.Client   // feed contains all binlog subscription activity.
+	replClient   *repl.Client   // feed contains all binlog subscription activity.
 	copier       *row.Copier
 
 	// Track some key statistics.
@@ -219,7 +219,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	// to catch up on the binary log as much as possible before proceeding.
 	m.setCurrentState(migrationStateApplyChangeset)
 	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
-	if err := m.feed.FlushUntilTrivial(ctx); err != nil {
+	if err := m.replClient.FlushUntilTrivial(ctx); err != nil {
 		m.periodicFlushLock.Unlock() // need to yield before returning.
 		return err
 	}
@@ -237,7 +237,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	// The checksum passes! It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	m.setCurrentState(migrationStateCutOver)
-	cutover, err := NewCutOver(m.db, m.table, m.shadowTable, m.feed, m.logger)
+	cutover, err := NewCutOver(m.db, m.table, m.shadowTable, m.replClient, m.logger)
 	if err != nil {
 		return err
 	}
@@ -314,13 +314,13 @@ func (m *MigrationRunner) setup() error {
 		if err := m.table.Chunker.Open(); err != nil {
 			return err
 		}
-		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
 		if err != nil {
 			return err
 		}
 		// Start the binary log feed now
-		if err := m.feed.Run(); err != nil {
+		if err := m.replClient.Run(); err != nil {
 			return err
 		}
 	}
@@ -343,7 +343,7 @@ func (m *MigrationRunner) setup() error {
 
 	// Make sure the definition of the table never changes.
 	// If it does, we could be in trouble.
-	m.feed.TableChangeNotificationCallback = m.tableChangeNotification
+	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
 
 	return nil
 }
@@ -501,8 +501,8 @@ func (m *MigrationRunner) Close() error {
 	if err != nil {
 		return err
 	}
-	if m.feed != nil {
-		m.feed.Close()
+	if m.replClient != nil {
+		m.replClient.Close()
 	}
 	return m.db.Close()
 }
@@ -568,9 +568,9 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
 
-	m.feed.SetPos(&mysql.Position{
+	m.replClient.SetPos(&mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),
 	})
@@ -592,11 +592,11 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	if err != nil {
 		return err
 	}
-	// Start the feed now. This is because if the checkpoint is so old there
+	// Start the replClient now. This is because if the checkpoint is so old there
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
 	// and still be able to start from scratch.
 	// Start the binary log feed just before copy rows starts.
-	if err := m.feed.Run(); err != nil {
+	if err := m.replClient.Run(); err != nil {
 		m.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
@@ -628,7 +628,7 @@ func (m *MigrationRunner) checksum(ctx context.Context) error {
 	if err := table4checker.Chunker.Open(); err != nil {
 		return err
 	}
-	checker, err := checksum.NewChecker(m.db, table4checker, m.shadowTable, m.optChecksumConcurrency, m.feed, m.logger)
+	checker, err := checksum.NewChecker(m.db, table4checker, m.shadowTable, m.optChecksumConcurrency, m.replClient, m.logger)
 	if err != nil {
 		return err
 	}
@@ -645,8 +645,8 @@ func (m *MigrationRunner) getCurrentState() migrationState {
 
 func (m *MigrationRunner) setCurrentState(s migrationState) {
 	atomic.StoreInt32((*int32)(&m.currentState), int32(s))
-	if s > migrationStateCopyRows && m.feed != nil {
-		m.feed.SetKeyAboveWatermarkOptimization(false)
+	if s > migrationStateCopyRows && m.replClient != nil {
+		m.replClient.SetKeyAboveWatermarkOptimization(false)
 	}
 }
 
@@ -654,7 +654,7 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 	// Retrieve the binlog position first and under a mutex.
 	// Currently it never advances but it's possible it might in future
 	// and this race condition is missed.
-	binlog := m.feed.GetBinlogApplyPosition()
+	binlog := m.replClient.GetBinlogApplyPosition()
 	lowWatermark, err := m.table.Chunker.GetLowWatermark()
 	if err != nil {
 		return err // it might not be ready, we can try again.
@@ -703,7 +703,7 @@ func (m *MigrationRunner) periodicFlush(ctx context.Context) {
 		// by design (chunked into 10K rows). Since we want to advance the binlog position
 		// we allow this to run, and then expect that if it is under load the throttler
 		// will kick in and slow down the copy-rows.
-		if err := m.feed.Flush(ctx); err != nil {
+		if err := m.replClient.Flush(ctx); err != nil {
 			m.logger.Errorf("error flushing binary log: %v", err)
 		}
 		m.periodicFlushLock.Unlock()
@@ -737,7 +737,7 @@ func (m *MigrationRunner) dumpStatus() {
 		m.logger.Infof("migration status: state=%s, copy-progress=%s, binlog-deltas=%v, time-total=%v, eta=%v, copier-is-throttled=%v",
 			m.getCurrentState().String(),
 			fmt.Sprintf("%.2f%%", pct),
-			m.feed.GetDeltaLen(),
+			m.replClient.GetDeltaLen(),
 			time.Since(m.startTime).String(),
 			m.getETAFromRowsPerSecond(pct > 99.9),
 			m.copier.Throttler.IsThrottled(),

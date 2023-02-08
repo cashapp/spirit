@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/utils"
@@ -24,6 +25,7 @@ const (
 )
 
 type Client struct {
+	canal.DummyEventHandler
 	sync.Mutex
 	host     string
 	username string
@@ -66,19 +68,63 @@ func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, use
 	}
 }
 
+// OnRow is called when a row is discovered via replication.
+// The event is of type e.Action and contains one
+// or more rows in e.Rows. We find the PRIMARY KEY of the row:
+// 1) If it exceeds the known high watermark of the chunker we throw it away.
+// (we've not copied that data yet - it will be already up to date when we copy it later).
+// 2) If it could have been copied already, we add it to the changeset.
+// We only need to add the PK + if the operation was a delete.
+// This will be used after copy rows to apply any changes that have been made.
+func (c *Client) OnRow(e *canal.RowsEvent) error {
+	for _, row := range e.Rows {
+		key := c.table.ExtractPrimaryKeyFromRowImage(row)
+		atomic.AddInt64(&c.changesetRowsEventCount, 1)
+		// Important! We can only apply this optimization while in migrationStateCopyRows.
+		// If we do it too early, we might miss updates in-between starting the subscription,
+		// and opening the table in resume from checkpoint etc.
+		if c.table.Chunker != nil && !c.disableKeyAboveWatermarkOptimization && c.table.Chunker.KeyAboveHighWatermark(key[0]) {
+			continue // key can be ignored
+		}
+		switch e.Action {
+		case canal.InsertAction, canal.UpdateAction:
+			c.keyHasChanged(key, false)
+		case canal.DeleteAction:
+			c.keyHasChanged(key, true)
+		default:
+			c.logger.Errorf("unknown action: %v", e.Action)
+		}
+	}
+	c.updatePosInMemory(e.Header.LogPos)
+	return nil
+}
+
+// OnRotate is called when a rotate event is discovered via replication.
+// We use this to capture the log file name, since only the position is caught on the row event.
+func (c *Client) OnRotate(header *replication.EventHeader, rotateEvent *replication.RotateEvent) error {
+	c.Lock()
+	defer c.Unlock()
+	c.lastLogFileName = string(rotateEvent.NextLogName)
+	return nil
+}
+
+// OnTableChanged is called when a table is changed via DDL.
+// This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
+func (c *Client) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
+	if (c.table.SchemaName == schema && c.table.TableName == table) ||
+		(c.shadowTable.SchemaName == schema && c.shadowTable.TableName == table) {
+		if c.TableChangeNotificationCallback != nil {
+			c.TableChangeNotificationCallback()
+		}
+	}
+	return nil
+}
+
 func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
 	c.Lock()
 	defer c.Unlock()
 
 	c.disableKeyAboveWatermarkOptimization = !newVal
-}
-
-// We don't return an error because this is in async code,
-// It's not safe to know it will be caught correctly.
-func (c *Client) tableChanged() {
-	if c.TableChangeNotificationCallback != nil {
-		c.TableChangeNotificationCallback()
-	}
 }
 
 // SetPos is used for resuming from a checkpoint.
@@ -140,9 +186,7 @@ func (c *Client) Run() (err error) {
 
 	// The handle RowsEvent just writes to the migrators changeset buffer.
 	// Which blocks when it needs to be emptied.
-	c.canal.SetEventHandler(&MyEventHandler{
-		client: c,
-	})
+	c.canal.SetEventHandler(c)
 	// All we need to do synchronously is get a position before
 	// the table migration starts. Then we can start copying data.
 	if c.binlogPosSynced == nil {

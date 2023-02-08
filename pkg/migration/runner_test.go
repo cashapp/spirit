@@ -675,11 +675,11 @@ func TestCheckpoint(t *testing.T) {
 		assert.NoError(t, m.createCheckpointTable())
 		assert.NoError(t, m.table.Chunker.Open())
 		logger := logrus.New()
-		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		var err error
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 		assert.NoError(t, err)
-		err = m.feed.Run()
+		err = m.replClient.Run()
 		assert.NoError(t, err)
 
 		// Now we are ready to start copying rows.
@@ -730,7 +730,7 @@ func TestCheckpoint(t *testing.T) {
 		assert.NoError(t, m.resumeFromCheckpoint())
 
 		// Start the binary log feed just before copy rows starts.
-		err = m.feed.Run()
+		err = m.replClient.Run()
 		assert.NoError(t, err)
 
 		// This opens the table at the checkpoint (table.OpenAtWatermark())
@@ -823,10 +823,10 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable())
 	assert.NoError(t, m.table.Chunker.Open())
 	logger := logrus.New()
-	m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 	assert.NoError(t, err)
-	err = m.feed.Run()
+	err = m.replClient.Run()
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -939,10 +939,10 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.createCheckpointTable())
 		assert.NoError(t, m.table.Chunker.Open())
 		logger := logrus.New()
-		m.feed = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
 		assert.NoError(t, err)
-		err = m.feed.Run()
+		err = m.replClient.Run()
 		assert.NoError(t, err)
 
 		// Now we are ready to start copying rows.
@@ -971,7 +971,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// Give it a chance, since we need to read from the binary log to populate this
 		// Even though we expect nothing.
 		sleep() // plenty
-		assert.Equal(t, 0, m.feed.GetDeltaLen())
+		assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
 		// second chunk.
 		chunk, err = m.table.Chunker.Next()
@@ -983,12 +983,12 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
 		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(5))
 		sleep() // wait for binlog
-		assert.Equal(t, 1, m.feed.GetDeltaLen())
+		assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 		runSQL(t, `delete from e2et1 where id1 = 1`)
 		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(1))
 		sleep() // wait for binlog
-		assert.Equal(t, 2, m.feed.GetDeltaLen())
+		assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 		// third (and last) chunk.
 		chunk, err = m.table.Chunker.Next()
@@ -1004,7 +1004,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 
 		// Now that copy rows is done, we flush the changeset until trivial.
 		// and perform the optional checksum.
-		assert.NoError(t, m.feed.FlushUntilTrivial(context.TODO()))
+		assert.NoError(t, m.replClient.FlushUntilTrivial(context.TODO()))
 		m.setCurrentState(migrationStateApplyChangeset)
 		assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 		m.setCurrentState(migrationStateChecksum)
