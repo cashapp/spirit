@@ -17,6 +17,7 @@ import (
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/checksum"
+	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
@@ -29,6 +30,7 @@ const (
 	migrationStateInitial migrationState = iota
 	migrationStateCopyRows
 	migrationStateApplyChangeset
+	migrationStateAnalyzeTable
 	migrationStateChecksum
 	migrationStateCutOver
 	migrationStateClose
@@ -54,6 +56,8 @@ func (s migrationState) String() string {
 		return "copyRows"
 	case migrationStateApplyChangeset:
 		return "applyChangeset"
+	case migrationStateAnalyzeTable:
+		return "analyzeTable"
 	case migrationStateChecksum:
 		return "checksum"
 	case migrationStateCutOver:
@@ -215,27 +219,16 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	if err := m.copier.Run(ctx); err != nil {
 		return err
 	}
-	// This step is technically optional, but skipping it might cause the next steps
-	// to block for more time. Once the copy-rows task is complete, we try
-	// to catch up on the binary log as much as possible before proceeding.
-	m.setCurrentState(migrationStateApplyChangeset)
-	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
-	if err := m.replClient.FlushUntilTrivial(ctx); err != nil {
-		m.periodicFlushLock.Unlock() // need to yield before returning.
+
+	// Perform steps to prepare for final cutover.
+	// This includes computing an optional checksum,
+	// catching up on replClient apply, running ANALYZE TABLE so
+	// that the statistics will be up to date on cutover.
+	if err := m.prepareForCutover(ctx); err != nil {
 		return err
 	}
-	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
 
-	// The checksum is optional, but it is ONLINE after an initial lock
-	// for consistency. It is the main way that we determine that
-	// this program is safe to use even when immature.
-	if m.optChecksum {
-		m.setCurrentState(migrationStateChecksum)
-		if err := m.checksum(ctx); err != nil {
-			return err
-		}
-	}
-	// The checksum passes! It's time for the final cut-over, where
+	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	m.setCurrentState(migrationStateCutOver)
 	cutover, err := NewCutOver(m.db, m.table, m.shadowTable, m.replClient, m.logger)
@@ -256,6 +249,46 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 		m.copier.CopyChunksCount,
 		time.Since(m.startTime).String(),
 	)
+	return nil
+}
+
+// prepareForCutover performs steps to prepare for the final cutover.
+// most of these steps are technically optional, but skipping them
+// could for example cause a stall during the cutover if the replClient
+// has too many pending updates.
+func (m *MigrationRunner) prepareForCutover(ctx context.Context) error {
+	// Recursively apply all pending events (FlushUntilTrivial)
+	m.setCurrentState(migrationStateApplyChangeset)
+	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
+	if err := m.replClient.FlushUntilTrivial(ctx); err != nil {
+		m.periodicFlushLock.Unlock() // need to yield before returning.
+		return err
+	}
+	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
+
+	// Run ANALYZE TABLE to update the statistics on the shadow table.
+	// This is required so on cutover plans don't go sideways, which
+	// is at elevated risk because the batch loading can cause statistics
+	// to be out of date.
+	m.setCurrentState(migrationStateAnalyzeTable)
+	stmt := fmt.Sprintf("ANALYZE TABLE %s", m.shadowTable.QuotedName())
+	m.logger.Infof("Running: %s", stmt)
+	if err := dbconn.DBExec(ctx, m.db, stmt); err != nil {
+		return err
+	}
+
+	// The checksum is (usually) optional, but it is ONLINE after an initial lock
+	// for consistency. It is the main way that we determine that
+	// this program is safe to use even when immature. In the event that it is
+	// a resume-from-checkpoint operation, the checksum is NOT optional.
+	// This is because adding a unique index can not be differentiated from a
+	// duplicate key error caused by retrying partial work.
+	if m.optChecksum {
+		m.setCurrentState(migrationStateChecksum)
+		if err := m.checksum(ctx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
