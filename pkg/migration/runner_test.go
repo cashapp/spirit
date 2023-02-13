@@ -618,153 +618,149 @@ func TestETA(t *testing.T) {
 }
 
 func TestCheckpoint(t *testing.T) {
-	tables := []string{`CREATE TABLE cpt1 (
+	tbl := `CREATE TABLE cpt1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
-		pad VARCHAR(100) NOT NULL default 0)`,
-	}
+		pad VARCHAR(100) NOT NULL default 0)`
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS cpt1, _chkpntt1_shadow, _chkpntt1_chkpnt`)
-		runSQL(t, tbl)
-		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
-		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
-		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
-		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
-		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
+	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_shadow, _cpt1_chkpnt`)
+	runSQL(t, tbl)
+	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
+	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
-		preSetup := func() *MigrationRunner {
-			m, err := NewMigrationRunner(&Migration{
-				Host:        cfg.Addr,
-				Username:    cfg.User,
-				Password:    cfg.Passwd,
-				Database:    cfg.DBName,
-				Concurrency: 16,
-				Table:       "cpt1",
-				Alter:       "ENGINE=InnoDB",
-			})
-			assert.NoError(t, err)
-			assert.Equal(t, "initial", m.getCurrentState().String())
-			// Usually we would call m.Run() but we want to step through
-			// the migration process manually.
-			m.db, err = sql.Open("mysql", m.dsn())
-			assert.NoError(t, err)
-			// Get Table Info
-			m.table = table.NewTableInfo(m.schemaName, m.tableName)
-			err = m.table.RunDiscovery(m.db)
-			assert.NoError(t, err)
-			// Attach the correct chunker.
-			err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
-			assert.NoError(t, err)
-			assert.NoError(t, m.dropOldTable())
-			return m
-		}
-
-		m := preSetup()
-		// migrationRunner.Run usually calls m.Setup() here.
-		// Which first checks if the table can be restored from checkpoint.
-		// Because this is the first run, it can't.
-
-		assert.Error(t, m.resumeFromCheckpoint())
-
-		// So we proceed with the initial steps.
-		assert.NoError(t, m.createShadowTable())
-		assert.NoError(t, m.alterShadowTable())
-		assert.NoError(t, m.createCheckpointTable())
-		assert.NoError(t, m.table.Chunker.Open())
-		logger := logrus.New()
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-		var err error
-		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	preSetup := func() *MigrationRunner {
+		m, err := NewMigrationRunner(&Migration{
+			Host:        cfg.Addr,
+			Username:    cfg.User,
+			Password:    cfg.Passwd,
+			Database:    cfg.DBName,
+			Concurrency: 16,
+			Table:       "cpt1",
+			Alter:       "ENGINE=InnoDB",
+		})
 		assert.NoError(t, err)
-		err = m.replClient.Run()
+		assert.Equal(t, "initial", m.getCurrentState().String())
+		// Usually we would call m.Run() but we want to step through
+		// the migration process manually.
+		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
-
-		// Now we are ready to start copying rows.
-		// Instead of calling m.copyRows() we will step through it manually.
-		// Since we want to checkpoint after a few chunks.
-
-		m.copier.CopyRowsStartTime = time.Now()
-		m.setCurrentState(migrationStateCopyRows)
-		assert.Equal(t, "copyRows", m.getCurrentState().String())
-
-		// first chunk.
-		chunk1, err := m.table.Chunker.Next()
+		// Get Table Info
+		m.table = table.NewTableInfo(m.schemaName, m.tableName)
+		err = m.table.RunDiscovery(m.db)
 		assert.NoError(t, err)
-
-		chunk2, err := m.table.Chunker.Next()
+		// Attach the correct chunker.
+		err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
 		assert.NoError(t, err)
-
-		chunk3, err := m.table.Chunker.Next()
-		assert.NoError(t, err)
-
-		// There is no watermark yet.
-		_, err = m.table.Chunker.GetLowWatermark()
-		assert.Error(t, err)
-		// Dump checkpoint also returns an error for the same reason.
-		assert.Error(t, m.dumpCheckpoint())
-
-		// Because it's multi-threaded, we can't guarantee the order of the chunks.
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk1))
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk3))
-
-		// The watermark should exist now, because migrateChunk()
-		// gives feedback back to table.
-
-		watermark, err := m.table.Chunker.GetLowWatermark()
-		assert.NoError(t, err)
-		assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
-		// Dump a checkpoint
-		assert.NoError(t, m.dumpCheckpoint())
-
-		// Close the db connection since m is to be destroyed.
-		assert.NoError(t, m.db.Close())
-
-		// Now lets imagine that everything fails and we need to start
-		// from checkpoint again.
-
-		m = preSetup()
-		assert.NoError(t, m.resumeFromCheckpoint())
-
-		// Start the binary log feed just before copy rows starts.
-		err = m.replClient.Run()
-		assert.NoError(t, err)
-
-		// This opens the table at the checkpoint (table.OpenAtWatermark())
-		// which sets the chunkPtr at the LowerBound. It also has to position
-		// the watermark to this point so new watermarks "align" correctly.
-		// So lets now call NextChunk to verify.
-
-		chunk, err := m.table.Chunker.Next()
-		assert.NoError(t, err)
-		assert.Equal(t, int64(1001), chunk.LowerBound.Value)
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
-
-		// It's ideally not typical but you can still dump checkpoint from
-		// a restored checkpoint state. We won't have advanced anywhere from
-		// the last checkpoint because on restore, the LowerBound is taken.
-
-		watermark, err = m.table.Chunker.GetLowWatermark()
-		assert.NoError(t, err)
-		assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
-		// Dump a checkpoint
-		assert.NoError(t, m.dumpCheckpoint())
-
-		// Let's confirm we do advance the watermark.
-		for i := 0; i < 10; i++ {
-			chunk, err = m.table.Chunker.Next()
-			assert.NoError(t, err)
-			assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
-		}
-
-		watermark, err = m.table.Chunker.GetLowWatermark()
-		assert.NoError(t, err)
-		assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":11001,\"Inclusive\":true},\"UpperBound\":{\"Value\":12001,\"Inclusive\":false}}", watermark)
-		assert.NoError(t, m.db.Close())
+		assert.NoError(t, m.dropOldTable())
+		return m
 	}
+
+	m := preSetup()
+	// migrationRunner.Run usually calls m.Setup() here.
+	// Which first checks if the table can be restored from checkpoint.
+	// Because this is the first run, it can't.
+
+	assert.Error(t, m.resumeFromCheckpoint())
+
+	// So we proceed with the initial steps.
+	assert.NoError(t, m.createShadowTable())
+	assert.NoError(t, m.alterShadowTable())
+	assert.NoError(t, m.createCheckpointTable())
+	assert.NoError(t, m.table.Chunker.Open())
+	logger := logrus.New()
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	assert.NoError(t, err)
+	err = m.replClient.Run()
+	assert.NoError(t, err)
+
+	// Now we are ready to start copying rows.
+	// Instead of calling m.copyRows() we will step through it manually.
+	// Since we want to checkpoint after a few chunks.
+
+	m.copier.CopyRowsStartTime = time.Now()
+	m.setCurrentState(migrationStateCopyRows)
+	assert.Equal(t, "copyRows", m.getCurrentState().String())
+
+	// first chunk.
+	chunk1, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	chunk2, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	chunk3, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+
+	// There is no watermark yet.
+	_, err = m.table.Chunker.GetLowWatermark()
+	assert.Error(t, err)
+	// Dump checkpoint also returns an error for the same reason.
+	assert.Error(t, m.dumpCheckpoint())
+
+	// Because it's multi-threaded, we can't guarantee the order of the chunks.
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk1))
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk3))
+
+	// The watermark should exist now, because migrateChunk()
+	// gives feedback back to table.
+
+	watermark, err := m.table.Chunker.GetLowWatermark()
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	// Dump a checkpoint
+	assert.NoError(t, m.dumpCheckpoint())
+
+	// Close the db connection since m is to be destroyed.
+	assert.NoError(t, m.db.Close())
+
+	// Now lets imagine that everything fails and we need to start
+	// from checkpoint again.
+
+	m = preSetup()
+	assert.NoError(t, m.resumeFromCheckpoint())
+
+	// Start the binary log feed just before copy rows starts.
+	err = m.replClient.Run()
+	assert.NoError(t, err)
+
+	// This opens the table at the checkpoint (table.OpenAtWatermark())
+	// which sets the chunkPtr at the LowerBound. It also has to position
+	// the watermark to this point so new watermarks "align" correctly.
+	// So lets now call NextChunk to verify.
+
+	chunk, err := m.table.Chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1001), chunk.LowerBound.Value)
+	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+
+	// It's ideally not typical but you can still dump checkpoint from
+	// a restored checkpoint state. We won't have advanced anywhere from
+	// the last checkpoint because on restore, the LowerBound is taken.
+
+	watermark, err = m.table.Chunker.GetLowWatermark()
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	// Dump a checkpoint
+	assert.NoError(t, m.dumpCheckpoint())
+
+	// Let's confirm we do advance the watermark.
+	for i := 0; i < 10; i++ {
+		chunk, err = m.table.Chunker.Next()
+		assert.NoError(t, err)
+		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+	}
+
+	watermark, err = m.table.Chunker.GetLowWatermark()
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":11001,\"Inclusive\":true},\"UpperBound\":{\"Value\":12001,\"Inclusive\":false}}", watermark)
+	assert.NoError(t, m.db.Close())
 }
 
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
@@ -773,7 +769,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _chkpntt1difft1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _cpt1difft1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
