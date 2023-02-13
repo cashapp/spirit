@@ -2,6 +2,7 @@ package table
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -189,7 +190,7 @@ func (t *chunkerBase) GetLowWatermark() (string, error) {
 	defer t.Unlock()
 
 	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
-		return "", fmt.Errorf("watermark not yet ready")
+		return "", errors.New("watermark not yet ready")
 	}
 
 	// Convert the watermark to JSON.
@@ -288,7 +289,7 @@ func (t *chunkerBase) open() (err error) {
 	if t.isOpen {
 		// This prevents an error where open is re-called
 		// leading to the watermark being in a strange state.
-		return fmt.Errorf("table is already open, did you mean to call Reset()?")
+		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
 	t.chunkPtr = nil

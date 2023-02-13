@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/siddontang/loggers"
@@ -29,10 +30,10 @@ const (
 // shadow table, and a replication feed which is used to ensure consistency before the cut over.
 func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
-		return nil, fmt.Errorf("feed must be non-nil")
+		return nil, errors.New("feed must be non-nil")
 	}
 	if table == nil || shadowTable == nil {
-		return nil, fmt.Errorf("table and shadowTable must be non-nil")
+		return nil, errors.New("table and shadowTable must be non-nil")
 	}
 	return &CutOver{
 		db:          db,
