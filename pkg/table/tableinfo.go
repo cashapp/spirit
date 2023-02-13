@@ -4,6 +4,7 @@ package table
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -23,9 +24,9 @@ const (
 )
 
 var (
-	ErrTableIsRead       = fmt.Errorf("table is read")
-	ErrTableNotOpen      = fmt.Errorf("please call Open() first")
-	ErrUnsupportedPKType = fmt.Errorf("unsupported primary key type")
+	ErrTableIsRead       = errors.New("table is read")
+	ErrTableNotOpen      = errors.New("please call Open() first")
+	ErrUnsupportedPKType = errors.New("unsupported primary key type")
 )
 
 type TableInfo struct {
@@ -164,7 +165,7 @@ func (t *TableInfo) RunDiscovery(db *sql.DB) error {
 	}
 	rows.Close()
 	if len(t.PrimaryKey) == 0 {
-		return fmt.Errorf("no primary key found (not supported)")
+		return errors.New("no primary key found (not supported)")
 	}
 	// Get primary key type and auto_inc info.
 	query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"

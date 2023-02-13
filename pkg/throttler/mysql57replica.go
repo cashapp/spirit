@@ -2,7 +2,7 @@ package throttler
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"strconv"
 	"sync/atomic"
 )
@@ -38,7 +38,7 @@ func (l *MySQL57Replica) UpdateLag() error {
 		newLagStr := columnValue(scanArgs, cols, "Seconds_Behind_Master")
 		newLag, err := strconv.Atoi(newLagStr)
 		if err != nil {
-			return fmt.Errorf("replica lag could not be read. is it possible replication is stopped?") // possibly a NULL value?
+			return errors.New("replica lag could not be read. is it possible replication is stopped?") // possibly a NULL value?
 		}
 		// Store the new value.
 		atomic.StoreInt64(&l.currentLagInMs, int64(newLag*1000))

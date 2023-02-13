@@ -1,6 +1,7 @@
 package table
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -30,7 +31,7 @@ func simplifyType(desiredType simplifiedKeyType, val interface{}) (interface{}, 
 		if strings.HasPrefix(val.(string), "0x") {
 			return hexStringToUint64(val.(string))
 		}
-		return nil, fmt.Errorf("unsure how to convert a binary string to min/max")
+		return nil, errors.New("unsure how to convert a binary string to min/max")
 	default:
 		return nil, ErrUnsupportedPKType
 	}

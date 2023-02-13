@@ -6,6 +6,7 @@ package row
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -41,10 +42,10 @@ func NewCopier(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int,
 		concurrency = 4
 	}
 	if shadowTable == nil || table == nil {
-		return nil, fmt.Errorf("table and shadowTable must be non-nil")
+		return nil, errors.New("table and shadowTable must be non-nil")
 	}
 	if table.Chunker == nil {
-		return nil, fmt.Errorf("table must have a chunker attached")
+		return nil, errors.New("table must have a chunker attached")
 	}
 	return &Copier{
 		db:            db,

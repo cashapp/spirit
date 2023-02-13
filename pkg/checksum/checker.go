@@ -5,6 +5,7 @@ package checksum
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -34,13 +35,13 @@ func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int
 		concurrency = 4
 	}
 	if feed == nil {
-		return nil, fmt.Errorf("feed must be non-nil")
+		return nil, errors.New("feed must be non-nil")
 	}
 	if shadowTable == nil || table == nil {
-		return nil, fmt.Errorf("table and shadowTable must be non-nil")
+		return nil, errors.New("table and shadowTable must be non-nil")
 	}
 	if table.Chunker == nil {
-		return nil, fmt.Errorf("table must have chunker attached")
+		return nil, errors.New("table must have chunker attached")
 	}
 	checksum := &Checker{
 		table:       table,

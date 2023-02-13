@@ -2,7 +2,7 @@ package throttler
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -52,7 +52,7 @@ func (l *MySQL80Replica) UpdateLag() error {
  FROM performance_schema.replication_applier_status_by_worker`
 	var newLagValue int64
 	if err := l.replica.QueryRow(query).Scan(&newLagValue); err != nil {
-		return fmt.Errorf("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
+		return errors.New("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)
 	if l.IsThrottled() {
