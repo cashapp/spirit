@@ -392,7 +392,7 @@ func (c *Client) BlockWait() error {
 // Note: We can not update the table or the shadowTable, because this intentionally
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise() error {
-	stmt := fmt.Sprintf("ALTER TABLE _%s_cp AUTO_INCREMENT=0", c.table.TableName)
+	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
 	_, err := c.db.Exec(stmt)
 	return err
 }

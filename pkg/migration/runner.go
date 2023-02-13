@@ -461,7 +461,7 @@ func (m *MigrationRunner) attemptInplaceDDL() error {
 }
 
 func (m *MigrationRunner) createCheckpointTable() error {
-	cpName := fmt.Sprintf("_%s_cp", m.table.TableName)
+	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, cpName)
 	_, err := m.db.Exec(query)
@@ -538,7 +538,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	// The objects for these are not available until we confirm
 	// tables exist and we
 	shadowName := fmt.Sprintf("_%s_shadow", m.table.TableName)
-	cpName := fmt.Sprintf("_%s_cp", m.table.TableName)
+	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
 
 	// Make sure we can read from the shadow table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
