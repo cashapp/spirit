@@ -22,7 +22,7 @@ func dsn() string {
 }
 
 func TestCutOver(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_shadow, _cutovert1_old, _cutovert1_cp`)
+	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_shadow, _cutovert1_old, _cutovert1_chkpnt`)
 	tbl := `CREATE TABLE cutovert1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -35,7 +35,7 @@ func TestCutOver(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	runSQL(t, `CREATE TABLE _cutovert1_cp (a int)`) // for binlog advancement
+	runSQL(t, `CREATE TABLE _cutovert1_chkpnt (a int)`) // for binlog advancement
 
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
@@ -72,7 +72,7 @@ func TestCutOver(t *testing.T) {
 }
 
 func TestMDLLockFails(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_shadow, _mdllocks_old, _mdllocks_cp`)
+	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_shadow, _mdllocks_old, _mdllocks_chkpnt`)
 	tbl := `CREATE TABLE mdllocks (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -85,7 +85,7 @@ func TestMDLLockFails(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	runSQL(t, `CREATE TABLE _mdllocks_cp (a int)`) // for binlog advancement
+	runSQL(t, `CREATE TABLE _mdllocks_chkpnt (a int)`) // for binlog advancement
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
 	runSQL(t, `INSERT INTO mdllocks VALUES (1, 2), (2,2)`)

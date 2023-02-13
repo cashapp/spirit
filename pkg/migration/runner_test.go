@@ -627,7 +627,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 
 	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_shadow, _cpt1_cp`)
+		runSQL(t, `DROP TABLE IF EXISTS cpt1, _chkpntt1_shadow, _chkpntt1_chkpnt`)
 		runSQL(t, tbl)
 		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 		runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
@@ -773,7 +773,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _cpt1difft1_cp`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _chkpntt1difft1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
@@ -1015,9 +1015,9 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 }
 
 // TestForRemainingTableArtifacts tests that the _{name}_old table is left after
-// the migration is complete, but no _cp or _shadow table.
+// the migration is complete, but no _chkpnt or _shadow table.
 func TestForRemainingTableArtifacts(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_shadow, _remainingtbl_old, _remainingtbl_cp`)
+	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_shadow, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
 		id INT NOT NULL PRIMARY KEY,
 		name varchar(255) NOT NULL
@@ -1040,7 +1040,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
-	// but no _remainingtbl_shadow table or _remainingtbl_cp table.
+	// but no _remainingtbl_shadow table or _remainingtbl_chkpnt table.
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
