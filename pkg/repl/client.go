@@ -4,6 +4,7 @@ package repl
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -192,12 +193,12 @@ func (c *Client) Run() (err error) {
 	if c.binlogPosSynced == nil {
 		c.binlogPosSynced, err = c.getCurrentBinlogPosition()
 		if err != nil {
-			return fmt.Errorf("failed to get binlog position, is binary logging enabled?")
+			return errors.New("failed to get binlog position, check binary is enabled")
 		}
 	} else if c.binlogPositionIsImpossible() {
 		// Canal needs to be called as a go routine, so before we do check that the binary log
 		// Position is not impossible so we can return a synchronous error.
-		return fmt.Errorf("binlog position is impossible, the source may have already purged it")
+		return errors.New("binlog position is impossible, the source may have already purged it")
 	}
 
 	c.binlogPosInMemory = c.binlogPosSynced

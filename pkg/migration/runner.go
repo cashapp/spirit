@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -136,19 +137,19 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 		m.optChecksumConcurrency = m.optConcurrency
 	}
 	if m.host == "" {
-		return nil, fmt.Errorf("host is required")
+		return nil, errors.New("host is required")
 	}
 	if !strings.Contains(m.host, ":") {
 		m.host = fmt.Sprintf("%s:%d", m.host, 3306)
 	}
 	if m.schemaName == "" {
-		return nil, fmt.Errorf("schema name is required")
+		return nil, errors.New("schema name is required")
 	}
 	if m.tableName == "" {
-		return nil, fmt.Errorf("table name is required")
+		return nil, errors.New("table name is required")
 	}
 	if m.alterStatement == "" {
-		return nil, fmt.Errorf("alter statement is required")
+		return nil, errors.New("alter statement is required")
 	}
 	return m, nil
 }
@@ -411,17 +412,17 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 	stmt := &stmtNodes[0]
 	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
 	if !ok {
-		return fmt.Errorf("not a valid alter table statement")
+		return errors.New("not a valid alter table statement")
 	}
 	for _, spec := range alterStmt.Specs {
 		if spec.Tp == ast.AlterTableRenameTable || spec.Tp == ast.AlterTableRenameColumn {
-			return fmt.Errorf("renames are not supported by the shadow table algorithm")
+			return errors.New("renames are not supported by the shadow table algorithm")
 		}
 		// ALTER TABLE CHANGE COLUMN can be used to rename a column.
 		// But they can also be used commonly without a rename, so the check needs to be deeper.
 		if spec.Tp == ast.AlterTableChangeColumn {
 			if spec.NewColumns[0].Name.String() != spec.OldColumnName.String() {
-				return fmt.Errorf("renames are not supported by the shadow table algorithm")
+				return errors.New("renames are not supported by the shadow table algorithm")
 			}
 		}
 	}
@@ -508,13 +509,13 @@ func (m *MigrationRunner) Close() error {
 }
 
 func (m *MigrationRunner) preflightChecks() error {
-	var binlogFormat, innodbAutoincLockMode, binlogRowImage string
-	err := m.db.QueryRow("SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage)
+	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
+	err := m.db.QueryRow("SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
 	if err != nil {
 		return err
 	}
 	if binlogFormat != "ROW" {
-		return fmt.Errorf("binlog_format must be ROW")
+		return errors.New("binlog_format must be ROW")
 	}
 	if innodbAutoincLockMode != "2" {
 		// This is strongly encouraged because otherwise running parallel threads is pointless.
@@ -526,7 +527,11 @@ func (m *MigrationRunner) preflightChecks() error {
 	if binlogRowImage != "FULL" {
 		// This might not be required, but is the only option that has been tested so far.
 		// To keep the testing scope reduced for now, it is required.
-		return fmt.Errorf("binlog_row_image must be FULL")
+		return errors.New("binlog_row_image must be FULL")
+	}
+	if logBin != "1" {
+		// This is a hard requirement because we need to be able to read the binlog.
+		return errors.New("log_bin must be enabled")
 	}
 	return nil
 }
@@ -558,7 +563,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 		return err
 	}
 	if m.alterStatement != alterStatement {
-		return fmt.Errorf("alter statement in checkpoint table does not match the alter statement specified here")
+		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
 	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
