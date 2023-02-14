@@ -182,10 +182,6 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	if err := m.table.RunDiscovery(m.db); err != nil {
 		return err
 	}
-	// Attach the correct chunker.
-	if err := m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger); err != nil {
-		return err
-	}
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
 	// when it is compatible. If it returns no error, that means it
@@ -345,14 +341,18 @@ func (m *MigrationRunner) setup() error {
 		if err := m.createCheckpointTable(); err != nil {
 			return err
 		}
-		if err := m.table.Chunker.Open(); err != nil {
-			return err
-		}
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
-		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
+		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
+			Concurrency:           m.optConcurrency,
+			TargetMs:              m.optTargetChunkMs,
+			FinalChecksum:         m.optChecksum,
+			DisableTrivialChunker: m.optDisableTrivialChunker,
+			Throttler:             &throttler.Noop{},
+			Logger:                m.logger,
+		})
 		if err != nil {
 			return err
 		}
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
 		// Start the binary log feed now
 		if err := m.replClient.Run(); err != nil {
 			return err
@@ -378,7 +378,10 @@ func (m *MigrationRunner) setup() error {
 	// Make sure the definition of the table never changes.
 	// If it does, we could be in trouble.
 	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
-
+	// Make sure the replClient has a way to know where the copier is at.
+	// If this is NOT nil then it will use this optimization when determining
+	// if it can ignore a KEY.
+	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
 	return nil
 }
 
@@ -604,10 +607,29 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 		return err
 	}
 
+	// In resume-from-checkpoint we need to ignore duplicate key errors when
+	// applying copy-rows because we will partially re-apply some rows.
+	// The problem with this is, we can't tell if it's not a re-apply but a new
+	// row that's a duplicate and violating a new UNIQUE constraint we are trying
+	// to add. The only way we can reconcile this fact is to make sure that
+	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
+	// have the checksum enabled to apply all changes safely.
+	m.optChecksum = true
+	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.shadowTable, &row.CopierConfig{
+		Concurrency:           m.optConcurrency,
+		TargetMs:              m.optTargetChunkMs,
+		FinalChecksum:         m.optChecksum,
+		DisableTrivialChunker: m.optDisableTrivialChunker,
+		Throttler:             &throttler.Noop{},
+		Logger:                m.logger,
+	}, copyRowsAt, copyRows)
+	if err != nil {
+		return err
+	}
+
 	// Set the binlog position.
 	// Create a binlog subscriber
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, m.logger)
-
 	m.replClient.SetPos(&mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),
@@ -618,18 +640,6 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 		return err
 	}
 
-	// In resume-from-checkpoint we need to ignore duplicate key errors when
-	// applying copy-rows because we will partially re-apply some rows.
-	// The problem with this is, we can't tell if it's not a re-apply but a new
-	// row that's a duplicate and violating a new UNIQUE constraint we are trying
-	// to add. The only way we can reconcile this fact is to make sure that
-	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
-	// have the checksum enabled to apply all changes safely.
-	m.optChecksum = true
-	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, m.logger)
-	if err != nil {
-		return err
-	}
 	// Start the replClient now. This is because if the checkpoint is so old there
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
 	// and still be able to start from scratch.
@@ -638,35 +648,18 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 		m.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
-	// Success from this point on
-	// Overwrite copy-rows
-	atomic.StoreInt64(&m.copier.CopyRowsCount, copyRows)
-
-	// Open the table at a specific point.
-	if err := m.table.Chunker.OpenAtWatermark(copyRowsAt); err != nil {
-		return err // could not open table
-	}
 	m.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", copyRowsAt, binlogName, binlogPos, copyRows)
 	return nil
 }
 
 // checksum creates the checksum which opens the read view.
 func (m *MigrationRunner) checksum(ctx context.Context) error {
-	// The chunker table.Chunker is tied into the checkpoint, so if we reset
-	// it will lose our progress. I had considered adding a Reset() method
-	// to the Chunker interface, but this complicates the code for an isolated use-case.
-	// Instead we now create a new table4checker, new chunker and use that.
-	table4checker := table.NewTableInfo(m.table.SchemaName, m.table.TableName)
-	if err := table4checker.RunDiscovery(m.db); err != nil {
-		return err
-	}
-	if err := table4checker.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger); err != nil {
-		return err
-	}
-	if err := table4checker.Chunker.Open(); err != nil {
-		return err
-	}
-	checker, err := checksum.NewChecker(m.db, table4checker, m.shadowTable, m.optChecksumConcurrency, m.replClient, m.logger)
+	checker, err := checksum.NewChecker(m.db, m.table, m.shadowTable, m.replClient, &checksum.CheckerConfig{
+		Concurrency:           m.optChecksumConcurrency,
+		TargetMs:              m.optTargetChunkMs,
+		DisableTrivialChunker: m.optDisableTrivialChunker,
+		Logger:                m.logger,
+	})
 	if err != nil {
 		return err
 	}
@@ -693,7 +686,7 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 	// Currently it never advances but it's possible it might in future
 	// and this race condition is missed.
 	binlog := m.replClient.GetBinlogApplyPosition()
-	lowWatermark, err := m.table.Chunker.GetLowWatermark()
+	lowWatermark, err := m.copier.GetLowWatermark()
 	if err != nil {
 		return err // it might not be ready, we can try again.
 	}

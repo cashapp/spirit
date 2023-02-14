@@ -7,9 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-
-	"github.com/siddontang/loggers"
-	"github.com/sirupsen/logrus"
 )
 
 type simplifiedKeyType int
@@ -40,16 +37,12 @@ type TableInfo struct {
 	primaryKeyIsAutoInc bool
 	minValue            interface{} // known minValue of pk[0] (using type of PK)
 	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
-	Chunker             Chunker
-
-	logger loggers.Advanced
 }
 
 func NewTableInfo(schema, table string) *TableInfo {
 	return &TableInfo{
 		SchemaName: schema,
 		TableName:  table,
-		logger:     logrus.New(),
 	}
 }
 
@@ -83,44 +76,6 @@ func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{}
 		}
 	}
 	return pkCols
-}
-
-func (t *TableInfo) AttachChunker(chunkerTargetMs int64, disableTrivialChunker bool, logger loggers.Advanced) error {
-	// If the row count is low we just attach
-	// "the trivial chunker" (i.e. the chunker base)
-	// which will return everything as one chunk.
-	if t.EstimatedRows < trivialChunkerThreshold && !disableTrivialChunker {
-		t.Chunker = &chunkerBase{Ti: t}
-		return nil
-	}
-	if chunkerTargetMs == 0 {
-		chunkerTargetMs = 100
-	}
-	if logger != nil {
-		t.logger = logger
-	}
-	chunkerBase := &chunkerBase{
-		Ti:              t,
-		chunkSize:       uint64(1000),    // later this might become configurable.
-		ChunkerTargetMs: chunkerTargetMs, // this is the main chunker target.
-	}
-	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
-	case signedType:
-		t.Chunker = &chunkerSigned{
-			chunkerBase: chunkerBase,
-		}
-	case unsignedType:
-		t.Chunker = &chunkerUnsigned{
-			chunkerBase: chunkerBase,
-		}
-	case binaryType:
-		t.Chunker = &chunkerBinary{
-			chunkerBase: chunkerBase,
-		}
-	default:
-		return ErrUnsupportedPKType
-	}
-	return nil
 }
 
 // RunDiscovery requires a database connection, which means it can't easily be mocked in unit tests.

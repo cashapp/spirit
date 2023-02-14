@@ -3,6 +3,7 @@ package table
 import (
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,13 +14,15 @@ func TestBaseChunker(t *testing.T) {
 	t1.primaryKeyType = "varbinary(100)"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, false, nil))
 
-	assert.NoError(t, t1.Chunker.Open())
-	_, err := t1.Chunker.Next()
+	chunker, err := NewChunker(t1, 100, false, logrus.New())
 	assert.NoError(t, err)
 
-	_, err = t1.Chunker.Next()
+	assert.NoError(t, chunker.Open())
+	_, err = chunker.Next()
+	assert.NoError(t, err)
+
+	_, err = chunker.Next()
 	assert.Error(t, err) // trivial chunker is done! only 1 chunk.
 }
 
@@ -30,12 +33,13 @@ func TestBaseChunkerIntSigned(t *testing.T) {
 	t1.primaryKeyType = "bigint"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, false, nil))
-
-	assert.NoError(t, t1.Chunker.Open())
-	_, err := t1.Chunker.Next()
+	chunker, err := NewChunker(t1, 100, false, logrus.New())
 	assert.NoError(t, err)
 
-	_, err = t1.Chunker.Next()
+	assert.NoError(t, chunker.Open())
+	_, err = chunker.Next()
+	assert.NoError(t, err)
+
+	_, err = chunker.Next()
 	assert.Error(t, err) // trivial chunker is done! only 1 chunk.
 }

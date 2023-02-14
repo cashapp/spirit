@@ -8,43 +8,9 @@ import (
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/siddontang/loggers"
 )
-
-const (
-	// StartingChunkSize is the original value of chunkSize.
-	// We use it in some threshold calculations.
-	StartingChunkSize = 1000
-
-	// MaxDynamicScaleFactor is the maximum factor dynamic scaling can change the chunkSize from
-	// the setting chunkSize. For example, if the factor is 10, and chunkSize is 1000, then the
-	// values will be in the range of 100 to 10000.
-	MaxDynamicScaleFactor = 50
-	// MaxDynamicStepFactor is the maximum amount each recalculation of the dynamic chunkSize can
-	// increase by. For example, if the newTarget is 5000 but the current target is 1000, the newTarget
-	// will be capped back down to 1500. Over time the number 5000 will be reached, but not straight away.
-	MaxDynamicStepFactor = 1.5
-	// MinDynamicChunkSize is the minimum chunkSize that can be used when dynamic chunkSize is enabled.
-	// This helps prevent a scenario where the chunk size is too small (it can never be less than 1).
-	MinDynamicRowSize = 10
-	// DynamicPanicFactor is the factor by which the feedback process takes immediate action when
-	// the chunkSize appears to be too large. For example, if the PanicFactor is 5, and the target *time*
-	// is 50ms, an actual time 250ms+ will cause the dynamic chunk size to immediately be reduced.
-	DynamicPanicFactor = 5
-)
-
-type Chunker interface {
-	Open() error
-	OpenAtWatermark(string) error
-	IsRead() bool
-	Close() error
-	Next() (*Chunk, error)
-	Feedback(*Chunk, time.Duration)
-	GetLowWatermark() (string, error)
-	KeyAboveHighWatermark(interface{}) bool
-	SetDynamicChunking(bool)
-}
-
-var _ Chunker = &chunkerBase{}
 
 // This is the trivial chunker which other chunkers may extend
 type chunkerBase struct {
@@ -67,6 +33,8 @@ type chunkerBase struct {
 	// This is used for restore.
 	watermark             *Chunk
 	watermarkQueuedChunks []*Chunk
+
+	logger loggers.Advanced
 }
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
@@ -147,7 +115,6 @@ func (t *chunkerBase) Next() (*Chunk, error) {
 func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
 	t.Lock()
 	defer t.Unlock()
-
 	t.bumpWatermark(chunk)
 
 	// Check if the feedback is based on an earlier chunker size.
@@ -161,7 +128,7 @@ func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
 	// and don't wait for more feedback.
 	if int64(d) > (t.ChunkerTargetMs * DynamicPanicFactor * int64(time.Millisecond)) {
 		newTarget := uint64(float64(t.chunkSize) / float64(DynamicPanicFactor*2))
-		t.Ti.logger.Infof("high chunk processing time. time: %s threshold: %s target-rows: %v target-ms: %v new-target-rows: %v",
+		t.logger.Infof("high chunk processing time. time: %s threshold: %s target-rows: %v target-ms: %v new-target-rows: %v",
 			d,
 			time.Duration(t.ChunkerTargetMs*DynamicPanicFactor*int64(time.Millisecond)),
 			t.chunkSize,

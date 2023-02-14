@@ -8,6 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,8 +24,9 @@ func TestChunkerBasic(t *testing.T) {
 		primaryKeyIsAutoInc: true,
 		Columns:             []string{"id", "name"},
 	}
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(false)
+	chunker, err := NewChunker(t1, 100, false, logrus.New())
+	assert.NoError(t, err)
+	chunker.SetDynamicChunking(false)
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
 	t1.primaryKeyType = "varchar"
@@ -34,27 +36,27 @@ func TestChunkerBasic(t *testing.T) {
 
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName())
 
-	assert.NoError(t, t1.Chunker.Open())
-	_, err := t1.Chunker.Next()
+	assert.NoError(t, chunker.Open())
+	_, err = chunker.Next()
 	assert.NoError(t, err)
 
-	assert.True(t, t1.Chunker.KeyAboveHighWatermark(100)) // we are at 1
+	assert.True(t, chunker.KeyAboveHighWatermark(100)) // we are at 1
 
-	_, err = t1.Chunker.Next()
+	_, err = chunker.Next()
 	assert.NoError(t, err)
 
-	assert.False(t, t1.Chunker.KeyAboveHighWatermark(100)) // we are at 1001
+	assert.False(t, chunker.KeyAboveHighWatermark(100)) // we are at 1001
 
 	for i := 0; i <= 998; i++ {
-		_, err = t1.Chunker.Next()
+		_, err = chunker.Next()
 		assert.NoError(t, err)
 	}
 
 	// The last chunk.
-	_, err = t1.Chunker.Next()
+	_, err = chunker.Next()
 	assert.NoError(t, err)
 
-	_, err = t1.Chunker.Next()
+	_, err = chunker.Next()
 	assert.Error(t, err) // err: table is read.
 	assert.Equal(t, err.Error(), "table is read")
 }
@@ -74,38 +76,38 @@ func TestChunkerStatic(t *testing.T) {
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
 	assert.NoError(t, t1.attachChunker())
-	t1.Chunker.SetDynamicChunking(false)
+	chunker.SetDynamicChunking(false)
 
-	assert.NoError(t, t1.Chunker.Open())
+	assert.NoError(t, chunker.Open())
 
-	chunk, err := t1.Chunker.Next()
+	chunk, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id < 1", chunk.String()) // first chunk
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 1 AND id < 1001", chunk.String()) // first chunk
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 1001 AND id < 2001", chunk.String()) // nth chunk
 
 	t1.chunkSize = 10000
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 2001 AND id < 12001", chunk.String()) // nth chunk
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 12001 AND id < 22001", chunk.String()) // nth chunk
 
 	t1.chunkSize = 10000000
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 22001 AND id < 10022001", chunk.String()) // nth chunk
 
 	// last chunk
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 10022001", chunk.String())
 
@@ -121,7 +123,9 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 	t1.primaryKeyType = "varchar(100)"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.Error(t, t1.AttachChunker(100, true, nil)) // err unsupported.
+
+	_, err := NewChunker(t1, 100, true, logrus.New())
+	assert.Error(t, err) // err unsupported.
 }
 
 func TestOpenOnBinaryType(t *testing.T) {
@@ -133,10 +137,10 @@ func TestOpenOnBinaryType(t *testing.T) {
 	t1.primaryKeyType = "varbinary(100)"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(false)
-
-	assert.NoError(t, t1.Chunker.Open())
+	chunker, err := NewChunker(t1, 100, true, logrus.New())
+	assert.NoError(t, err)
+	chunker.SetDynamicChunking(false)
+	assert.NoError(t, chunker.Open())
 }
 
 func TestOpenOnNoMinMax(t *testing.T) {
@@ -146,10 +150,10 @@ func TestOpenOnNoMinMax(t *testing.T) {
 	t1.primaryKeyType = "varbinary(100)"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(false)
-
-	assert.NoError(t, t1.Chunker.Open())
+	chunker, err := NewChunker(t1, 100, true, logrus.New())
+	assert.NoError(t, err)
+	chunker.SetDynamicChunking(false)
+	assert.NoError(t, chunker.Open())
 }
 
 func TestCallingNextChunkWithoutOpen(t *testing.T) {
@@ -159,14 +163,15 @@ func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	t1.primaryKeyType = "varbinary(100)"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(false)
+	chunker, err := NewChunker(t1, 100, true, logrus.New())
+	assert.NoError(t, err)
+	chunker.SetDynamicChunking(false)
 
-	_, err := t1.Chunker.Next()
+	_, err = chunker.Next()
 	assert.Error(t, err)
 
-	assert.NoError(t, t1.Chunker.Open())
-	_, err = t1.Chunker.Next()
+	assert.NoError(t, chunker.Open())
+	_, err = chunker.Next()
 	assert.NoError(t, err)
 }
 
@@ -179,9 +184,9 @@ func TestChunkToIncrementSize(t *testing.T) {
 	t1.primaryKeyType = "bigint unsigned"
 	t1.Columns = []string{"id", "name"}
 	assert.NoError(t, t1.attachChunker())
-	t1.Chunker.SetDynamicChunking(false)
+	chunker.SetDynamicChunking(false)
 
-	assert.NoError(t, t1.Chunker.Open())
+	assert.NoError(t, chunker.Open())
 
 	// With no min or max, the estimated rows is divided
 	// by a wide range.
@@ -233,75 +238,76 @@ func TestLowWatermark(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(false)
+	chunker, err := NewChunker(t1, 100, true, logrus.New())
+	assert.NoError(t, err)
+	chunker.SetDynamicChunking(false)
 
-	assert.NoError(t, t1.Chunker.Open())
+	assert.NoError(t, chunker.Open())
 
-	_, err := t1.Chunker.GetLowWatermark()
+	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err)
 
-	chunk, err := t1.Chunker.Next()
+	chunk, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id < 1", chunk.String()) // first chunk
-	_, err = t1.Chunker.GetLowWatermark()
+	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err) // no feedback yet.
-	t1.Chunker.Feedback(chunk, time.Second)
-	_, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunk, time.Second)
+	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err) // there has been feedback, but watermark is not ready after first chunk.
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 1 AND id < 1001", chunk.String()) // first chunk
-	t1.Chunker.Feedback(chunk, time.Second)
-	watermark, err := t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunk, time.Second)
+	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1,\"Inclusive\":true},\"UpperBound\":{\"Value\":1001,\"Inclusive\":false}}", watermark)
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 1001 AND id < 2001", chunk.String()) // first chunk
-	t1.Chunker.Feedback(chunk, time.Second)
-	watermark, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunk, time.Second)
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 
-	chunkAsync1, err := t1.Chunker.Next()
+	chunkAsync1, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 2001 AND id < 3001", chunkAsync1.String())
 
-	chunkAsync2, err := t1.Chunker.Next()
+	chunkAsync2, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 3001 AND id < 4001", chunkAsync2.String())
 
-	chunkAsync3, err := t1.Chunker.Next()
+	chunkAsync3, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 4001 AND id < 5001", chunkAsync3.String())
 
-	t1.Chunker.Feedback(chunkAsync2, time.Second)
-	watermark, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunkAsync2, time.Second)
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 
-	t1.Chunker.Feedback(chunkAsync3, time.Second)
-	watermark, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunkAsync3, time.Second)
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 
-	t1.Chunker.Feedback(chunkAsync1, time.Second)
-	watermark, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunkAsync1, time.Second)
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":4001,\"Inclusive\":true},\"UpperBound\":{\"Value\":5001,\"Inclusive\":false}}", watermark)
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 5001 AND id < 6001", chunk.String()) // should bump immediately
-	watermark, err = t1.Chunker.GetLowWatermark()
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":4001,\"Inclusive\":true},\"UpperBound\":{\"Value\":5001,\"Inclusive\":false}}", watermark)
 
-	t1.Chunker.Feedback(chunk, time.Second)
-	watermark, err = t1.Chunker.GetLowWatermark()
+	chunker.Feedback(chunk, time.Second)
+	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":5001,\"Inclusive\":true},\"UpperBound\":{\"Value\":6001,\"Inclusive\":false}}", watermark)
 }
@@ -315,56 +321,57 @@ func TestDynamicChunking(t *testing.T) {
 	t1.primaryKeyType = "bigint"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	t1.Chunker.SetDynamicChunking(true)
-
-	assert.NoError(t, t1.Chunker.Open())
-
-	chunk, err := t1.Chunker.Next()
+	chunker, err := NewChunker(t1, 100, true, logrus.New())
 	assert.NoError(t, err)
-	t1.Chunker.Feedback(chunk, time.Second) // way too long.
+	chunker.SetDynamicChunking(true)
 
-	chunk, err = t1.Chunker.Next()
+	assert.NoError(t, chunker.Open())
+
+	chunk, err := chunker.Next()
+	assert.NoError(t, err)
+	chunker.Feedback(chunk, time.Second) // way too long.
+
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(100), chunk.ChunkSize) // immediate change from before
-	t1.Chunker.Feedback(chunk, time.Second)       // way too long again, it will reduce to 20
+	chunker.Feedback(chunk, time.Second)          // way too long again, it will reduce to 20
 
-	newChunk, err := t1.Chunker.Next()
+	newChunk, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(20), newChunk.ChunkSize) // immediate change from before
 	// Feedback is only taken if the chunk.ChunkSize matches the current size.
 	// so lets give bad feedback and see no change.
 	newChunk.ChunkSize = 1234
-	t1.Chunker.Feedback(newChunk, 10*time.Second) // way too long.
+	chunker.Feedback(newChunk, 10*time.Second) // way too long.
 
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(20), chunk.ChunkSize)    // no change
-	t1.Chunker.Feedback(chunk, 50*time.Microsecond) //must give feedback to advance watermark.
+	assert.Equal(t, uint64(20), chunk.ChunkSize) // no change
+	chunker.Feedback(chunk, 50*time.Microsecond) //must give feedback to advance watermark.
 
 	// Feedback to increase the chunk size is more gradual.
 	for i := 0; i < 10; i++ { // no change
-		chunk, err = t1.Chunker.Next()
-		t1.Chunker.Feedback(chunk, 50*time.Microsecond) // very short.
+		chunk, err = chunker.Next()
+		chunker.Feedback(chunk, 50*time.Microsecond) // very short.
 		assert.NoError(t, err)
 		assert.Equal(t, uint64(20), chunk.ChunkSize) // no change.
 	}
 	// On the 11st piece of feedback *with this chunk size*
 	// it finally changes. But no greater than 50% increase at a time.
-	chunk, err = t1.Chunker.Next()
+	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(30), chunk.ChunkSize)
-	t1.Chunker.Feedback(chunk, 50*time.Microsecond)
+	chunker.Feedback(chunk, 50*time.Microsecond)
 
 	// Advance the watermark a little bit.
 	for i := 0; i < 20; i++ {
-		chunk, err = t1.Chunker.Next()
+		chunk, err = chunker.Next()
 		assert.NoError(t, err)
-		t1.Chunker.Feedback(chunk, time.Millisecond)
+		chunker.Feedback(chunk, time.Millisecond)
 	}
 
 	// Fetch the watermark.
-	watermark, err := t1.Chunker.GetLowWatermark()
+	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
 
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":45,\"LowerBound\":{\"Value\":1076,\"Inclusive\":true},\"UpperBound\":{\"Value\":1121,\"Inclusive\":false}}", watermark)
@@ -377,15 +384,17 @@ func TestDynamicChunking(t *testing.T) {
 	t2.PrimaryKey = []string{"id"}
 	t2.primaryKeyType = "bigint"
 	t2.primaryKeyIsAutoInc = true
-	assert.NoError(t, t2.AttachChunker(100, true, nil))
-	t2.Chunker.SetDynamicChunking(false)
+
+	chunker2, err := NewChunker(t1, 100, true, logrus.New())
+	assert.NoError(t, err)
+	chunker2.SetDynamicChunking(true)
 	t2.Columns = []string{"id", "name"}
-	assert.NoError(t, t2.Chunker.OpenAtWatermark(watermark))
+	assert.NoError(t, chunker2.OpenAtWatermark(watermark))
 
 	// The pointer goes to the lowerbound.value.
 	// It could equally go to the upperbound.value but then
 	// we would have to worry about off-by-1 errors.
-	chunk, err = t2.Chunker.Next()
+	chunk, err = chunker2.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1076), chunk.LowerBound.Value)
 }
@@ -539,9 +548,10 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	assert.Equal(t, nil, t1.minValue)
 	assert.Equal(t, nil, t1.maxValue)
 
-	assert.NoError(t, t1.AttachChunker(100, false, nil))
+	chunker, err := NewChunker(t1, 100, false, logrus.New())
+	assert.NoError(t, err)
 
-	assert.NoError(t, t1.Chunker.Open())
+	assert.NoError(t, chunker.Open())
 	assert.Equal(t, int64(math.MinInt64), t1.minValue)
 	assert.Equal(t, int64(math.MaxInt64), t1.maxValue)
 }
