@@ -52,6 +52,7 @@ type Client struct {
 	disableKeyAboveWatermarkOptimization bool
 
 	TableChangeNotificationCallback func()
+	KeyAboveCopierCallback          func(interface{}) bool
 
 	logger loggers.Advanced
 }
@@ -72,7 +73,7 @@ func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, use
 // OnRow is called when a row is discovered via replication.
 // The event is of type e.Action and contains one
 // or more rows in e.Rows. We find the PRIMARY KEY of the row:
-// 1) If it exceeds the known high watermark of the chunker we throw it away.
+// 1) If it exceeds the known high watermark of the copier we throw it away.
 // (we've not copied that data yet - it will be already up to date when we copy it later).
 // 2) If it could have been copied already, we add it to the changeset.
 // We only need to add the PK + if the operation was a delete.
@@ -84,7 +85,7 @@ func (c *Client) OnRow(e *canal.RowsEvent) error {
 		// Important! We can only apply this optimization while in migrationStateCopyRows.
 		// If we do it too early, we might miss updates in-between starting the subscription,
 		// and opening the table in resume from checkpoint etc.
-		if c.table.Chunker != nil && !c.disableKeyAboveWatermarkOptimization && c.table.Chunker.KeyAboveHighWatermark(key[0]) {
+		if !c.disableKeyAboveWatermarkOptimization && c.KeyAboveCopierCallback != nil && c.KeyAboveCopierCallback(key[0]) {
 			continue // key can be ignored
 		}
 		switch e.Action {

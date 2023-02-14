@@ -10,6 +10,7 @@ import (
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 
+	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
@@ -82,7 +83,6 @@ func TestReplClientComplex(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "replcomplext1")
 	assert.NoError(t, t1.RunDiscovery(db))
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
 	t2 := table.NewTableInfo("test", "replcomplext2")
 	assert.NoError(t, t2.RunDiscovery(db))
 
@@ -92,18 +92,24 @@ func TestReplClientComplex(t *testing.T) {
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, client.Run())
 
+	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	// Attach copier's keyabovewatermark to the repl client
+	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark
+
+	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
+
 	// Insert into t1, but because there is no read yet, the key is above the watermark
 	runSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
 	assert.NoError(t, client.BlockWait())
 	assert.Equal(t, client.GetDeltaLen(), 0)
 
-	// Read from the chunker so that the key is below the watermark
-	assert.NoError(t, t1.Chunker.Open())
-	chk, err := t1.Chunker.Next()
+	// Read from the copier so that the key is below the watermark
+	chk, err := copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, chk.String(), "a < 1")
 	// read again
-	chk, err = t1.Chunker.Next()
+	chk, err = copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, chk.String(), "a >= 1 AND a < 1001")
 
@@ -200,7 +206,6 @@ func TestReplClientOpts(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "replclientoptst1")
 	assert.NoError(t, t1.RunDiscovery(db))
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
 	t2 := table.NewTableInfo("test", "replclientoptst2")
 	assert.NoError(t, t2.RunDiscovery(db))
 

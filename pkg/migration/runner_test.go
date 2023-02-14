@@ -12,6 +12,7 @@ import (
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
+	"github.com/squareup/spirit/pkg/throttler"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -598,8 +599,7 @@ func TestETA(t *testing.T) {
 		AttemptInplaceDDL: true,
 	})
 	assert.NoError(t, err)
-	logger := logrus.New()
-	m.copier, err = row.NewCopier(nil, nil, nil, 4, true, logger)
+	m.copier, err = row.NewCopier(nil, nil, nil, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 
 	assert.Equal(t, "Due", m.getETAFromRowsPerSecond(true))
@@ -653,9 +653,6 @@ func TestCheckpoint(t *testing.T) {
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
 		err = m.table.RunDiscovery(m.db)
 		assert.NoError(t, err)
-		// Attach the correct chunker.
-		err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
-		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable())
 		return m
 	}
@@ -671,10 +668,9 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, m.createShadowTable())
 	assert.NoError(t, m.alterShadowTable())
 	assert.NoError(t, m.createCheckpointTable())
-	assert.NoError(t, m.table.Chunker.Open())
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -687,18 +683,21 @@ func TestCheckpoint(t *testing.T) {
 	m.setCurrentState(migrationStateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
+	// because we are not calling copier.Run() we need to manually open.
+	assert.NoError(t, m.copier.Open4Test())
+
 	// first chunk.
-	chunk1, err := m.table.Chunker.Next()
+	chunk1, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk2, err := m.table.Chunker.Next()
+	chunk2, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk3, err := m.table.Chunker.Next()
+	chunk3, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
 	// There is no watermark yet.
-	_, err = m.table.Chunker.GetLowWatermark()
+	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
 	assert.Error(t, m.dumpCheckpoint())
@@ -711,7 +710,7 @@ func TestCheckpoint(t *testing.T) {
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
 
-	watermark, err := m.table.Chunker.GetLowWatermark()
+	watermark, err := m.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
@@ -735,7 +734,7 @@ func TestCheckpoint(t *testing.T) {
 	// the watermark to this point so new watermarks "align" correctly.
 	// So lets now call NextChunk to verify.
 
-	chunk, err := m.table.Chunker.Next()
+	chunk, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1001), chunk.LowerBound.Value)
 	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
@@ -744,7 +743,7 @@ func TestCheckpoint(t *testing.T) {
 	// a restored checkpoint state. We won't have advanced anywhere from
 	// the last checkpoint because on restore, the LowerBound is taken.
 
-	watermark, err = m.table.Chunker.GetLowWatermark()
+	watermark, err = m.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
@@ -752,12 +751,12 @@ func TestCheckpoint(t *testing.T) {
 
 	// Let's confirm we do advance the watermark.
 	for i := 0; i < 10; i++ {
-		chunk, err = m.table.Chunker.Next()
+		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
 	}
 
-	watermark, err = m.table.Chunker.GetLowWatermark()
+	watermark, err = m.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":11001,\"Inclusive\":true},\"UpperBound\":{\"Value\":12001,\"Inclusive\":false}}", watermark)
 	assert.NoError(t, m.db.Close())
@@ -799,9 +798,6 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
 		err = m.table.RunDiscovery(m.db)
 		assert.NoError(t, err)
-		// Attach the correct chunker.
-		err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
-		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable())
 		return m
 	}
@@ -817,10 +813,9 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.createShadowTable())
 	assert.NoError(t, m.alterShadowTable())
 	assert.NoError(t, m.createCheckpointTable())
-	assert.NoError(t, m.table.Chunker.Open())
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -833,18 +828,20 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	m.setCurrentState(migrationStateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
+	assert.NoError(t, m.copier.Open4Test())
+
 	// first chunk.
-	chunk1, err := m.table.Chunker.Next()
+	chunk1, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk2, err := m.table.Chunker.Next()
+	chunk2, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk3, err := m.table.Chunker.Next()
+	chunk3, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
 	// There is no watermark yet.
-	_, err = m.table.Chunker.GetLowWatermark()
+	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
 	assert.Error(t, m.dumpCheckpoint())
@@ -857,7 +854,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
 
-	watermark, err := m.table.Chunker.GetLowWatermark()
+	watermark, err := m.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
@@ -922,9 +919,6 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
 		err = m.table.RunDiscovery(m.db)
 		assert.NoError(t, err)
-		// Attach the correct chunker.
-		err = m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger)
-		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable())
 
 		// migration.Run usually calls m.Migrate() here.
@@ -933,11 +927,18 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.createShadowTable())
 		assert.NoError(t, m.alterShadowTable())
 		assert.NoError(t, m.createCheckpointTable())
-		assert.NoError(t, m.table.Chunker.Open())
 		logger := logrus.New()
 		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
-		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, m.optConcurrency, m.optChecksum, logger)
+		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
+			Concurrency:           m.optConcurrency,
+			TargetMs:              m.optTargetChunkMs,
+			FinalChecksum:         m.optChecksum,
+			DisableTrivialChunker: m.optDisableTrivialChunker,
+			Throttler:             &throttler.Noop{},
+			Logger:                m.logger,
+		})
 		assert.NoError(t, err)
+		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
 		err = m.replClient.Run()
 		assert.NoError(t, err)
 
@@ -951,9 +952,10 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 
 		// We expect 3 chunks to be copied.
 		// The special first and last case and middle case.
+		assert.NoError(t, m.copier.Open4Test())
 
 		// first chunk.
-		chunk, err := m.table.Chunker.Next()
+		chunk, err := m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NotNil(t, chunk)
 		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
@@ -962,7 +964,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// This will be ignored by the binlog subscription.
 		// Because it's ahead of the high watermark.
 		runSQL(t, `insert into e2et1 (id1, id2) values (4, 1)`)
-		assert.True(t, m.table.Chunker.KeyAboveHighWatermark(4))
+		assert.True(t, m.copier.KeyAboveHighWatermark(4))
 
 		// Give it a chance, since we need to read from the binary log to populate this
 		// Even though we expect nothing.
@@ -970,24 +972,24 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
 		// second chunk.
-		chunk, err = m.table.Chunker.Next()
+		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
 
 		// Now insert some data.
 		// This should be picked up by the binlog subscription.
 		runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
-		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(5))
+		assert.False(t, m.copier.KeyAboveHighWatermark(5))
 		sleep() // wait for binlog
 		assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 		runSQL(t, `delete from e2et1 where id1 = 1`)
-		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(1))
+		assert.False(t, m.copier.KeyAboveHighWatermark(1))
 		sleep() // wait for binlog
 		assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 		// third (and last) chunk.
-		chunk, err = m.table.Chunker.Next()
+		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
 
@@ -996,7 +998,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		runSQL(t, `insert into e2et1 (id1, id2) values (6, 1)`)
 		// the pointer should be at maxint64 for safety. this ensures
 		// that any keyAboveHighWatermark checks return false
-		assert.False(t, m.table.Chunker.KeyAboveHighWatermark(uint64(math.MaxUint64)))
+		assert.False(t, m.copier.KeyAboveHighWatermark(uint64(math.MaxUint64)))
 
 		// Now that copy rows is done, we flush the changeset until trivial.
 		// and perform the optional checksum.

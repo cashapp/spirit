@@ -25,8 +25,8 @@ func IsCompatible(migration *Migration) bool {
 	if err := m.table.RunDiscovery(m.db); err != nil {
 		return false
 	}
-	// Attach the correct chunker.
-	if err := m.table.AttachChunker(m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger); err != nil {
+	// Check that we can get a chunker.
+	if _, err := table.NewChunker(m.table, m.optTargetChunkMs, m.optDisableTrivialChunker, m.logger); err != nil {
 		return false
 	}
 	return true

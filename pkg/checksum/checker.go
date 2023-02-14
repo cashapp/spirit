@@ -1,5 +1,7 @@
 // Package checksum provides online checksum functionality.
 // Two tables on the same MySQL server can be compared with only an initial lock.
+// It is not in the row/ package because it requires a replClient to be passed in,
+// which would cause a circular dependency.
 package checksum
 
 import (
@@ -10,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/siddontang/loggers"
+	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
@@ -26,30 +29,46 @@ type Checker struct {
 	db          *sql.DB
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
+	chunker     table.Chunker
 	logger      loggers.Advanced
 }
 
-// NewChecker creates a new checksum object.
-func NewChecker(db *sql.DB, table, shadowTable *table.TableInfo, concurrency int, feed *repl.Client, logger loggers.Advanced) (*Checker, error) {
-	if concurrency == 0 {
-		concurrency = 4
+type CheckerConfig struct {
+	Concurrency           int
+	TargetMs              int64
+	DisableTrivialChunker bool
+	Logger                loggers.Advanced
+}
+
+func NewCheckerDefaultConfig() *CheckerConfig {
+	return &CheckerConfig{
+		Concurrency:           4,
+		TargetMs:              1000,
+		DisableTrivialChunker: false,
+		Logger:                logrus.New(),
 	}
+}
+
+// NewChecker creates a new checksum object.
+func NewChecker(db *sql.DB, tbl, shadowTable *table.TableInfo, feed *repl.Client, config *CheckerConfig) (*Checker, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
-	if shadowTable == nil || table == nil {
+	if shadowTable == nil || tbl == nil {
 		return nil, errors.New("table and shadowTable must be non-nil")
 	}
-	if table.Chunker == nil {
-		return nil, errors.New("table must have chunker attached")
+	chunker, err := table.NewChunker(tbl, config.TargetMs, config.DisableTrivialChunker, config.Logger)
+	if err != nil {
+		return nil, err
 	}
 	checksum := &Checker{
-		table:       table,
+		table:       tbl,
 		shadowTable: shadowTable,
-		concurrency: concurrency,
+		concurrency: config.Concurrency,
 		db:          db,
 		feed:        feed,
-		logger:      logger,
+		chunker:     chunker,
+		logger:      config.Logger,
 	}
 	return checksum, nil
 }
@@ -90,6 +109,9 @@ func (c *Checker) isHealthy() bool {
 }
 
 func (c *Checker) Run(ctx context.Context) error {
+	if err := c.chunker.Open(); err != nil {
+		return err
+	}
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
@@ -134,9 +156,9 @@ func (c *Checker) Run(ctx context.Context) error {
 
 	g := new(errgroup.Group)
 	g.SetLimit(c.concurrency)
-	for !c.table.Chunker.IsRead() && c.isHealthy() {
+	for !c.chunker.IsRead() && c.isHealthy() {
 		g.Go(func() error {
-			chunk, err := c.table.Chunker.Next()
+			chunk, err := c.chunker.Next()
 			if err != nil {
 				if err == table.ErrTableIsRead {
 					return nil

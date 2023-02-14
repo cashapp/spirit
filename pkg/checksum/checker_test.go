@@ -44,10 +44,8 @@ func TestBasicChecksum(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "t1")
 	assert.NoError(t, t1.RunDiscovery(db))
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
-	assert.NoError(t, t1.Chunker.Open())
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -55,7 +53,7 @@ func TestBasicChecksum(t *testing.T) {
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
-	checker, err := NewChecker(db, t1, t2, 4, feed, logger)
+	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
@@ -82,16 +80,13 @@ func TestBasicValidation(t *testing.T) {
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
-	_, err = NewChecker(db, nil, t2, 0, feed, logger)
+	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and shadowTable must be non-nil")
-	_, err = NewChecker(db, t1, nil, 0, feed, logger)
+	_, err = NewChecker(db, t1, nil, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and shadowTable must be non-nil")
-	_, err = NewChecker(db, t1, t2, 0, feed, logger)
-	assert.EqualError(t, err, "table must have chunker attached")
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	_, err = NewChecker(db, t1, t2, 0, feed, logger)
+	_, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	_, err = NewChecker(db, t1, t2, 0, nil, logger) // no feed
+	_, err = NewChecker(db, t1, t2, nil, NewCheckerDefaultConfig()) // no feed
 	assert.EqualError(t, err, "feed must be non-nil")
 }
 
@@ -109,8 +104,6 @@ func TestCorruptChecksum(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "t1")
 	assert.NoError(t, t1.RunDiscovery(db))
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
-	assert.NoError(t, t1.Chunker.Open())
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	logger := logrus.New()
@@ -120,7 +113,7 @@ func TestCorruptChecksum(t *testing.T) {
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
-	checker, err := NewChecker(db, t1, t2, 4, feed, logger)
+	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	err = checker.Run(context.Background())
 	assert.ErrorContains(t, err, "checksum mismatch")
@@ -138,7 +131,6 @@ func TestBoundaryCases(t *testing.T) {
 
 	t1 := table.NewTableInfo("test", "t1")
 	assert.NoError(t, t1.RunDiscovery(db))
-	assert.NoError(t, t1.AttachChunker(100, true, nil))
 	t2 := table.NewTableInfo("test", "t2")
 	assert.NoError(t, t2.RunDiscovery(db))
 	logger := logrus.New()
@@ -148,14 +140,13 @@ func TestBoundaryCases(t *testing.T) {
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
 	assert.NoError(t, feed.Run())
 
-	checker, err := NewChecker(db, t1, t2, 4, feed, logger)
+	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	assert.Error(t, checker.Run(context.Background()))
 
 	// UPDATE t1 to also be NULL
 	runSQL(t, "UPDATE t1 SET c = NULL")
-	assert.NoError(t, t1.Chunker.Open())
-	checker, err = NewChecker(db, t1, t2, 4, feed, logger)
+	checker, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
