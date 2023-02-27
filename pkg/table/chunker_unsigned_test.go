@@ -8,7 +8,7 @@ import (
 )
 
 func TestUnsignedChunker(t *testing.T) {
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 100
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint unsigned"

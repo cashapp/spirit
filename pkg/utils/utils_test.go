@@ -8,8 +8,8 @@ import (
 )
 
 func TestIntersectColumns(t *testing.T) {
-	t1 := table.NewTableInfo("test", "t1")
-	t1shadow := table.NewTableInfo("test", "t1_shadow")
+	t1 := table.NewTableInfo(nil, "test", "t1")
+	t1shadow := table.NewTableInfo(nil, "test", "t1_shadow")
 	t1.Columns = []string{"a", "b", "c"}
 	t1shadow.Columns = []string{"a", "b", "c"}
 	str := IntersectColumns(t1, t1shadow, false)

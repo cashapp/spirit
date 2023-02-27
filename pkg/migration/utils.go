@@ -22,8 +22,8 @@ func IsCompatible(ctx context.Context, migration *Migration) bool {
 	}
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.schemaName, m.tableName)
-	if err := m.table.RunDiscovery(ctx, m.db); err != nil {
+	m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+	if err := m.table.SetInfo(ctx); err != nil {
 		return false
 	}
 	// Check that we can get a chunker.
