@@ -42,10 +42,10 @@ func TestBasicChecksum(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -69,10 +69,10 @@ func TestBasicValidation(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -102,10 +102,10 @@ func TestCorruptChecksum(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -129,10 +129,10 @@ func TestBoundaryCases(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())

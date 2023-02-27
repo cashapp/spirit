@@ -44,8 +44,8 @@ func TestCutOver(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "cutovert1")
-	t1shadow := table.NewTableInfo("test", "_cutovert1_shadow")
+	t1 := table.NewTableInfo(db, "test", "cutovert1")
+	t1shadow := table.NewTableInfo(db, "test", "_cutovert1_shadow")
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
@@ -93,8 +93,8 @@ func TestMDLLockFails(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "mdllocks")
-	t1shadow := table.NewTableInfo("test", "_mdllocks_shadow")
+	t1 := table.NewTableInfo(db, "test", "mdllocks")
+	t1shadow := table.NewTableInfo(db, "test", "_mdllocks_shadow")
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
@@ -128,8 +128,8 @@ func TestInvalidOptions(t *testing.T) {
 	// Invalid options
 	_, err = NewCutOver(db, nil, nil, nil, logger)
 	assert.Error(t, err)
-	t1 := table.NewTableInfo("test", "t1")
-	t1shadow := table.NewTableInfo("test", "t1_shadow")
+	t1 := table.NewTableInfo(db, "test", "t1")
+	t1shadow := table.NewTableInfo(db, "test", "t1_shadow")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)

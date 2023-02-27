@@ -40,10 +40,10 @@ func TestReplClient(t *testing.T) {
 	runSQL(t, "CREATE TABLE replt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE _replt1_chkpnt (a int)") // just used to advance binlog
 
-	t1 := table.NewTableInfo("test", "replt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "replt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "replt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -81,10 +81,10 @@ func TestReplClientComplex(t *testing.T) {
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 
-	t1 := table.NewTableInfo("test", "replcomplext1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "replcomplext2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "replcomplext1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replcomplext2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -148,10 +148,10 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	runSQL(t, "CREATE TABLE replresumet2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE _replresumet1_chkpnt (a int)") // just used to advance binlog
 
-	t1 := table.NewTableInfo("test", "replresumet1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "replresumet2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "replresumet1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replresumet2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -173,10 +173,10 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	runSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
-	t1 := table.NewTableInfo("test", "replresumepointt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "replresumepointt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "replresumepointt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replresumepointt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -204,10 +204,10 @@ func TestReplClientOpts(t *testing.T) {
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 
-	t1 := table.NewTableInfo("test", "replclientoptst1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "replclientoptst2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "replclientoptst1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replclientoptst2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())

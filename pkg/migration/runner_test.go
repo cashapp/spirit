@@ -674,8 +674,8 @@ func TestCheckpoint(t *testing.T) {
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
 		// Get Table Info
-		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(context.TODO(), m.db)
+		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
 		return m
@@ -819,8 +819,8 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
 		// Get Table Info
-		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(context.TODO(), m.db)
+		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
 		return m
@@ -940,8 +940,8 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, err)
 		defer m.db.Close()
 		// Get Table Info
-		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(context.TODO(), m.db)
+		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
 

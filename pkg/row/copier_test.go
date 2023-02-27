@@ -40,10 +40,10 @@ func TestCopier(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "copiert1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "copiert2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "copiert1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "copiert2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -65,10 +65,10 @@ func TestThrottler(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "throttlert1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "throttlert2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "throttlert1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "throttlert2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -91,10 +91,10 @@ func TestCopierUniqueDestination(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "copieruniqt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "copieruniqt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "copieruniqt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "copieruniqt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// if the checksum is FALSE, the unique violation will cause an error.
 	cfg := NewCopierDefaultConfig()
@@ -106,10 +106,10 @@ func TestCopierUniqueDestination(t *testing.T) {
 	// however, if the checksum is TRUE, the unique violation will be ignored.
 	// This is because it's not possible to differentiate between a resume from checkpoint
 	// causing a duplicate key, and the DDL being applied causing it.
-	t1 = table.NewTableInfo("test", "copieruniqt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 = table.NewTableInfo("test", "copieruniqt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 = table.NewTableInfo(db, "test", "copieruniqt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 = table.NewTableInfo(db, "test", "copieruniqt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 	copier, err = NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
@@ -124,10 +124,10 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "datatpt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "datatpt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "datatpt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "datatpt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -145,10 +145,10 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "null2notnullt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "null2notnullt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "null2notnullt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "null2notnullt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -166,10 +166,10 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "invaliddt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "invaliddt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "invaliddt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "invaliddt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -192,10 +192,10 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "lockt1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "lockt2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "lockt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "lockt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Lock table t2 for 2 seconds.
 	// This should be enough to retry, but it will eventually be successful.
@@ -223,10 +223,10 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "lock2t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
-	t2 := table.NewTableInfo("test", "lock2t2")
-	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
+	t1 := table.NewTableInfo(db, "test", "lock2t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "lock2t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Lock again but for 12 seconds.
 	// This will cause a failure.
@@ -250,7 +250,7 @@ func TestCopierValidation(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo("test", "t1")
+	t1 := table.NewTableInfo(db, "test", "t1")
 
 	// if the checksum is FALSE, the unique violation will cause an error.
 	_, err = NewCopier(db, t1, nil, NewCopierDefaultConfig())

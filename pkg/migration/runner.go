@@ -178,8 +178,8 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	}
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.schemaName, m.tableName)
-	if err := m.table.RunDiscovery(ctx, m.db); err != nil {
+	m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+	if err := m.table.SetInfo(ctx); err != nil {
 		return err
 	}
 	// This step is technically optional, but first we attempt to
@@ -434,8 +434,8 @@ func (m *MigrationRunner) createShadowTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
-	if err := m.shadowTable.RunDiscovery(ctx, m.db); err != nil {
+	m.shadowTable = table.NewTableInfo(m.db, m.schemaName, shadowName)
+	if err := m.shadowTable.SetInfo(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -537,7 +537,7 @@ func (m *MigrationRunner) createCheckpointTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.checkpointTable = table.NewTableInfo(m.table.SchemaName, cpName)
+	m.checkpointTable = table.NewTableInfo(m.db, m.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -628,8 +628,8 @@ func (m *MigrationRunner) resumeFromCheckpoint(ctx context.Context) error {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
-	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
-	if err := m.shadowTable.RunDiscovery(ctx, m.db); err != nil {
+	m.shadowTable = table.NewTableInfo(m.db, m.schemaName, shadowName)
+	if err := m.shadowTable.SetInfo(ctx); err != nil {
 		return err
 	}
 
@@ -661,7 +661,7 @@ func (m *MigrationRunner) resumeFromCheckpoint(ctx context.Context) error {
 		Pos:  uint32(binlogPos),
 	})
 
-	m.checkpointTable = table.NewTableInfo(m.table.SchemaName, cpName)
+	m.checkpointTable = table.NewTableInfo(m.db, m.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -775,7 +775,7 @@ func (m *MigrationRunner) updateTableStatisticsContinuously(ctx context.Context)
 		if m.getCurrentState() > migrationStateCopyRows {
 			return
 		}
-		if err := m.table.UpdateTableStatistics(ctx, m.db); err != nil {
+		if err := m.table.UpdateTableStatistics(ctx); err != nil {
 			m.logger.Errorf("error updating table statistics: %v", err)
 		}
 	}

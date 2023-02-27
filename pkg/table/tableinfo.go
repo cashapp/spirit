@@ -29,6 +29,7 @@ var (
 
 type TableInfo struct {
 	sync.Mutex
+	db                  *sql.DB
 	EstimatedRows       uint64
 	SchemaName          string
 	TableName           string
@@ -40,8 +41,9 @@ type TableInfo struct {
 	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
 }
 
-func NewTableInfo(schema, table string) *TableInfo {
+func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 	return &TableInfo{
+		db:         db,
 		SchemaName: schema,
 		TableName:  table,
 	}
@@ -79,48 +81,43 @@ func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{}
 	return pkCols
 }
 
-// RunDiscovery requires a database connection, which means it can't easily be mocked in unit tests.
-// Where possible discovery funcs should update the TableInfo struct directly, and not be called by
-// internal functions. This allows the TableInfo to be mocked in tests.
-func (t *TableInfo) RunDiscovery(ctx context.Context, db *sql.DB) error {
-	// Discover row estimate
-	if err := t.discoverRowEstimate(ctx, db); err != nil {
+// SetInfo reads from MySQL metadata (usually infoschema) and sets the values in TableInfo.
+
+func (t *TableInfo) SetInfo(ctx context.Context) error {
+	if err := t.setRowEstimate(ctx); err != nil {
 		return err
 	}
-	// Discover columns
-	if err := t.discoverColumns(ctx, db); err != nil {
+	if err := t.setColumns(ctx); err != nil {
 		return err
 	}
-	// Discover primary key
-	if err := t.discoverPrimaryKey(ctx, db); err != nil {
+	if err := t.setPrimaryKey(ctx); err != nil {
 		return err
 	}
 	// Check primary key is memory comparable.
 	// In future this may become optional, since it's not a chunker requirement,
 	// but a requirement for the deltaMap.
-	if err := t.checkPrimaryKeyIsMemoryComparable(ctx, db); err != nil {
+	if err := t.checkPrimaryKeyIsMemoryComparable(ctx); err != nil {
 		return err
 	}
-
-	return t.discoverMinMax(ctx, db)
+	return t.setMinMax(ctx)
 }
 
-// discoverRowEstimate is a separate function so it can be repeated continuously
+// setRowEstimate is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
-func (t *TableInfo) discoverRowEstimate(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, "ANALYZE TABLE "+t.QuotedName())
+func (t *TableInfo) setRowEstimate(ctx context.Context) error {
+	_, err := t.db.ExecContext(ctx, "ANALYZE TABLE "+t.QuotedName())
 	if err != nil {
 		return err
 	}
-	err = db.QueryRow("SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
+	err = t.db.QueryRowContext(ctx, "SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (t *TableInfo) discoverColumns(ctx context.Context, db *sql.DB) error {
-	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
+func (t *TableInfo) setColumns(ctx context.Context) error {
+	rows, err := t.db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
@@ -138,9 +135,10 @@ func (t *TableInfo) discoverColumns(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func (t *TableInfo) discoverPrimaryKey(ctx context.Context, db *sql.DB) error {
-	// Discover primary key
-	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=? and table_name=? and constraint_name='PRIMARY' ORDER BY ORDINAL_POSITION",
+// setPrimaryKey sets the primary key and also the primary key type.
+// A primary key can contain multiple columns.
+func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
+	rows, err := t.db.QueryContext(ctx, "SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=? and table_name=? and constraint_name='PRIMARY' ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
@@ -161,7 +159,7 @@ func (t *TableInfo) discoverPrimaryKey(ctx context.Context, db *sql.DB) error {
 	// Get primary key type and auto_inc info.
 	query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
 	var extra string
-	err = db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.primaryKeyType, &extra)
+	err = t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.primaryKeyType, &extra)
 	if err != nil {
 		return err
 	}
@@ -170,11 +168,11 @@ func (t *TableInfo) discoverPrimaryKey(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context, db *sql.DB) error {
+func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error {
 	for _, col := range t.PrimaryKey {
 		var colType string
 		query := "SELECT column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
-		err := db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&colType)
+		err := t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&colType)
 		if err != nil {
 			return err
 		}
@@ -182,13 +180,12 @@ func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context, db *s
 			return fmt.Errorf("primary key contains %s which is not memory comparable", colType)
 		}
 	}
-
 	return nil
 }
 
-// discoverMinMax is a separate function so it can be repeated continuously
+// setMinMax is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
-func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
+func (t *TableInfo) setMinMax(ctx context.Context) error {
 	// We can't scan into interface{} because the types will be wonky.
 	// See: https://github.com/go-sql-driver/mysql/issues/366
 	// This is a workaround which is a bit ugly, but type preserving.
@@ -197,7 +194,7 @@ func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
 	case signedType:
 		var min, max sql.NullInt64
-		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
+		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err != nil {
 			return err
 		}
@@ -208,7 +205,7 @@ func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 	case unsignedType:
 		query = fmt.Sprintf("SELECT IFNULL(min(%s),0), IFNULL(max(%s),0) FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
 		var min, max uint64 // there is no sql.NullUint64
-		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
+		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err != nil {
 			return err
 		}
@@ -217,7 +214,7 @@ func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 		}
 	case binaryType:
 		var min, max sql.NullString
-		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
+		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err != nil {
 			return err
 		}
@@ -233,10 +230,10 @@ func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 
 // UpdateTableStatistics recalculates the min/max and row estimate.
 // It is exported so it can be used by the caller to continuously update the table stats.
-func (t *TableInfo) UpdateTableStatistics(ctx context.Context, db *sql.DB) error {
-	err := t.discoverMinMax(ctx, db)
+func (t *TableInfo) UpdateTableStatistics(ctx context.Context) error {
+	err := t.setMinMax(ctx)
 	if err != nil {
 		return err
 	}
-	return t.discoverRowEstimate(ctx, db)
+	return t.setRowEstimate(ctx)
 }

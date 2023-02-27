@@ -65,7 +65,7 @@ func TestChunkerBasic(t *testing.T) {
 /*
 func TestChunkerStatic(t *testing.T) {
 
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(db, "test", "t1")
 	t1.minValue = int64(1)
 	t1.maxValue = int64(1000000)
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
@@ -116,7 +116,7 @@ func TestChunkerStatic(t *testing.T) {
 */
 
 func TestOpenOnUnsupportedType(t *testing.T) {
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(nil, "test", "t1")
 	t1.minValue = int64(1)
 	t1.maxValue = int64(1000000)
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
@@ -130,7 +130,7 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 }
 
 func TestOpenOnBinaryType(t *testing.T) {
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(nil, "test", "t1")
 	t1.minValue = int64(1)
 	t1.maxValue = int64(1000000)
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
@@ -145,7 +145,7 @@ func TestOpenOnBinaryType(t *testing.T) {
 }
 
 func TestOpenOnNoMinMax(t *testing.T) {
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
@@ -158,7 +158,7 @@ func TestOpenOnNoMinMax(t *testing.T) {
 }
 
 func TestCallingNextChunkWithoutOpen(t *testing.T) {
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
@@ -179,7 +179,7 @@ func TestCallingNextChunkWithoutOpen(t *testing.T) {
 /*
 func TestChunkToIncrementSize(t *testing.T) {
 
-	t1 := NewTableInfo("test", "t1")
+	t1 := NewTableInfo(db, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint unsigned"
@@ -411,7 +411,7 @@ func dsn() string {
 }
 
 func newTableInfo4Test(schema, table string) *TableInfo {
-	t1 := NewTableInfo(schema, table)
+	t1 := NewTableInfo(nil, schema, table)
 	return t1
 }
 
@@ -437,8 +437,8 @@ func TestDiscovery(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
+	t1 := NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -472,8 +472,8 @@ func TestDiscoveryUInt(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
+	t1 := NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -506,11 +506,11 @@ func TestDiscoveryNoPrimaryKeyOrNoTable(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo("test", "t1")
-	assert.Error(t, t1.RunDiscovery(context.TODO(), db))
+	t1 := NewTableInfo(db, "test", "t1")
+	assert.Error(t, t1.SetInfo(context.TODO()))
 
-	t2 := NewTableInfo("test", "t2fdsfds")
-	assert.Error(t, t2.RunDiscovery(context.TODO(), db))
+	t2 := NewTableInfo(db, "test", "t2fdsfds")
+	assert.Error(t, t2.SetInfo(context.TODO()))
 }
 
 func TestDiscoveryBalancesTable(t *testing.T) {
@@ -540,8 +540,8 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo("test", "balances")
-	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
+	t1 := NewTableInfo(db, "test", "balances")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
 
 	assert.True(t, t1.primaryKeyIsAutoInc)
 	assert.Equal(t, "bigint", t1.primaryKeyType)
@@ -571,6 +571,6 @@ func TestDiscoveryCompositeNonComparable(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo("test", "compnoncomparable")
-	assert.Error(t, t1.RunDiscovery(context.TODO(), db))
+	t1 := NewTableInfo(db, "test", "compnoncomparable")
+	assert.Error(t, t1.SetInfo(context.TODO()))
 }
