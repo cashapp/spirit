@@ -354,7 +354,7 @@ func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 		}
 		// Wait for canal to catch up before determining if the changeset
 		// length is considered trivial.
-		if err := c.BlockWait(); err != nil {
+		if err := c.BlockWait(ctx); err != nil {
 			return err
 		}
 
@@ -369,13 +369,13 @@ func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 }
 
 // BlockWait blocks until the canal has caught up to the current binlog position.
-func (c *Client) BlockWait() error {
+func (c *Client) BlockWait(ctx context.Context) error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {
 		return err
 	}
 	for {
-		if err := c.injectBinlogNoise(); err != nil {
+		if err := c.injectBinlogNoise(ctx); err != nil {
 			return err
 		}
 		canalPos := c.canal.SyncedPosition()
@@ -393,9 +393,9 @@ func (c *Client) BlockWait() error {
 // and there are no current changes on the MySQL server to advance itself.
 // Note: We can not update the table or the shadowTable, because this intentionally
 // causes a panic (c.tableChanged() is called).
-func (c *Client) injectBinlogNoise() error {
+func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
-	_, err := c.db.Exec(stmt)
+	_, err := c.db.ExecContext(ctx, stmt)
 	return err
 }
 

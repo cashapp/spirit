@@ -1,6 +1,7 @@
 package table
 
 import (
+	"context"
 	"database/sql"
 	"math"
 	"os"
@@ -437,7 +438,7 @@ func TestDiscovery(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -472,7 +473,7 @@ func TestDiscoveryUInt(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -506,10 +507,10 @@ func TestDiscoveryNoPrimaryKeyOrNoTable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo("test", "t1")
-	assert.Error(t, t1.RunDiscovery(db))
+	assert.Error(t, t1.RunDiscovery(context.TODO(), db))
 
 	t2 := NewTableInfo("test", "t2fdsfds")
-	assert.Error(t, t2.RunDiscovery(db))
+	assert.Error(t, t2.RunDiscovery(context.TODO(), db))
 }
 
 func TestDiscoveryBalancesTable(t *testing.T) {
@@ -540,7 +541,7 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo("test", "balances")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 
 	assert.True(t, t1.primaryKeyIsAutoInc)
 	assert.Equal(t, "bigint", t1.primaryKeyType)

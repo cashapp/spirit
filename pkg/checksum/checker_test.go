@@ -43,9 +43,9 @@ func TestBasicChecksum(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -70,9 +70,9 @@ func TestBasicValidation(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -103,9 +103,9 @@ func TestCorruptChecksum(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())
@@ -130,9 +130,9 @@ func TestBoundaryCases(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "t2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(dsn())

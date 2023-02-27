@@ -26,7 +26,7 @@ type TableLock struct {
 // and acquire the lock again.
 func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
-	_, err := lockTxn.Exec("SET SESSION lock_wait_timeout = ?", mdlLockWaitTimeout)
+	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", mdlLockWaitTimeout)
 	if err != nil {
 		return nil, err // could not change timeout.
 	}
@@ -39,7 +39,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 		// TODO: We acquire a READ LOCK which I believe is sufficient (just need to prevent modifications to table).
 		// Ghost however, acquires a WRITE LOCK. We can't do that because the slowly arriving
 		// changes in BlockWait() will block because they won't be able to read the source table.
-		_, err = lockTxn.Exec("LOCK TABLES " + table.QuotedName() + " READ")
+		_, err = lockTxn.ExecContext(ctx, "LOCK TABLES "+table.QuotedName()+" READ")
 		if err != nil {
 			// See if the error is retryable, many are
 			_, myerr := my.Error(err)

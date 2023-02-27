@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"context"
 	"testing"
 
 	"github.com/go-sql-driver/mysql"
@@ -19,7 +20,7 @@ func TestIsCompatible(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	assert.True(t, IsCompatible(&Migration{
+	assert.True(t, IsCompatible(context.TODO(), &Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -39,7 +40,7 @@ func TestIsCompatible(t *testing.T) {
 	   )`
 	runSQL(t, tbl)
 
-	assert.False(t, IsCompatible(&Migration{
+	assert.False(t, IsCompatible(context.TODO(), &Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -60,7 +61,7 @@ func TestIsCompatible(t *testing.T) {
 	   )`
 	runSQL(t, tbl)
 
-	assert.False(t, IsCompatible(&Migration{
+	assert.False(t, IsCompatible(context.TODO(), &Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,

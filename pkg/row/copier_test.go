@@ -41,9 +41,9 @@ func TestCopier(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "copiert1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "copiert2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -66,9 +66,9 @@ func TestThrottler(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "throttlert1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "throttlert2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -92,9 +92,9 @@ func TestCopierUniqueDestination(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "copieruniqt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "copieruniqt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// if the checksum is FALSE, the unique violation will cause an error.
 	cfg := NewCopierDefaultConfig()
@@ -107,9 +107,9 @@ func TestCopierUniqueDestination(t *testing.T) {
 	// This is because it's not possible to differentiate between a resume from checkpoint
 	// causing a duplicate key, and the DDL being applied causing it.
 	t1 = table.NewTableInfo("test", "copieruniqt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 = table.NewTableInfo("test", "copieruniqt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 	copier, err = NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
@@ -125,9 +125,9 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "datatpt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "datatpt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -146,9 +146,9 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "null2notnullt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "null2notnullt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -167,9 +167,9 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "invaliddt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "invaliddt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// Checksum flag does not affect this error.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
@@ -193,9 +193,9 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "lockt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "lockt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// Lock table t2 for 2 seconds.
 	// This should be enough to retry, but it will eventually be successful.
@@ -224,9 +224,9 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo("test", "lock2t1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "lock2t2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	// Lock again but for 12 seconds.
 	// This will cause a failure.
