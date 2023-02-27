@@ -97,6 +97,7 @@ RETRYLOOP:
 				utils.ErrInErr(trx.Rollback()) // Rollback
 				return rowsAffected, err
 			}
+			defer warningRes.Close()
 			var level, code, message string
 			for warningRes.Next() {
 				err = warningRes.Scan(&level, &code, &message)

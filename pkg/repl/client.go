@@ -273,7 +273,7 @@ func (c *Client) updatePosInMemory(pos uint32) {
 func (c *Client) Flush(ctx context.Context) error {
 	c.Lock()
 	setToFlush := c.binlogChangeset
-	posOfFlush := c.binlogPosInMemory
+	posOfFlush := *c.binlogPosInMemory        // copy the value, not the pointer
 	c.binlogChangeset = make(map[string]bool) // set new value
 	c.Unlock()                                // unlock immediately so others can write to the changeset
 	// The changeset delta is because the status output is based on len(binlogChangeset)
@@ -299,39 +299,41 @@ func (c *Client) Flush(ctx context.Context) error {
 			replaceKeys = append(replaceKeys, key)
 		}
 		if (i % 10000) == 0 {
-			if err := c.doFlush(ctx, &deleteKeys, &replaceKeys); err != nil {
+			if err := c.doFlush(ctx, deleteKeys, replaceKeys); err != nil {
 				return err
 			}
+			deleteKeys = []string{}
+			replaceKeys = []string{}
 			atomic.AddInt64(&c.binlogChangesetDelta, -10000)
 		}
 	}
-	err := c.doFlush(ctx, &deleteKeys, &replaceKeys)
+	err := c.doFlush(ctx, deleteKeys, replaceKeys)
 	// Update the synced binlog position to the posOfFlush
 	// uses a mutex.
-	c.SetPos(posOfFlush)
+	c.SetPos(&posOfFlush)
 	return err
 }
 
 // doFlush is called by Flush() to apply the changeset to the shadow table.
 // It runs the actual SQL statements using DELETE FROM and REPLACE INTO syntax.
 // This is called under a mutex from Flush().
-func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string) error {
+func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys []string) error {
 	var deleteStmt, replaceStmt string
-	if len(*deleteKeys) > 0 {
+	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
 			c.shadowTable.QuotedName(),
 			strings.Join(c.shadowTable.PrimaryKey, ","),
-			c.pksToRowValueConstructor(*deleteKeys),
+			c.pksToRowValueConstructor(deleteKeys),
 		)
 	}
-	if len(*replaceKeys) > 0 {
+	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
 			c.shadowTable.QuotedName(),
 			utils.IntersectColumns(c.table, c.shadowTable, false),
 			utils.IntersectColumns(c.table, c.shadowTable, false),
 			c.table.QuotedName(),
 			strings.Join(c.shadowTable.PrimaryKey, ","),
-			c.pksToRowValueConstructor(*replaceKeys),
+			c.pksToRowValueConstructor(replaceKeys),
 		)
 	}
 	// This will start + commit the transaction
@@ -339,9 +341,6 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys *[]string)
 	if _, err := dbconn.RetryableTransaction(ctx, c.db, false, deleteStmt, replaceStmt); err != nil {
 		return err
 	}
-	// Reset the deleteKeys and replaceKeys so they can be used again.
-	*deleteKeys = []string{}
-	*replaceKeys = []string{}
 	return nil
 }
 
