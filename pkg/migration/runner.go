@@ -204,8 +204,9 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 		return err
 	}
 
+	go m.estimateRowsPerSecondLoop()            // start estimating rows per second
 	go m.dumpStatus()                           // start periodically writing status
-	go m.dumpCheckpointContinuously()           // start periodically dumping the checkpoint.
+	go m.dumpCheckpointContinuously(ctx)        // start periodically dumping the checkpoint.
 	go m.updateTableStatisticsContinuously(ctx) // update the min/max and estimated rows.
 	go m.periodicFlush(ctx)                     // advance the binary log position periodically.
 
@@ -366,12 +367,15 @@ func (m *MigrationRunner) setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// An error here means the connection to the replica is not valid, or it can't be detected
+		// As 5.7 or 8.0. This is not (currently) fatal, it just means the replication throttler can not be used.
 		mythrottler, err := throttler.NewReplicationThrottler(replica, m.optReplicaMaxLagMs, m.logger)
 		if err != nil {
-			m.copier.SetThrottler(mythrottler)
-			if err := mythrottler.Start(); err != nil {
-				return err
-			}
+			m.logger.Warnf("could not create replication throttler: %v", err)
+		}
+		m.copier.SetThrottler(mythrottler)
+		if err := mythrottler.Start(); err != nil {
+			return err
 		}
 	}
 
@@ -703,7 +707,7 @@ func (m *MigrationRunner) setCurrentState(s migrationState) {
 	}
 }
 
-func (m *MigrationRunner) dumpCheckpoint() error {
+func (m *MigrationRunner) dumpCheckpoint(ctx context.Context) error {
 	// Retrieve the binlog position first and under a mutex.
 	// Currently it never advances but it's possible it might in future
 	// and this race condition is missed.
@@ -716,11 +720,11 @@ func (m *MigrationRunner) dumpCheckpoint() error {
 	m.logger.Infof("checkpoint: low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
 	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
-	_, err = m.db.Exec(query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
+	_, err = m.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
 	return err
 }
 
-func (m *MigrationRunner) dumpCheckpointContinuously() {
+func (m *MigrationRunner) dumpCheckpointContinuously(ctx context.Context) {
 	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -731,7 +735,7 @@ func (m *MigrationRunner) dumpCheckpointContinuously() {
 		if m.getCurrentState() > migrationStateCopyRows {
 			return
 		}
-		if err := m.dumpCheckpoint(); err != nil {
+		if err := m.dumpCheckpoint(ctx); err != nil {
 			m.logger.Errorf("error writing checkpoint: %v", err)
 		}
 	}
@@ -778,8 +782,6 @@ func (m *MigrationRunner) updateTableStatisticsContinuously(ctx context.Context)
 }
 
 func (m *MigrationRunner) dumpStatus() {
-	go m.estimateRowsPerSecondLoop()
-
 	ticker := time.NewTicker(statusInterval)
 	defer ticker.Stop()
 	for range ticker.C {

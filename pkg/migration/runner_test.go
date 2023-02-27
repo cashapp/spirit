@@ -724,7 +724,7 @@ func TestCheckpoint(t *testing.T) {
 	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
-	assert.Error(t, m.dumpCheckpoint())
+	assert.Error(t, m.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
 	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
@@ -738,7 +738,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint())
+	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
 	// Close the db connection since m is to be destroyed.
 	assert.NoError(t, m.db.Close())
@@ -771,7 +771,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint())
+	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
 	// Let's confirm we do advance the watermark.
 	for i := 0; i < 10; i++ {
@@ -868,7 +868,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
-	assert.Error(t, m.dumpCheckpoint())
+	assert.Error(t, m.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
 	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
@@ -882,7 +882,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint())
+	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
 	// Close the db connection since m is to be destroyed.
 	assert.NoError(t, m.db.Close())

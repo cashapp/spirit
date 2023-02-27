@@ -198,20 +198,31 @@ func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 	case signedType:
 		var min, max sql.NullInt64
 		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err == nil && min.Valid && max.Valid {
+		if err != nil {
+			return err
+		}
+		// If min/max valid it means there are rows in the table.
+		if min.Valid && max.Valid {
 			t.minValue, t.maxValue = min.Int64, max.Int64
 		}
 	case unsignedType:
 		query = fmt.Sprintf("SELECT IFNULL(min(%s),0), IFNULL(max(%s),0) FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
 		var min, max uint64 // there is no sql.NullUint64
 		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err == nil && max > 0 { // check for a maxVal, minval=0 could be valid.
+		if err != nil {
+			return err
+		}
+		if max > 0 { // check for a maxVal, minval=0 could be valid.
 			t.minValue, t.maxValue = min, max
 		}
 	case binaryType:
 		var min, max sql.NullString
 		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err == nil && min.Valid && max.Valid {
+		if err != nil {
+			return err
+		}
+		// If min/max valid it means there are rows in the table.
+		if min.Valid && max.Valid {
 			t.minValue, t.maxValue = min.String, max.String
 		}
 	default:
