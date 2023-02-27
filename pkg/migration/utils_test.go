@@ -70,4 +70,23 @@ func TestIsCompatible(t *testing.T) {
 		Table:       "incompat2", // VARCHAR PK
 		Alter:       "ENGINE=InnoDB",
 	}))
+
+	runSQL(t, `DROP TABLE IF EXISTS incompat3`)
+	tbl = `CREATE TABLE incompat3 (
+	   	id int(11) NOT NULL,
+	   	name varchar(255) NOT NULL,
+	   	b varchar(255) NOT NULL,
+		PRIMARY KEY (id, name)
+	   )`
+	runSQL(t, tbl)
+
+	assert.False(t, IsCompatible(context.TODO(), &Migration{
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
+		Concurrency: 16,
+		Table:       "incompat3", // varchar in key.
+		Alter:       "ENGINE=InnoDB",
+	}))
 }
