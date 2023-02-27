@@ -307,9 +307,15 @@ func TestBadOptions(t *testing.T) {
 }
 
 func TestBadAlter(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS bot1`)
+	runSQL(t, `DROP TABLE IF EXISTS bot1, bot2`)
 	table := `CREATE TABLE bot1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	table = `CREATE TABLE bot2 (
+		id int(11) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
@@ -377,6 +383,24 @@ func TestBadAlter(t *testing.T) {
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
 	assert.NoError(t, err) // its valid, no rename
+	assert.NoError(t, m.Close())
+
+	// Test DROP PRIMARY KEY, change primary key.
+	// The REPLACE statement likely relies on the same PRIMARY KEY on the shadow table,
+	// so things get a lot more complicated if the primary key changes.
+	m, err = NewMigrationRunner(&Migration{
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
+		Concurrency: 16,
+		Table:       "bot2",
+		Alter:       "DROP PRIMARY KEY",
+	})
+	assert.NoError(t, err) // does not parse alter yet.
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "dropping primary key")
 	assert.NoError(t, m.Close())
 }
 

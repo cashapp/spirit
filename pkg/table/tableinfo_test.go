@@ -556,3 +556,21 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	assert.Equal(t, int64(math.MinInt64), t1.minValue)
 	assert.Equal(t, int64(math.MaxInt64), t1.maxValue)
 }
+
+func TestDiscoveryCompositeNonComparable(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS compnoncomparable`)
+	table := `CREATE TABLE compnoncomparable (
+		id int(11) unsigned NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id, name)
+	)`
+	runSQL(t, table)
+	runSQL(t, `insert into compnoncomparable values (1, 'a'), (2, 'b'), (3, 'c')`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo("test", "compnoncomparable")
+	assert.Error(t, t1.RunDiscovery(context.TODO(), db))
+}

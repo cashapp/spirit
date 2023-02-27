@@ -465,6 +465,25 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 	return nil // no renames
 }
 
+func (m *MigrationRunner) checkAlterTableIsNotAlterPrimaryKey(sql string) error {
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(sql, "", "")
+	if err != nil {
+		return fmt.Errorf("could not parse alter table statement: %s", sql)
+	}
+	stmt := &stmtNodes[0]
+	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
+	if !ok {
+		return errors.New("not a valid alter table statement")
+	}
+	for _, spec := range alterStmt.Specs {
+		if spec.Tp == ast.AlterTableDropPrimaryKey {
+			return errors.New("dropping primary key is not supported by the shadow table algorithm")
+		}
+	}
+	return nil // no problems
+}
+
 // alterShadowTable uses the TiDB parser to preflight check that the alter statement is not a rename
 // We only need to check here because it breaks this algorithm. In most cases,
 // renames work with INSTANT ddl so this code is not required. The typical
@@ -472,6 +491,9 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 func (m *MigrationRunner) alterShadowTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", m.shadowTable.QuotedName(), m.alterStatement)
 	if err := m.checkAlterTableIsNotRename(query); err != nil {
+		return err
+	}
+	if err := m.checkAlterTableIsNotAlterPrimaryKey(query); err != nil {
 		return err
 	}
 	_, err := m.db.ExecContext(ctx, query)

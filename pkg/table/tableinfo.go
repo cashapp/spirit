@@ -88,50 +88,20 @@ func (t *TableInfo) RunDiscovery(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	// Discover columns
-	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
-		t.SchemaName,
-		t.TableName,
-	)
-	if err != nil {
+	if err := t.discoverColumns(ctx, db); err != nil {
 		return err
 	}
-	for rows.Next() {
-		var col string
-		if err := rows.Scan(&col); err != nil {
-			return err
-		}
-		t.Columns = append(t.Columns, col)
-	}
-	rows.Close()
-
 	// Discover primary key
-	rows, err = db.Query("SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=? and table_name=? and constraint_name='PRIMARY' ORDER BY ORDINAL_POSITION",
-		t.SchemaName,
-		t.TableName,
-	)
-	if err != nil {
+	if err := t.discoverPrimaryKey(ctx, db); err != nil {
 		return err
 	}
-	for rows.Next() {
-		var col string
-		if err := rows.Scan(&col); err != nil {
-			return err
-		}
-		t.PrimaryKey = append(t.PrimaryKey, col)
-	}
-	rows.Close()
-	if len(t.PrimaryKey) == 0 {
-		return errors.New("no primary key found (not supported)")
-	}
-	// Get primary key type and auto_inc info.
-	query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
-	var extra string
-	err = db.QueryRow(query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.primaryKeyType, &extra)
-	if err != nil {
+	// Check primary key is memory comparable.
+	// In future this may become optional, since it's not a chunker requirement,
+	// but a requirement for the deltaMap.
+	if err := t.checkPrimaryKeyIsMemoryComparable(ctx, db); err != nil {
 		return err
 	}
-	t.primaryKeyType = removeWidth(t.primaryKeyType)
-	t.primaryKeyIsAutoInc = (extra == "auto_increment")
+
 	return t.discoverMinMax(ctx, db)
 }
 
@@ -146,6 +116,73 @@ func (t *TableInfo) discoverRowEstimate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func (t *TableInfo) discoverColumns(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
+		t.SchemaName,
+		t.TableName,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return err
+		}
+		t.Columns = append(t.Columns, col)
+	}
+	return nil
+}
+
+func (t *TableInfo) discoverPrimaryKey(ctx context.Context, db *sql.DB) error {
+	// Discover primary key
+	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=? and table_name=? and constraint_name='PRIMARY' ORDER BY ORDINAL_POSITION",
+		t.SchemaName,
+		t.TableName,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return err
+		}
+		t.PrimaryKey = append(t.PrimaryKey, col)
+	}
+	if len(t.PrimaryKey) == 0 {
+		return errors.New("no primary key found (not supported)")
+	}
+	// Get primary key type and auto_inc info.
+	query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
+	var extra string
+	err = db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.primaryKeyType, &extra)
+	if err != nil {
+		return err
+	}
+	t.primaryKeyType = removeWidth(t.primaryKeyType)
+	t.primaryKeyIsAutoInc = (extra == "auto_increment")
+	return nil
+}
+
+func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context, db *sql.DB) error {
+	for _, col := range t.PrimaryKey {
+		var colType string
+		query := "SELECT column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
+		err := db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&colType)
+		if err != nil {
+			return err
+		}
+		if mySQLTypeToSimplifiedKeyType(colType) == unknownType {
+			return fmt.Errorf("primary key contains %s which is not memory comparable", colType)
+		}
+	}
+
 	return nil
 }
 
