@@ -651,9 +651,9 @@ func TestCheckpoint(t *testing.T) {
 		assert.NoError(t, err)
 		// Get Table Info
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(m.db)
+		err = m.table.RunDiscovery(context.TODO(), m.db)
 		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable())
+		assert.NoError(t, m.dropOldTable(context.TODO()))
 		return m
 	}
 
@@ -662,12 +662,12 @@ func TestCheckpoint(t *testing.T) {
 	// Which first checks if the table can be restored from checkpoint.
 	// Because this is the first run, it can't.
 
-	assert.Error(t, m.resumeFromCheckpoint())
+	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createShadowTable())
-	assert.NoError(t, m.alterShadowTable())
-	assert.NoError(t, m.createCheckpointTable())
+	assert.NoError(t, m.createShadowTable(context.TODO()))
+	assert.NoError(t, m.alterShadowTable(context.TODO()))
+	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
@@ -723,7 +723,7 @@ func TestCheckpoint(t *testing.T) {
 	// from checkpoint again.
 
 	m = preSetup()
-	assert.NoError(t, m.resumeFromCheckpoint())
+	assert.NoError(t, m.resumeFromCheckpoint(context.TODO()))
 
 	// Start the binary log feed just before copy rows starts.
 	err = m.replClient.Run()
@@ -796,9 +796,9 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		assert.NoError(t, err)
 		// Get Table Info
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(m.db)
+		err = m.table.RunDiscovery(context.TODO(), m.db)
 		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable())
+		assert.NoError(t, m.dropOldTable(context.TODO()))
 		return m
 	}
 
@@ -807,12 +807,12 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Which first checks if the table can be restored from checkpoint.
 	// Because this is the first run, it can't.
 
-	assert.Error(t, m.resumeFromCheckpoint())
+	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createShadowTable())
-	assert.NoError(t, m.alterShadowTable())
-	assert.NoError(t, m.createCheckpointTable())
+	assert.NoError(t, m.createShadowTable(context.TODO()))
+	assert.NoError(t, m.alterShadowTable(context.TODO()))
+	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
@@ -867,7 +867,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	assert.Error(t, m.resumeFromCheckpoint()) // it should error because the ALTER does not match.
+	assert.Error(t, m.resumeFromCheckpoint(context.TODO())) // it should error because the ALTER does not match.
 }
 
 // TestE2EBinlogSubscribing is a complex test that uses the lower level interface
@@ -917,16 +917,16 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		defer m.db.Close()
 		// Get Table Info
 		m.table = table.NewTableInfo(m.schemaName, m.tableName)
-		err = m.table.RunDiscovery(m.db)
+		err = m.table.RunDiscovery(context.TODO(), m.db)
 		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable())
+		assert.NoError(t, m.dropOldTable(context.TODO()))
 
 		// migration.Run usually calls m.Migrate() here.
 		// Which does the following before calling copyRows:
 		// So we proceed with the initial steps.
-		assert.NoError(t, m.createShadowTable())
-		assert.NoError(t, m.alterShadowTable())
-		assert.NoError(t, m.createCheckpointTable())
+		assert.NoError(t, m.createShadowTable(context.TODO()))
+		assert.NoError(t, m.alterShadowTable(context.TODO()))
+		assert.NoError(t, m.createCheckpointTable(context.TODO()))
 		logger := logrus.New()
 		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{

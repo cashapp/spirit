@@ -179,35 +179,35 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 
 	// Get Table Info
 	m.table = table.NewTableInfo(m.schemaName, m.tableName)
-	if err := m.table.RunDiscovery(m.db); err != nil {
+	if err := m.table.RunDiscovery(ctx, m.db); err != nil {
 		return err
 	}
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
 	// when it is compatible. If it returns no error, that means it
 	// has been successful and the DDL is complete.
-	err = m.attemptMySQLDDL()
+	err = m.attemptMySQLDDL(ctx)
 	if err == nil {
 		m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v", m.usedInstantDDL, m.usedInplaceDDL)
 		return nil // success!
 	}
 	// Perform preflight basic checks. These are features that are required
 	// for the migration to proceed.
-	if err := m.preflightChecks(); err != nil {
+	if err := m.preflightChecks(ctx); err != nil {
 		return err
 	}
 
 	// Perform setup steps, including resuming from a checkpoint (if available)
 	// and creating the shadow and checkpoint tables.
 	// The replication client is also created here.
-	if err := m.setup(); err != nil {
+	if err := m.setup(ctx); err != nil {
 		return err
 	}
 
-	go m.dumpStatus()                        // start periodically writing status
-	go m.dumpCheckpointContinuously()        // start periodically dumping the checkpoint.
-	go m.updateTableStatisticsContinuously() // update the min/max and estimated rows.
-	go m.periodicFlush(ctx)                  // advance the binary log position periodically.
+	go m.dumpStatus()                           // start periodically writing status
+	go m.dumpCheckpointContinuously()           // start periodically dumping the checkpoint.
+	go m.updateTableStatisticsContinuously(ctx) // update the min/max and estimated rows.
+	go m.periodicFlush(ctx)                     // advance the binary log position periodically.
 
 	// Perform the main copy rows task. This is where the majority
 	// of migrations usually spend time.
@@ -233,7 +233,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	}
 	// Drop the _old table if it exists. This ensures
 	// that the rename will succeed (although there is a brief race)
-	if err := m.dropOldTable(); err != nil {
+	if err := m.dropOldTable(ctx); err != nil {
 		return err
 	}
 	if err := cutover.Run(ctx); err != nil {
@@ -295,8 +295,8 @@ func (m *MigrationRunner) prepareForCutover(ctx context.Context) error {
 // operation, because keeping track of which operations are "INSTANT"
 // is incredibly difficult. It will depend on MySQL minor version,
 // and could possibly be specific to the table.
-func (m *MigrationRunner) attemptMySQLDDL() error {
-	err := m.attemptInstantDDL()
+func (m *MigrationRunner) attemptMySQLDDL(ctx context.Context) error {
+	err := m.attemptInstantDDL(ctx)
 	if err == nil {
 		m.usedInstantDDL = true // success
 		return nil
@@ -305,7 +305,7 @@ func (m *MigrationRunner) attemptMySQLDDL() error {
 	// It's only safe to do in aurora GLOBAL because replicas do not
 	// use the binlog.
 	if m.optAttemptInplaceDDL {
-		err = m.attemptInplaceDDL()
+		err = m.attemptInplaceDDL(ctx)
 		if err == nil {
 			m.usedInplaceDDL = true // success
 			return nil
@@ -321,24 +321,24 @@ func (m *MigrationRunner) dsn() string {
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s", m.username, m.password, m.host, m.schemaName)
 }
 
-func (m *MigrationRunner) setup() error {
+func (m *MigrationRunner) setup(ctx context.Context) error {
 	// Drop the old table. It shouldn't exist, but it could.
-	if err := m.dropOldTable(); err != nil {
+	if err := m.dropOldTable(ctx); err != nil {
 		return err
 	}
 
 	// First attempt to resume from a checkpoint.
 	// It's OK if it fails, it just means it's a fresh migration.
-	if err := m.resumeFromCheckpoint(); err != nil {
+	if err := m.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
 		m.logger.Info("could not resume from checkpoint")
-		if err := m.createShadowTable(); err != nil {
+		if err := m.createShadowTable(ctx); err != nil {
 			return err
 		}
-		if err := m.alterShadowTable(); err != nil {
+		if err := m.alterShadowTable(ctx); err != nil {
 			return err
 		}
-		if err := m.createCheckpointTable(); err != nil {
+		if err := m.createCheckpointTable(ctx); err != nil {
 			return err
 		}
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
@@ -398,40 +398,40 @@ func (m *MigrationRunner) tableChangeNotification() {
 	// Invalidate the checkpoint, so we don't try to resume.
 	// If we don't do this, the migration will permanently be blocked from proceeding.
 	// Letting it start again is the better choice.
-	if err := m.dropCheckpoint(); err != nil {
+	if err := m.dropCheckpoint(context.Background()); err != nil {
 		m.logger.Errorf("could not remove checkpoint. err: %v", err)
 	}
 	// We can't do anything about it, just panic
 	panic("table definition changed during migration")
 }
 
-func (m *MigrationRunner) dropCheckpoint() error {
+func (m *MigrationRunner) dropCheckpoint(ctx context.Context) error {
 	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.checkpointTable.QuotedName())
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *MigrationRunner) createShadowTable() error {
+func (m *MigrationRunner) createShadowTable(ctx context.Context) error {
 	shadowName := fmt.Sprintf("_%s_shadow", m.table.TableName)
 	if len(shadowName) > 64 {
 		return fmt.Errorf("table name is too long: '%s'. shadow table name will exceed 64 characters", m.table.TableName)
 	}
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, shadowName)
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", m.table.SchemaName, shadowName, m.table.QuotedName())
-	_, err = m.db.Exec(query)
+	_, err = m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
-	if err := m.shadowTable.RunDiscovery(m.db); err != nil {
+	if err := m.shadowTable.RunDiscovery(ctx, m.db); err != nil {
 		return err
 	}
 	return nil
@@ -469,45 +469,45 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 // We only need to check here because it breaks this algorithm. In most cases,
 // renames work with INSTANT ddl so this code is not required. The typical
 // case where it is required is multiple changes in one alter and one is a rename.
-func (m *MigrationRunner) alterShadowTable() error {
+func (m *MigrationRunner) alterShadowTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", m.shadowTable.QuotedName(), m.alterStatement)
 	if err := m.checkAlterTableIsNotRename(query); err != nil {
 		return err
 	}
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) dropOldTable() error {
+func (m *MigrationRunner) dropOldTable(ctx context.Context) error {
 	oldName := fmt.Sprintf("_%s_old", m.table.TableName)
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, oldName)
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) attemptInstantDDL() error {
+func (m *MigrationRunner) attemptInstantDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", m.table.QuotedName(), m.alterStatement)
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) attemptInplaceDDL() error {
+func (m *MigrationRunner) attemptInplaceDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", m.table.QuotedName(), m.alterStatement)
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) createCheckpointTable() error {
+func (m *MigrationRunner) createCheckpointTable(ctx context.Context) error {
 	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, cpName)
-	_, err := m.db.Exec(query)
+	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, copy_rows_at TEXT, binlog_name VARCHAR(255), binlog_pos INT, copy_rows BIGINT, alter_statement TEXT)",
 		m.table.SchemaName, cpName)
-	_, err = m.db.Exec(query)
+	_, err = m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -544,9 +544,9 @@ func (m *MigrationRunner) Close() error {
 	return m.db.Close()
 }
 
-func (m *MigrationRunner) preflightChecks() error {
+func (m *MigrationRunner) preflightChecks(ctx context.Context) error {
 	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
-	err := m.db.QueryRow("SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
+	err := m.db.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
 	if err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func (m *MigrationRunner) preflightChecks() error {
 	return nil
 }
 
-func (m *MigrationRunner) resumeFromCheckpoint() error {
+func (m *MigrationRunner) resumeFromCheckpoint(ctx context.Context) error {
 	// Check that the shadow table exists and the checkpoint table
 	// has at least one row in it.
 
@@ -603,7 +603,7 @@ func (m *MigrationRunner) resumeFromCheckpoint() error {
 	}
 	// Populate the objects that would have been set in the other funcs.
 	m.shadowTable = table.NewTableInfo(m.schemaName, shadowName)
-	if err := m.shadowTable.RunDiscovery(m.db); err != nil {
+	if err := m.shadowTable.RunDiscovery(ctx, m.db); err != nil {
 		return err
 	}
 
@@ -742,14 +742,14 @@ func (m *MigrationRunner) periodicFlush(ctx context.Context) {
 	}
 }
 
-func (m *MigrationRunner) updateTableStatisticsContinuously() {
+func (m *MigrationRunner) updateTableStatisticsContinuously(ctx context.Context) {
 	ticker := time.NewTicker(tableStatUpdateInterval)
 	defer ticker.Stop()
 	for range ticker.C {
 		if m.getCurrentState() > migrationStateCopyRows {
 			return
 		}
-		if err := m.table.UpdateTableStatistics(m.db); err != nil {
+		if err := m.table.UpdateTableStatistics(ctx, m.db); err != nil {
 			m.logger.Errorf("error updating table statistics: %v", err)
 		}
 	}

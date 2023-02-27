@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/siddontang/loggers"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -44,9 +43,6 @@ type Chunker interface {
 var _ Chunker = &chunkerBase{}
 
 func NewChunker(t *TableInfo, chunkerTargetMs int64, disableTrivialChunker bool, logger loggers.Advanced) (Chunker, error) {
-	if logger == nil {
-		logger = logrus.New()
-	}
 	if t.EstimatedRows < trivialChunkerThreshold && !disableTrivialChunker {
 		// If the row count is low we attach the trivial chunker,
 		// which will return everything as one chunk.

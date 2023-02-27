@@ -23,12 +23,12 @@ func NewTrxPool(ctx context.Context, db *sql.DB, count int) (*TrxPool, error) {
 	checksumTxns := make([]*sql.Tx, 0, count)
 	for i := 0; i < count; i++ {
 		trx, _ := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
-		_, err := trx.Exec("START TRANSACTION WITH CONSISTENT SNAPSHOT")
+		_, err := trx.ExecContext(ctx, "START TRANSACTION WITH CONSISTENT SNAPSHOT")
 		if err != nil {
 			return nil, err
 		}
 		// Set SQL mode, charset, etc.
-		if err := standardizeTrx(trx); err != nil {
+		if err := standardizeTrx(ctx, trx); err != nil {
 			return nil, err
 		}
 		checksumTxns = append(checksumTxns, trx)

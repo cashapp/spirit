@@ -63,7 +63,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
-	if err := c.feed.BlockWait(); err != nil {
+	if err := c.feed.BlockWait(ctx); err != nil {
 		return err
 	}
 	// Lock the source table in a trx
@@ -76,7 +76,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 
 	// Before we flush the change set we need to make sure
 	// canal is equal to at least the binary log position we read.
-	if err := c.feed.BlockWait(); err != nil {
+	if err := c.feed.BlockWait(ctx); err != nil {
 		return err
 	}
 	// With the lock held, flush one more time under the lock tables.

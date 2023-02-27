@@ -115,7 +115,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
-	if err := c.feed.BlockWait(); err != nil {
+	if err := c.feed.BlockWait(ctx); err != nil {
 		return err
 	}
 	// Lock the source table in a trx
@@ -131,7 +131,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// that the canal routine to read the binlog is not delayed. Otherwise
 	// we could have a scenario where additional changes arrive after flushChangeSet below
 	// That are required for consistency.
-	if err := c.feed.BlockWait(); err != nil {
+	if err := c.feed.BlockWait(ctx); err != nil {
 		return err
 	}
 	// With the lock held, flush one more time under the lock tables.

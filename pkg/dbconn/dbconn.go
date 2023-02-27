@@ -20,8 +20,8 @@ const (
 	mdlLockWaitTimeout    = 3 // safer to make slightly longer.
 )
 
-func standardizeTrx(trx *sql.Tx) error {
-	_, err := trx.Exec("SET time_zone='+00:00'")
+func standardizeTrx(ctx context.Context, trx *sql.Tx) error {
+	_, err := trx.ExecContext(ctx, "SET time_zone='+00:00'")
 	if err != nil {
 		return err
 	}
@@ -32,19 +32,19 @@ func standardizeTrx(trx *sql.Tx) error {
 	// If you look at standard packages like wordpress, drupal etc.
 	// they all change the SQL mode. If you look at mysqldump, etc.
 	// they all unset the SQL mode just like this.
-	_, err = trx.Exec("SET sql_mode=''")
+	_, err = trx.ExecContext(ctx, "SET sql_mode=''")
 	if err != nil {
 		return err
 	}
-	_, err = trx.Exec("SET NAMES 'binary'")
+	_, err = trx.ExecContext(ctx, "SET NAMES 'binary'")
 	if err != nil {
 		return err
 	}
-	_, err = trx.Exec("SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout)
+	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout)
 	if err != nil {
 		return err
 	}
-	_, err = trx.Exec("SET lock_wait_timeout=?", mdlLockWaitTimeout)
+	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", mdlLockWaitTimeout)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ RETRYLOOP:
 			continue RETRYLOOP // retry
 		}
 		// Standardize it.
-		if err = standardizeTrx(trx); err != nil {
+		if err = standardizeTrx(ctx, trx); err != nil {
 			utils.ErrInErr(trx.Rollback()) // Rollback
 			backoff(i)
 			continue RETRYLOOP // retry
@@ -80,7 +80,7 @@ RETRYLOOP:
 			// succeed but then there is a deadlock later on. The myerror library also doesn't differentiate between
 			// retryable (new transaction) and retryable (same transaction)
 			var res sql.Result
-			if res, err = trx.Exec(stmt); err != nil {
+			if res, err = trx.ExecContext(ctx, stmt); err != nil {
 				_, myerr := my.Error(err)
 				if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout || my.MySQLErrorCode(err) == errDeadlock {
 					utils.ErrInErr(trx.Rollback()) // Rollback
@@ -92,7 +92,7 @@ RETRYLOOP:
 			}
 			// Even though there was no ERROR we still need to inspect SHOW WARNINGS
 			// This is because many of the statements use INSERT IGNORE.
-			warningRes, err := trx.Query("SHOW WARNINGS") //nolint: execinquery
+			warningRes, err := trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
 			if err != nil {
 				utils.ErrInErr(trx.Rollback()) // Rollback
 				return rowsAffected, err
@@ -153,9 +153,9 @@ func DBExec(ctx context.Context, db *sql.DB, query string) error {
 	if err != nil {
 		return err
 	}
-	if err := standardizeTrx(trx); err != nil {
+	if err := standardizeTrx(ctx, trx); err != nil {
 		return err
 	}
-	_, err = trx.Exec(query)
+	_, err = trx.ExecContext(ctx, query)
 	return err
 }

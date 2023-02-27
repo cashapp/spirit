@@ -41,9 +41,9 @@ func TestReplClient(t *testing.T) {
 	runSQL(t, "CREATE TABLE _replt1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo("test", "replt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "replt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -53,7 +53,7 @@ func TestReplClient(t *testing.T) {
 
 	// Insert into t1.
 	runSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
 	assert.Equal(t, client.GetDeltaLen(), 1)
@@ -82,9 +82,9 @@ func TestReplClientComplex(t *testing.T) {
 	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo("test", "replcomplext1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "replcomplext2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -101,7 +101,7 @@ func TestReplClientComplex(t *testing.T) {
 
 	// Insert into t1, but because there is no read yet, the key is above the watermark
 	runSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 0)
 
 	// Read from the copier so that the key is below the watermark
@@ -115,7 +115,7 @@ func TestReplClientComplex(t *testing.T) {
 
 	// Now if we delete below 1001 we should see 10 deltas accumulate
 	runSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 560")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
 
 	// Flush the changeset
@@ -123,10 +123,10 @@ func TestReplClientComplex(t *testing.T) {
 
 	// Accumulate more deltas
 	runSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 570")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
 	runSQL(t, "UPDATE replcomplext1 SET b = 213 WHERE a >= 550 AND a < 1001")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 441, client.GetDeltaLen()) // ??
 
 	// Final flush
@@ -149,9 +149,9 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	runSQL(t, "CREATE TABLE _replresumet1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo("test", "replresumet1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "replresumet2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -174,9 +174,9 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	runSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	t1 := table.NewTableInfo("test", "replresumepointt1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "replresumepointt2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -205,9 +205,9 @@ func TestReplClientOpts(t *testing.T) {
 	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo("test", "replclientoptst1")
-	assert.NoError(t, t1.RunDiscovery(db))
+	assert.NoError(t, t1.RunDiscovery(context.TODO(), db))
 	t2 := table.NewTableInfo("test", "replclientoptst2")
-	assert.NoError(t, t2.RunDiscovery(db))
+	assert.NoError(t, t2.RunDiscovery(context.TODO(), db))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
@@ -222,7 +222,7 @@ func TestReplClientOpts(t *testing.T) {
 
 	// Delete more than 10000 keys so the FLUSH has to run in chunks.
 	runSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
-	assert.NoError(t, client.BlockWait())
+	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 49961)
 	// Flush
 	assert.NoError(t, client.Flush(context.TODO()))

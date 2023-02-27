@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"context"
 	"database/sql"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -10,7 +11,7 @@ import (
 
 // IsCompatible checks if a migration is compatible with this program.
 // This can be used by automation to fallback to gh-ost if it's not.
-func IsCompatible(migration *Migration) bool {
+func IsCompatible(ctx context.Context, migration *Migration) bool {
 	m, err := NewMigrationRunner(migration)
 	if err != nil {
 		return false
@@ -22,7 +23,7 @@ func IsCompatible(migration *Migration) bool {
 
 	// Get Table Info
 	m.table = table.NewTableInfo(m.schemaName, m.tableName)
-	if err := m.table.RunDiscovery(m.db); err != nil {
+	if err := m.table.RunDiscovery(ctx, m.db); err != nil {
 		return false
 	}
 	// Check that we can get a chunker.

@@ -3,6 +3,7 @@
 package table
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -81,13 +82,13 @@ func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{}
 // RunDiscovery requires a database connection, which means it can't easily be mocked in unit tests.
 // Where possible discovery funcs should update the TableInfo struct directly, and not be called by
 // internal functions. This allows the TableInfo to be mocked in tests.
-func (t *TableInfo) RunDiscovery(db *sql.DB) error {
+func (t *TableInfo) RunDiscovery(ctx context.Context, db *sql.DB) error {
 	// Discover row estimate
-	if err := t.discoverRowEstimate(db); err != nil {
+	if err := t.discoverRowEstimate(ctx, db); err != nil {
 		return err
 	}
 	// Discover columns
-	rows, err := db.Query("SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
+	rows, err := db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
@@ -131,13 +132,13 @@ func (t *TableInfo) RunDiscovery(db *sql.DB) error {
 	}
 	t.primaryKeyType = removeWidth(t.primaryKeyType)
 	t.primaryKeyIsAutoInc = (extra == "auto_increment")
-	return t.discoverMinMax(db)
+	return t.discoverMinMax(ctx, db)
 }
 
 // discoverRowEstimate is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
-func (t *TableInfo) discoverRowEstimate(db *sql.DB) error {
-	_, err := db.Exec("ANALYZE TABLE " + t.QuotedName())
+func (t *TableInfo) discoverRowEstimate(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, "ANALYZE TABLE "+t.QuotedName())
 	if err != nil {
 		return err
 	}
@@ -150,7 +151,7 @@ func (t *TableInfo) discoverRowEstimate(db *sql.DB) error {
 
 // discoverMinMax is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
-func (t *TableInfo) discoverMinMax(db *sql.DB) error {
+func (t *TableInfo) discoverMinMax(ctx context.Context, db *sql.DB) error {
 	// We can't scan into interface{} because the types will be wonky.
 	// See: https://github.com/go-sql-driver/mysql/issues/366
 	// This is a workaround which is a bit ugly, but type preserving.
@@ -159,20 +160,20 @@ func (t *TableInfo) discoverMinMax(db *sql.DB) error {
 	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
 	case signedType:
 		var min, max sql.NullInt64
-		err = db.QueryRow(query).Scan(&min, &max)
+		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err == nil && min.Valid && max.Valid {
 			t.minValue, t.maxValue = min.Int64, max.Int64
 		}
 	case unsignedType:
 		query = fmt.Sprintf("SELECT IFNULL(min(%s),0), IFNULL(max(%s),0) FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
 		var min, max uint64 // there is no sql.NullUint64
-		err = db.QueryRow(query).Scan(&min, &max)
+		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err == nil && max > 0 { // check for a maxVal, minval=0 could be valid.
 			t.minValue, t.maxValue = min, max
 		}
 	case binaryType:
 		var min, max sql.NullString
-		err = db.QueryRow(query).Scan(&min, &max)
+		err = db.QueryRowContext(ctx, query).Scan(&min, &max)
 		if err == nil && min.Valid && max.Valid {
 			t.minValue, t.maxValue = min.String, max.String
 		}
@@ -184,10 +185,10 @@ func (t *TableInfo) discoverMinMax(db *sql.DB) error {
 
 // UpdateTableStatistics recalculates the min/max and row estimate.
 // It is exported so it can be used by the caller to continuously update the table stats.
-func (t *TableInfo) UpdateTableStatistics(db *sql.DB) error {
-	err := t.discoverMinMax(db)
+func (t *TableInfo) UpdateTableStatistics(ctx context.Context, db *sql.DB) error {
+	err := t.discoverMinMax(ctx, db)
 	if err != nil {
 		return err
 	}
-	return t.discoverRowEstimate(db)
+	return t.discoverRowEstimate(ctx, db)
 }
