@@ -1071,3 +1071,34 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	assert.NoError(t, db.QueryRow(stmt).Scan(&tables))
 	assert.Equal(t, "_remainingtbl_old,remainingtbl", tables)
 }
+
+func TestDropColumn(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_shadow`)
+	table := `CREATE TABLE dropcol (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		a varchar(255) NOT NULL,
+		b varchar(255) NOT NULL,
+		c varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	runSQL(t, `insert into dropcol (id, a,b,c) values (1, 'a', 'b', 'c')`)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	m, err := NewMigrationRunner(&Migration{
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
+		Concurrency: 16,
+		Table:       "dropcol",
+		Alter:       "DROP COLUMN b, ENGINE=InnoDB", // need both to ensure it is not instant!
+	})
+	assert.NoError(t, err)
+	assert.NoError(t, m.Run(context.Background()))
+
+	assert.False(t, m.usedInstantDDL) // need to ensure it uses full process.
+	assert.NoError(t, m.Close())
+}

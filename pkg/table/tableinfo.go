@@ -125,6 +125,7 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 		return err
 	}
 	defer rows.Close()
+	t.Columns = []string{}
 	for rows.Next() {
 		var col string
 		if err := rows.Scan(&col); err != nil {
@@ -146,6 +147,7 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 		return err
 	}
 	defer rows.Close()
+	t.PrimaryKey = []string{}
 	for rows.Next() {
 		var col string
 		if err := rows.Scan(&col); err != nil {

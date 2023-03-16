@@ -216,6 +216,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 	if err := m.copier.Run(ctx); err != nil {
 		return err
 	}
+	m.logger.Info("copy rows complete")
 
 	// Perform steps to prepare for final cutover.
 	// This includes computing an optional checksum,
@@ -501,7 +502,12 @@ func (m *MigrationRunner) alterShadowTable(ctx context.Context) error {
 		return err
 	}
 	_, err := m.db.ExecContext(ctx, query)
-	return err
+	if err != nil {
+		return err
+	}
+	// Call GetInfo on the table again, since the columns
+	// might have changed and this will affect the row copier's intersect func.
+	return m.shadowTable.SetInfo(ctx)
 }
 
 func (m *MigrationRunner) dropOldTable(ctx context.Context) error {
