@@ -3,7 +3,7 @@
 Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
 
 It works very similar to gh-ost except:
-- It only supports MySQL 5.7+ (and soon 8.0+)
+- It only supports MySQL 5.7 and MySQL 8.0 (it is anticipated only 8.0 will be supported once Aurora v2 reaches end of life)
 - It it multi-threaded in the row-copying phase
 - It supports resume-from-checkpoint
 
@@ -43,6 +43,12 @@ In some workloads this can result in significant performance improvements, becau
 Spirit will copy rows in multiple threads. This optimization really requires MySQL 8.0+ to make sense, which has much better support for multi-threaded replication.
 
 While spirit does not support read-replicas, it still tries to keep replication mostly up to date (with support for reading a replica every 2 seconds and observing lag). The replication monitor is not intended to be as high fidelity as gh-ost, and only used to ensure that DR functionality is not impacted.
+
+### Attempt Instant DDL
+
+Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change.
+
+**Note:** This feature has been contributed to `gh-ost` by the same authors of Spirit. It is disabled by default, and [only in the master branch](https://github.com/github/gh-ost/blob/master/doc/command-line-flags.md#attempt-instant-ddl).
 
 ## Performance
 
