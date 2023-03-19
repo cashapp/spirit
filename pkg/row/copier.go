@@ -137,7 +137,6 @@ func (c *Copier) Run(ctx context.Context) error {
 		return err
 	}
 	defer func() {
-		c.logger.Info("copy rows complete")
 		c.CopyRowsExecTime = time.Since(c.CopyRowsStartTime)
 	}()
 	g, ctx := errgroup.WithContext(ctx)
