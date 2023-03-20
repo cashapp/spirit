@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -228,18 +229,23 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "lock2t2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	// Lock again but for 12 seconds.
-	// This will cause a failure.
+	// Lock again but for 60 seconds.
+	// This will cause a failure because the retry is:
+	// 5*1 second + 5* back off (~10ms randomized).
+	var wg sync.WaitGroup
+	wg.Add(1) // wait for the goroutine to acquire the lock
 	go func() {
 		tx, err := db.Begin()
 		assert.NoError(t, err)
 		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
-		time.Sleep(12 * time.Second)
+		wg.Done()
+		time.Sleep(60 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
 	}()
 
+	wg.Wait() // Wait only for the lock to be acquired.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
