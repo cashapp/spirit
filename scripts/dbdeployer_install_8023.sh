@@ -12,4 +12,3 @@ dbdeployer unpack mysql-8.0.23-linux-glibc2.17-x86_64-minimal.tar.xz
 
 dbdeployer deploy single 8.0.23
 
-cat ~/sandboxes/rsandbox_8_0_23/sbdescription.json
