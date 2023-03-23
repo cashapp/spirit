@@ -1,19 +1,13 @@
 package throttler
 
 import (
-	"database/sql"
 	"errors"
 	"sync/atomic"
 	"time"
-
-	"github.com/siddontang/loggers"
 )
 
 type MySQL80Replica struct {
-	replica          *sql.DB
-	lagToleranceInMs int64
-	currentLagInMs   int64
-	logger           loggers.Advanced
+	BaseReplicationThrottler
 }
 
 var _ Throttler = &MySQL80Replica{}
@@ -59,20 +53,4 @@ func (l *MySQL80Replica) UpdateLag() error {
 		l.logger.Warnf("replication delayed, copier is now being throttled. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagToleranceInMs)
 	}
 	return nil
-}
-
-func (l *MySQL80Replica) IsThrottled() bool {
-	return atomic.LoadInt64(&l.currentLagInMs) >= l.lagToleranceInMs
-}
-
-// BlockWait blocks until the lag is within the tolerance, or up to 60s
-// to allow some progress to be made.
-func (l *MySQL80Replica) BlockWait() {
-	for i := 0; i < 60; i++ {
-		if atomic.LoadInt64(&l.currentLagInMs) < l.lagToleranceInMs {
-			return
-		}
-		time.Sleep(1 * time.Second)
-	}
-	l.logger.Warnf("lag monitor timed out. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagToleranceInMs)
 }
