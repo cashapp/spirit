@@ -23,7 +23,7 @@ type Migration struct {
 }
 
 func (m *Migration) Run() error {
-	migration, err := NewMigrationRunner(m)
+	migration, err := NewRunner(m)
 	if err != nil {
 		return err
 	}
