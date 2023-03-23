@@ -28,7 +28,7 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -53,7 +53,7 @@ func TestVarbinary(t *testing.T) {
 	runSQL(t, "INSERT INTO varbinaryt1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -80,7 +80,7 @@ func TestDataFromBadSqlMode(t *testing.T) {
 	runSQL(t, "INSERT IGNORE INTO badsqlt1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -106,7 +106,7 @@ func TestChangeDatatypeNoData(t *testing.T) {
 	runSQL(t, table)
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -133,7 +133,7 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 	runSQL(t, "INSERT INTO cdatalossmytable (name, b) VALUES ('a', 'b')")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -158,7 +158,7 @@ func TestOnline(t *testing.T) {
 	runSQL(t, table)
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -181,7 +181,7 @@ func TestOnline(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -208,7 +208,7 @@ func TestOnline(t *testing.T) {
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:              cfg.Addr,
 		Username:          cfg.User,
 		Password:          cfg.Passwd,
@@ -237,7 +237,7 @@ func TestTableLength(t *testing.T) {
 	runSQL(t, table)
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -254,7 +254,7 @@ func TestTableLength(t *testing.T) {
 
 	// There is another condition where the error will be in dropping the _old table first
 	// if the character limit is exceeded in that query.
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -280,24 +280,24 @@ func TestMigrationStateString(t *testing.T) {
 }
 
 func TestBadOptions(t *testing.T) {
-	_, err := NewMigrationRunner(&Migration{})
+	_, err := NewRunner(&Migration{})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "host is required")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	_, err = NewMigrationRunner(&Migration{
+	_, err = NewRunner(&Migration{
 		Host: cfg.Addr,
 	})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "schema name is required")
-	_, err = NewMigrationRunner(&Migration{
+	_, err = NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Database: "mytable",
 	})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "table name is required")
-	_, err = NewMigrationRunner(&Migration{
+	_, err = NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Database: "mytable",
 		Table:    "mytable",
@@ -322,7 +322,7 @@ func TestBadAlter(t *testing.T) {
 	runSQL(t, table)
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -338,7 +338,7 @@ func TestBadAlter(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Renames are not supported.
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -355,7 +355,7 @@ func TestBadAlter(t *testing.T) {
 
 	// This is a different type of rename,
 	// which is coming via a change
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -371,7 +371,7 @@ func TestBadAlter(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// But this is supported (no rename)
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -388,7 +388,7 @@ func TestBadAlter(t *testing.T) {
 	// Test DROP PRIMARY KEY, change primary key.
 	// The REPLACE statement likely relies on the same PRIMARY KEY on the shadow table,
 	// so things get a lot more complicated if the primary key changes.
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -430,7 +430,7 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:                  cfg.Addr,
 		Username:              cfg.User,
 		Password:              cfg.Passwd,
@@ -468,7 +468,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -505,7 +505,7 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 	runSQL(t, "INSERT INTO lossychange4 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -541,7 +541,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -556,7 +556,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	assert.NoError(t, m.Close()) // need to close now otherwise we'll get an error on re-opening it.
 
 	runSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
-	m, err = NewMigrationRunner(&Migration{
+	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -585,7 +585,7 @@ func TestChangeNonIntPK(t *testing.T) {
 	runSQL(t, "INSERT INTO nonintpk (pk, name, b) VALUES (UUID(), 'a', REPEAT('a', 5))")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -612,7 +612,7 @@ func TestETA(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:              cfg.Addr,
 		Username:          cfg.User,
 		Password:          cfg.Passwd,
@@ -657,8 +657,8 @@ func TestCheckpoint(t *testing.T) {
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
-	preSetup := func() *MigrationRunner {
-		m, err := NewMigrationRunner(&Migration{
+	preSetup := func() *Runner {
+		m, err := NewRunner(&Migration{
 			Host:        cfg.Addr,
 			Username:    cfg.User,
 			Password:    cfg.Passwd,
@@ -802,8 +802,8 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	preSetup := func(alter string) *MigrationRunner {
-		m, err := NewMigrationRunner(&Migration{
+	preSetup := func(alter string) *Runner {
+		m, err := NewRunner(&Migration{
 			Host:        cfg.Addr,
 			Username:    cfg.User,
 			Password:    cfg.Passwd,
@@ -921,7 +921,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		runSQL(t, `insert into e2et1 (id1, id2) values (2, 1)`)
 		runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
 
-		m, err := NewMigrationRunner(&Migration{
+		m, err := NewRunner(&Migration{
 			Host:                  cfg.Addr,
 			Username:              cfg.User,
 			Password:              cfg.Passwd,
@@ -1048,7 +1048,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,
@@ -1087,7 +1087,7 @@ func TestDropColumn(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	m, err := NewMigrationRunner(&Migration{
+	m, err := NewRunner(&Migration{
 		Host:        cfg.Addr,
 		Username:    cfg.User,
 		Password:    cfg.Passwd,

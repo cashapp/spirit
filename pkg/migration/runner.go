@@ -70,7 +70,7 @@ func (s migrationState) String() string {
 	return "unknown"
 }
 
-type MigrationRunner struct {
+type Runner struct {
 	host           string
 	username       string
 	password       string
@@ -96,7 +96,7 @@ type MigrationRunner struct {
 	usedInplaceDDL bool
 
 	// Configurable Options that might be passed in
-	// defaults will be set in NewMigrationRunner()
+	// defaults will be set in NewRunner()
 	optConcurrency           int
 	optChecksumConcurrency   int
 	optTargetChunkMs         int64
@@ -113,8 +113,8 @@ type MigrationRunner struct {
 	logger loggers.Advanced
 }
 
-func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
-	m := &MigrationRunner{
+func NewRunner(migration *Migration) (*Runner, error) {
+	m := &Runner{
 		host:                     migration.Host,
 		username:                 migration.Username,
 		password:                 migration.Password,
@@ -158,11 +158,11 @@ func NewMigrationRunner(migration *Migration) (*MigrationRunner, error) {
 	return m, nil
 }
 
-func (m *MigrationRunner) SetLogger(logger loggers.Advanced) {
+func (m *Runner) SetLogger(logger loggers.Advanced) {
 	m.logger = logger
 }
 
-func (m *MigrationRunner) Run(ctx context.Context) error {
+func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
 	m.logger.Infof("Starting spirit migration")
 
@@ -254,7 +254,7 @@ func (m *MigrationRunner) Run(ctx context.Context) error {
 // most of these steps are technically optional, but skipping them
 // could for example cause a stall during the cutover if the replClient
 // has too many pending updates.
-func (m *MigrationRunner) prepareForCutover(ctx context.Context) error {
+func (m *Runner) prepareForCutover(ctx context.Context) error {
 	// Recursively apply all pending events (FlushUntilTrivial)
 	m.setCurrentState(migrationStateApplyChangeset)
 	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
@@ -297,7 +297,7 @@ func (m *MigrationRunner) prepareForCutover(ctx context.Context) error {
 // operation, because keeping track of which operations are "INSTANT"
 // is incredibly difficult. It will depend on MySQL minor version,
 // and could possibly be specific to the table.
-func (m *MigrationRunner) attemptMySQLDDL(ctx context.Context) error {
+func (m *Runner) attemptMySQLDDL(ctx context.Context) error {
 	err := m.attemptInstantDDL(ctx)
 	if err == nil {
 		m.usedInstantDDL = true // success
@@ -319,11 +319,11 @@ func (m *MigrationRunner) attemptMySQLDDL(ctx context.Context) error {
 	return err
 }
 
-func (m *MigrationRunner) dsn() string {
+func (m *Runner) dsn() string {
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s", m.username, m.password, m.host, m.schemaName)
 }
 
-func (m *MigrationRunner) setup(ctx context.Context) error {
+func (m *Runner) setup(ctx context.Context) error {
 	// Drop the old table. It shouldn't exist, but it could.
 	if err := m.dropOldTable(ctx); err != nil {
 		return err
@@ -390,7 +390,7 @@ func (m *MigrationRunner) setup(ctx context.Context) error {
 	return nil
 }
 
-func (m *MigrationRunner) tableChangeNotification() {
+func (m *Runner) tableChangeNotification() {
 	// It's an async message, so we don't know the current state
 	// from which this "notification" was generated, but typically if our
 	// current state is now in cutover, we can ignore it.
@@ -410,7 +410,7 @@ func (m *MigrationRunner) tableChangeNotification() {
 	panic("table definition changed during migration")
 }
 
-func (m *MigrationRunner) dropCheckpoint(ctx context.Context) error {
+func (m *Runner) dropCheckpoint(ctx context.Context) error {
 	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.checkpointTable.QuotedName())
 	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
@@ -419,7 +419,7 @@ func (m *MigrationRunner) dropCheckpoint(ctx context.Context) error {
 	return nil
 }
 
-func (m *MigrationRunner) createShadowTable(ctx context.Context) error {
+func (m *Runner) createShadowTable(ctx context.Context) error {
 	shadowName := fmt.Sprintf("_%s_shadow", m.table.TableName)
 	if len(shadowName) > 64 {
 		return fmt.Errorf("table name is too long: '%s'. shadow table name will exceed 64 characters", m.table.TableName)
@@ -444,7 +444,7 @@ func (m *MigrationRunner) createShadowTable(ctx context.Context) error {
 
 // TODO: should we check for DROP and ADD of the same name?
 // This would intersect as true, but semantically that is not the correct behavior.
-func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
+func (m *Runner) checkAlterTableIsNotRename(sql string) error {
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
 	if err != nil {
@@ -470,7 +470,7 @@ func (m *MigrationRunner) checkAlterTableIsNotRename(sql string) error {
 	return nil // no renames
 }
 
-func (m *MigrationRunner) checkAlterTableIsNotAlterPrimaryKey(sql string) error {
+func (m *Runner) checkAlterTableIsNotAlterPrimaryKey(sql string) error {
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
 	if err != nil {
@@ -493,7 +493,7 @@ func (m *MigrationRunner) checkAlterTableIsNotAlterPrimaryKey(sql string) error 
 // We only need to check here because it breaks this algorithm. In most cases,
 // renames work with INSTANT ddl so this code is not required. The typical
 // case where it is required is multiple changes in one alter and one is a rename.
-func (m *MigrationRunner) alterShadowTable(ctx context.Context) error {
+func (m *Runner) alterShadowTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", m.shadowTable.QuotedName(), m.alterStatement)
 	if err := m.checkAlterTableIsNotRename(query); err != nil {
 		return err
@@ -510,26 +510,26 @@ func (m *MigrationRunner) alterShadowTable(ctx context.Context) error {
 	return m.shadowTable.SetInfo(ctx)
 }
 
-func (m *MigrationRunner) dropOldTable(ctx context.Context) error {
+func (m *Runner) dropOldTable(ctx context.Context) error {
 	oldName := fmt.Sprintf("_%s_old", m.table.TableName)
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, oldName)
 	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) attemptInstantDDL(ctx context.Context) error {
+func (m *Runner) attemptInstantDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", m.table.QuotedName(), m.alterStatement)
 	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) attemptInplaceDDL(ctx context.Context) error {
+func (m *Runner) attemptInplaceDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", m.table.QuotedName(), m.alterStatement)
 	_, err := m.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *MigrationRunner) createCheckpointTable(ctx context.Context) error {
+func (m *Runner) createCheckpointTable(ctx context.Context) error {
 	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, cpName)
@@ -550,7 +550,7 @@ func (m *MigrationRunner) createCheckpointTable(ctx context.Context) error {
 	return nil
 }
 
-func (m *MigrationRunner) Close() error {
+func (m *Runner) Close() error {
 	m.setCurrentState(migrationStateClose)
 	if m.shadowTable == nil {
 		return nil
@@ -576,7 +576,7 @@ func (m *MigrationRunner) Close() error {
 	return m.db.Close()
 }
 
-func (m *MigrationRunner) preflightChecks(ctx context.Context) error {
+func (m *Runner) preflightChecks(ctx context.Context) error {
 	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
 	err := m.db.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
 	if err != nil {
@@ -604,7 +604,7 @@ func (m *MigrationRunner) preflightChecks(ctx context.Context) error {
 	return nil
 }
 
-func (m *MigrationRunner) resumeFromCheckpoint(ctx context.Context) error {
+func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Check that the shadow table exists and the checkpoint table
 	// has at least one row in it.
 
@@ -685,7 +685,7 @@ func (m *MigrationRunner) resumeFromCheckpoint(ctx context.Context) error {
 }
 
 // checksum creates the checksum which opens the read view.
-func (m *MigrationRunner) checksum(ctx context.Context) error {
+func (m *Runner) checksum(ctx context.Context) error {
 	checker, err := checksum.NewChecker(m.db, m.table, m.shadowTable, m.replClient, &checksum.CheckerConfig{
 		Concurrency:           m.optChecksumConcurrency,
 		TargetMs:              m.optTargetChunkMs,
@@ -702,18 +702,18 @@ func (m *MigrationRunner) checksum(ctx context.Context) error {
 	return nil
 }
 
-func (m *MigrationRunner) getCurrentState() migrationState {
+func (m *Runner) getCurrentState() migrationState {
 	return migrationState(atomic.LoadInt32((*int32)(&m.currentState)))
 }
 
-func (m *MigrationRunner) setCurrentState(s migrationState) {
+func (m *Runner) setCurrentState(s migrationState) {
 	atomic.StoreInt32((*int32)(&m.currentState), int32(s))
 	if s > migrationStateCopyRows && m.replClient != nil {
 		m.replClient.SetKeyAboveWatermarkOptimization(false)
 	}
 }
 
-func (m *MigrationRunner) dumpCheckpoint(ctx context.Context) error {
+func (m *Runner) dumpCheckpoint(ctx context.Context) error {
 	// Retrieve the binlog position first and under a mutex.
 	// Currently it never advances but it's possible it might in future
 	// and this race condition is missed.
@@ -730,7 +730,7 @@ func (m *MigrationRunner) dumpCheckpoint(ctx context.Context) error {
 	return err
 }
 
-func (m *MigrationRunner) dumpCheckpointContinuously(ctx context.Context) {
+func (m *Runner) dumpCheckpointContinuously(ctx context.Context) {
 	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -747,7 +747,7 @@ func (m *MigrationRunner) dumpCheckpointContinuously(ctx context.Context) {
 	}
 }
 
-func (m *MigrationRunner) periodicFlush(ctx context.Context) {
+func (m *Runner) periodicFlush(ctx context.Context) {
 	ticker := time.NewTicker(binlogPerodicFlushInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -774,7 +774,7 @@ func (m *MigrationRunner) periodicFlush(ctx context.Context) {
 	}
 }
 
-func (m *MigrationRunner) updateTableStatisticsContinuously(ctx context.Context) {
+func (m *Runner) updateTableStatisticsContinuously(ctx context.Context) {
 	ticker := time.NewTicker(tableStatUpdateInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -787,7 +787,7 @@ func (m *MigrationRunner) updateTableStatisticsContinuously(ctx context.Context)
 	}
 }
 
-func (m *MigrationRunner) dumpStatus() {
+func (m *Runner) dumpStatus() {
 	ticker := time.NewTicker(statusInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -806,7 +806,7 @@ func (m *MigrationRunner) dumpStatus() {
 	}
 }
 
-func (m *MigrationRunner) estimateRowsPerSecondLoop() {
+func (m *Runner) estimateRowsPerSecondLoop() {
 	// We take 10 second averages not 1 second
 	// because with parallel copy it bounces around a lot.
 	prevRowsCount := atomic.LoadInt64(&m.copier.CopyRowsCount)
@@ -823,7 +823,7 @@ func (m *MigrationRunner) estimateRowsPerSecondLoop() {
 	}
 }
 
-func (m *MigrationRunner) getETAFromRowsPerSecond(due bool) string {
+func (m *Runner) getETAFromRowsPerSecond(due bool) string {
 	rowsPerSecond := atomic.LoadInt64(&m.copier.EtaRowsPerSecond)
 	if m.getCurrentState() > migrationStateCopyRows || due {
 		return "Due" // in apply rows phase or checksum
