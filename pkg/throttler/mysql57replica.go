@@ -9,7 +9,7 @@ import (
 )
 
 type MySQL57Replica struct {
-	BaseReplicationThrottler
+	Repl
 }
 
 var _ Throttler = &MySQL57Replica{}

@@ -7,7 +7,7 @@ import (
 )
 
 type MySQL80Replica struct {
-	BaseReplicationThrottler
+	Repl
 }
 
 var _ Throttler = &MySQL80Replica{}
