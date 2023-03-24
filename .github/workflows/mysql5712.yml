@@ -1,0 +1,22 @@
+name: MySQL 5.7.12 (Aurora version)
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.19
+
+      - name: Deploy MySQL
+        run: scripts/dbdeployer_install_5712.sh
+
+      - name: Test
+        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:5712)/test" go test -v ./...
