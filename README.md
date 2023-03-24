@@ -4,7 +4,7 @@ Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github
 
 It works very similar to gh-ost except:
 - It only supports MySQL 5.7 and MySQL 8.0 (it is anticipated only 8.0 will be supported once Aurora v2 reaches end of life)
-- It it multi-threaded in the row-copying phase
+- It is multi-threaded in the row-copying phase
 - It supports resume-from-checkpoint
 
 The goal of spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
@@ -72,6 +72,6 @@ Notes:
 Writing a new data migration tool is scary, since bugs have real consequences (data loss). These are the main problems we anticipate:
 
 1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable.
-3. The optimal configuration (i.e. number of threads, chunk-target-in-ms) is not well understood and doesn't scale based on DB instance size. Since the goal is to be more aggressive than gh-ost, there may be some real-world cases where performance is impacted quite significantly while running Spirit.
-4. The chunker expands ranges if the estimated rows is lower than the logical space between min/max key. This is disabled for auto_inc keys, since it's likely there are some areas where there aren't gaps in the sequence, and chunks could be very slow. Maybe disabling just for this case is a bad idea, since we hide other cases where dynamic expanding ranges is not good. In the case of auto-inc keys, this could mean very slow migrations where there is a large gap between min/max key. In other cases it could mean stalls as a lot of keys are concentrated in one area.
-5. It does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are supported, but it's currently not planned to support `VARCHAR` primary keys.
+2. The optimal configuration (i.e. number of threads, chunk-target-in-ms) is not well understood and doesn't scale based on DB instance size. Since the goal is to be more aggressive than gh-ost, there may be some real-world cases where performance is impacted quite significantly while running Spirit.
+3. The chunker expands ranges if the estimated rows is lower than the logical space between min/max key. This is disabled for auto_inc keys, since it's likely there are some areas where there aren't gaps in the sequence, and chunks could be very slow. Maybe disabling just for this case is a bad idea, since we hide other cases where dynamic expanding ranges is not good. In the case of auto-inc keys, this could mean very slow migrations where there is a large gap between min/max key. In other cases it could mean stalls as a lot of keys are concentrated in one area.
+4. It does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are supported, but it's currently not planned to support `VARCHAR` primary keys.

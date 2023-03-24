@@ -12,7 +12,7 @@ import (
 // IsCompatible checks if a migration is compatible with this program.
 // This can be used by automation to fallback to gh-ost if it's not.
 func IsCompatible(ctx context.Context, migration *Migration) bool {
-	m, err := NewMigrationRunner(migration)
+	m, err := NewRunner(migration)
 	if err != nil {
 		return false
 	}
