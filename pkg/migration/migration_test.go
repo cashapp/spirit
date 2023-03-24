@@ -2,6 +2,7 @@ package migration
 
 import (
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
@@ -42,6 +43,37 @@ func TestE2ENullAlter(t *testing.T) {
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
+
+	err = migration.Run()
+	assert.NoError(t, err)
+}
+
+func TestE2ENullAlterWithReplicas(t *testing.T) {
+	replicaDSN := os.Getenv("REPLICA_DSN")
+	if replicaDSN == "" {
+		t.Skip("skipping replica tests because REPLICA_DSN not set")
+	}
+	runSQL(t, `DROP TABLE IF EXISTS replicatest, _replicatest_shadow`)
+	table := `CREATE TABLE replicatest (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Concurrency = 16
+	migration.Checksum = true
+	migration.Table = "replicatest"
+	migration.Alter = "ENGINE=InnoDB"
+	migration.ReplicaDSN = replicaDSN
+	migration.ReplicaMaxLagMs = 1000
 
 	err = migration.Run()
 	assert.NoError(t, err)
