@@ -16,6 +16,12 @@ type MySQL80Replica struct {
 	logger           loggers.Advanced
 }
 
+const MySQL8LagQuery = `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
+max(LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP),
+max(LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)
+)/1000) as lagMs
+FROM performance_schema.replication_applier_status_by_worker`
+
 var _ Throttler = &MySQL80Replica{}
 
 // Start starts the lag monitor. This is not gh-ost. The lag monitor is primitive
@@ -45,13 +51,8 @@ func (l *MySQL80Replica) Start() error {
 // has weaknesses if there are any delays in commits, since it's technically the TIMESTAMP value of the statement.
 // An alternative is to use a Heatbeat table, but that's way more complicated than this code wants to get into.
 func (l *MySQL80Replica) UpdateLag() error {
-	query := `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
- max(LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP),
- max(LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)
- )/1000) as lagMs
- FROM performance_schema.replication_applier_status_by_worker`
 	var newLagValue int64
-	if err := l.replica.QueryRow(query).Scan(&newLagValue); err != nil {
+	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil {
 		return errors.New("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)

@@ -16,6 +16,7 @@ import (
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
+	"github.com/squareup/spirit/pkg/check"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
@@ -193,7 +194,7 @@ func (m *Runner) Run(ctx context.Context) error {
 	}
 	// Perform preflight basic checks. These are features that are required
 	// for the migration to proceed.
-	if err := m.preflightChecks(ctx); err != nil {
+	if err := check.RunChecks(ctx, m.db, m.logger, check.ScopePreflight); err != nil {
 		return err
 	}
 
@@ -241,6 +242,10 @@ func (m *Runner) Run(ctx context.Context) error {
 	if err := cutover.Run(ctx); err != nil {
 		return err
 	}
+	// Run the post cutover checks.
+	if err := check.RunChecks(ctx, m.db, m.logger, check.ScopePostCutover); err != nil {
+		return err
+	}
 	m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v total-chunks: %v duration: %v",
 		m.usedInstantDDL,
 		m.usedInplaceDDL,
@@ -286,6 +291,10 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 		if err := m.checksum(ctx); err != nil {
 			return err
 		}
+	}
+	// Run any checks that need to be done pre-cutover.
+	if err := check.RunChecks(ctx, m.db, m.logger, check.ScopeCutover); err != nil {
+		return err
 	}
 	return nil
 }
@@ -574,34 +583,6 @@ func (m *Runner) Close() error {
 		m.replClient.Close()
 	}
 	return m.db.Close()
-}
-
-func (m *Runner) preflightChecks(ctx context.Context) error {
-	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
-	err := m.db.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
-	if err != nil {
-		return err
-	}
-	if binlogFormat != "ROW" {
-		return errors.New("binlog_format must be ROW")
-	}
-	if innodbAutoincLockMode != "2" {
-		// This is strongly encouraged because otherwise running parallel threads is pointless.
-		// i.e. on a test with 2 threads running INSERT INTO new SELECT * FROM old WHERE <range>
-		// the inserts will run in serial when there is an autoinc column on new and innodbAutoincLockMode != "2"
-		// This is the auto-inc lock. It won't show up in SHOW PROCESSLIST that they are serial.
-		m.logger.Warn("innodb_autoinc_lock_mode != 2. This will cause the migration to run slower than expected because concurrent inserts to the new table will be serialized.")
-	}
-	if binlogRowImage != "FULL" {
-		// This might not be required, but is the only option that has been tested so far.
-		// To keep the testing scope reduced for now, it is required.
-		return errors.New("binlog_row_image must be FULL")
-	}
-	if logBin != "1" {
-		// This is a hard requirement because we need to be able to read the binlog.
-		return errors.New("log_bin must be enabled")
-	}
-	return nil
 }
 
 func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
