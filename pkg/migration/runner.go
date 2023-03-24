@@ -369,10 +369,12 @@ func (m *Runner) setup(ctx context.Context) error {
 			return err
 		}
 		// An error here means the connection to the replica is not valid, or it can't be detected
-		// As 5.7 or 8.0. This is not (currently) fatal, it just means the replication throttler can not be used.
+		// This is fatal because if a user specifies a replica throttler and it can't be used,
+		// we should not proceed.
 		mythrottler, err := throttler.NewReplicationThrottler(replica, m.optReplicaMaxLagMs, m.logger)
 		if err != nil {
 			m.logger.Warnf("could not create replication throttler: %v", err)
+			return err
 		}
 		m.copier.SetThrottler(mythrottler)
 		if err := mythrottler.Start(); err != nil {
