@@ -19,9 +19,9 @@ const (
 	ScopePostCutover ScopeFlag = 1 << 2
 	// These are scopes for replica checks
 	// Its a different db which is handed hence the different scope.
-	ScopeReplicaPreflight   ScopeFlag = 1 << 3
-	ScopeReplicaCutover     ScopeFlag = 1 << 4
-	ScopeReplicaPostCutover ScopeFlag = 1 << 5
+	//ScopeReplicaPreflight   ScopeFlag = 1 << 3
+	//ScopeReplicaCutover     ScopeFlag = 1 << 4
+	//ScopeReplicaPostCutover ScopeFlag = 1 << 5
 )
 
 type check struct {
