@@ -2,7 +2,6 @@ package check
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"github.com/siddontang/loggers"
@@ -14,9 +13,9 @@ func init() {
 
 // check the configuration of the database. There are some hard nos,
 // and some suggestions around configuration for performance.
-func configurationCheck(ctx context.Context, db *sql.DB, logger loggers.Advanced) error {
+func configurationCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
-	err := db.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
+	err := r.DB.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
 	if err != nil {
 		return err
 	}

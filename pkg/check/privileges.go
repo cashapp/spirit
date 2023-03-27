@@ -2,7 +2,6 @@ package check
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,18 +10,17 @@ import (
 )
 
 func init() {
-	registerCheck("privileges", privilegeCheck, ScopePreflight)
+	registerCheck("privileges", privilegesCheck, ScopePreflight)
 }
 
 // Check the privileges of the user running the migration.
 // Ensure there is LOCK TABLES etc so we don't find out and get errors
 // at cutover time.
-func privilegeCheck(ctx context.Context, db *sql.DB, logger loggers.Advanced) error {
+func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	// This is a re-implementation of the gh-ost check
 	// validateGrants() in gh-ost/go/logic/inspect.go
 	var foundAll, foundSuper, foundReplicationClient, foundReplicationSlave, foundDBAll bool
-	dbName := "test"
-	rows, err := db.QueryContext(ctx, `SHOW GRANTS`) //nolint: execinquery
+	rows, err := r.DB.QueryContext(ctx, `SHOW GRANTS`) //nolint: execinquery
 	if err != nil {
 		return err
 	}
@@ -44,16 +42,16 @@ func privilegeCheck(ctx context.Context, db *sql.DB, logger loggers.Advanced) er
 		if strings.Contains(grant, `REPLICATION SLAVE`) && strings.Contains(grant, ` ON *.*`) {
 			foundReplicationSlave = true
 		}
-		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", dbName)) {
+		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", r.Table.SchemaName)) {
 			foundDBAll = true
 		}
-		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", strings.Replace(dbName, "_", "\\_", -1))) {
+		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", strings.Replace(r.Table.SchemaName, "_", "\\_", -1))) {
 			foundDBAll = true
 		}
 		if stringContainsAll(grant, `ALTER`, `CREATE`, `DELETE`, `DROP`, `INDEX`, `INSERT`, `LOCK TABLES`, `SELECT`, `TRIGGER`, `UPDATE`, ` ON *.*`) {
 			foundDBAll = true
 		}
-		if stringContainsAll(grant, `ALTER`, `CREATE`, `DELETE`, `DROP`, `INDEX`, `INSERT`, `LOCK TABLES`, `SELECT`, `TRIGGER`, `UPDATE`, fmt.Sprintf(" ON `%s`.*", dbName)) {
+		if stringContainsAll(grant, `ALTER`, `CREATE`, `DELETE`, `DROP`, `INDEX`, `INSERT`, `LOCK TABLES`, `SELECT`, `TRIGGER`, `UPDATE`, fmt.Sprintf(" ON `%s`.*", r.Table.SchemaName)) {
 			foundDBAll = true
 		}
 	}
