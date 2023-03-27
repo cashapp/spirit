@@ -8,16 +8,23 @@ import (
 
 type MySQL80Replica struct {
 	Repl
+	isClosed bool
 }
+
+const MySQL8LagQuery = `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
+max(LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP),
+max(LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)
+)/1000) as lagMs
+FROM performance_schema.replication_applier_status_by_worker`
 
 var _ Throttler = &MySQL80Replica{}
 
-// Start starts the lag monitor. This is not gh-ost. The lag monitor is primitive
+// Open starts the lag monitor. This is not gh-ost. The lag monitor is primitive
 // because the requirement is only for DR, and not for up-to-date read-replicas.
 // Because chunk-sizes are typically 500ms, getting fine-grained metrics is not realistic.
 // We only check the replica every 5 seconds, and typically allow up to 120s
 // of replica lag, which is a lot.
-func (l *MySQL80Replica) Start() error {
+func (l *MySQL80Replica) Open() error {
 	if err := l.UpdateLag(); err != nil {
 		return err
 	}
@@ -25,11 +32,19 @@ func (l *MySQL80Replica) Start() error {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
+			if l.isClosed {
+				return
+			}
 			if err := l.UpdateLag(); err != nil {
 				l.logger.Errorf("error getting lag: %s", err.Error())
 			}
 		}
 	}()
+	return nil
+}
+
+func (l *MySQL80Replica) Close() error {
+	l.isClosed = true
 	return nil
 }
 
@@ -39,13 +54,8 @@ func (l *MySQL80Replica) Start() error {
 // has weaknesses if there are any delays in commits, since it's technically the TIMESTAMP value of the statement.
 // An alternative is to use a Heatbeat table, but that's way more complicated than this code wants to get into.
 func (l *MySQL80Replica) UpdateLag() error {
-	query := `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
- max(LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP),
- max(LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)
- )/1000) as lagMs
- FROM performance_schema.replication_applier_status_by_worker`
 	var newLagValue int64
-	if err := l.replica.QueryRow(query).Scan(&newLagValue); err != nil {
+	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil {
 		return errors.New("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)

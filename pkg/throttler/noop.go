@@ -4,7 +4,11 @@ type Noop struct{}
 
 var _ Throttler = &Noop{}
 
-func (t *Noop) Start() error {
+func (t *Noop) Open() error {
+	return nil
+}
+
+func (t *Noop) Close() error {
 	return nil
 }
 
