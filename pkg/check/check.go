@@ -5,12 +5,13 @@ package check
 import (
 	"context"
 	"database/sql"
+	"sync"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
 )
 
-// ScopeFlag a checker's scope
+// ScopeFlag scopes a check
 type ScopeFlag uint8
 
 const (
@@ -29,16 +30,23 @@ type Resources struct {
 }
 
 type check struct {
-	name     string
 	callback func(context.Context, Resources, loggers.Advanced) error
 	scope    ScopeFlag
 }
 
-var checks []check
+var (
+	checks map[string]check
+	lock   sync.Mutex
+)
 
 // registerCheck registers a check (callback func) and a scope (aka time) that it is expected to be run
 func registerCheck(name string, callback func(context.Context, Resources, loggers.Advanced) error, scope ScopeFlag) {
-	checks = append(checks, check{name: name, callback: callback, scope: scope})
+	lock.Lock()
+	defer lock.Unlock()
+	if checks == nil {
+		checks = make(map[string]check)
+	}
+	checks[name] = check{callback: callback, scope: scope}
 }
 
 // RunChecks runs all checks that are registered for the given scope
