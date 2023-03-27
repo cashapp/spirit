@@ -86,6 +86,7 @@ type Runner struct {
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
 	copier       *row.Copier
+	throttler    throttler.Throttler
 
 	// Track some key statistics.
 	startTime time.Time
@@ -390,13 +391,13 @@ func (m *Runner) setup(ctx context.Context) error {
 		// An error here means the connection to the replica is not valid, or it can't be detected
 		// This is fatal because if a user specifies a replica throttler and it can't be used,
 		// we should not proceed.
-		mythrottler, err := throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLagMs, m.logger)
+		m.throttler, err = throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLagMs, m.logger)
 		if err != nil {
 			m.logger.Warnf("could not create replication throttler: %v", err)
 			return err
 		}
-		m.copier.SetThrottler(mythrottler)
-		if err := mythrottler.Start(); err != nil {
+		m.copier.SetThrottler(m.throttler)
+		if err := m.throttler.Open(); err != nil {
 			return err
 		}
 	}
@@ -541,6 +542,9 @@ func (m *Runner) Close() error {
 	}
 	if m.replica != nil {
 		m.replica.Close()
+	}
+	if m.throttler != nil {
+		m.throttler.Close()
 	}
 	return m.db.Close()
 }
