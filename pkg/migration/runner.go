@@ -540,11 +540,11 @@ func (m *Runner) Close() error {
 	if m.replClient != nil {
 		m.replClient.Close()
 	}
-	if m.replica != nil {
-		m.replica.Close()
-	}
 	if m.throttler != nil {
 		m.throttler.Close()
+	}
+	if m.replica != nil {
+		m.replica.Close()
 	}
 	return m.db.Close()
 }
