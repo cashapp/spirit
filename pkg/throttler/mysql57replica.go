@@ -10,16 +10,17 @@ import (
 
 type MySQL57Replica struct {
 	Repl
+	isClosed bool
 }
 
 var _ Throttler = &MySQL57Replica{}
 
-// Start starts the lag monitor. This is not gh-ost. The lag monitor is primitive
+// Open starts the lag monitor. This is not gh-ost. The lag monitor is primitive
 // because the requirement is only for DR, and not for up-to-date read-replicas.
 // Because chunk-sizes are typically 500ms, getting fine-grained metrics is not realistic.
 // We only check the replica every 5 seconds, and typically allow up to 120s
 // of replica lag, which is a lot.
-func (l *MySQL57Replica) Start() error {
+func (l *MySQL57Replica) Open() error {
 	if err := l.UpdateLag(); err != nil {
 		return err
 	}
@@ -27,11 +28,19 @@ func (l *MySQL57Replica) Start() error {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
+			if l.isClosed {
+				return
+			}
 			if err := l.UpdateLag(); err != nil {
 				l.logger.Errorf("error getting lag: %s", err.Error())
 			}
 		}
 	}()
+	return nil
+}
+
+func (l *MySQL57Replica) Close() error {
+	l.isClosed = true
 	return nil
 }
 

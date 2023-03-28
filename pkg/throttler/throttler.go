@@ -8,7 +8,8 @@ import (
 )
 
 type Throttler interface {
-	Start() error
+	Open() error
+	Close() error
 	IsThrottled() bool
 	BlockWait()
 	UpdateLag() error
@@ -25,7 +26,7 @@ func NewReplicationThrottler(replica *sql.DB, lagToleranceInMs int64, logger log
 	}
 	if version == "8" {
 		return &MySQL80Replica{
-			Repl{
+			Repl: Repl{
 				replica:          replica,
 				lagToleranceInMs: lagToleranceInMs,
 				logger:           logger,
@@ -33,7 +34,7 @@ func NewReplicationThrottler(replica *sql.DB, lagToleranceInMs int64, logger log
 		}, nil
 	}
 	return &MySQL57Replica{
-		Repl{
+		Repl: Repl{
 			replica:          replica,
 			lagToleranceInMs: lagToleranceInMs,
 			logger:           logger,

@@ -12,10 +12,9 @@ import (
 	"time"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/pingcap/tidb/parser"
-	"github.com/pingcap/tidb/parser/ast"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
+	"github.com/squareup/spirit/pkg/check"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
@@ -79,6 +78,7 @@ type Runner struct {
 	alterStatement string
 
 	db              *sql.DB
+	replica         *sql.DB
 	table           *table.TableInfo
 	shadowTable     *table.TableInfo
 	checkpointTable *table.TableInfo
@@ -86,6 +86,7 @@ type Runner struct {
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
 	copier       *row.Copier
+	throttler    throttler.Throttler
 
 	// Track some key statistics.
 	startTime time.Time
@@ -193,9 +194,9 @@ func (m *Runner) Run(ctx context.Context) error {
 		m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v", m.usedInstantDDL, m.usedInplaceDDL)
 		return nil // success!
 	}
-	// Perform preflight basic checks. These are features that are required
-	// for the migration to proceed.
-	if err := m.preflightChecks(ctx); err != nil {
+
+	// Perform preflight basic checks.
+	if err := m.runChecks(ctx, check.ScopePreflight); err != nil {
 		return err
 	}
 
@@ -203,6 +204,11 @@ func (m *Runner) Run(ctx context.Context) error {
 	// and creating the shadow and checkpoint tables.
 	// The replication client is also created here.
 	if err := m.setup(ctx); err != nil {
+		return err
+	}
+
+	// Run post-setup checks
+	if err := m.runChecks(ctx, check.ScopePostSetup); err != nil {
 		return err
 	}
 
@@ -227,7 +233,10 @@ func (m *Runner) Run(ctx context.Context) error {
 	if err := m.prepareForCutover(ctx); err != nil {
 		return err
 	}
-
+	// Run any checks that need to be done pre-cutover.
+	if err := m.runChecks(ctx, check.ScopeCutover); err != nil {
+		return err
+	}
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	m.setCurrentState(migrationStateCutOver)
@@ -290,6 +299,16 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// runChecks wraps around check.RunChecks and adds the context of this migration
+func (m *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
+	return check.RunChecks(ctx, check.Resources{
+		DB:      m.db,
+		Replica: m.replica,
+		Table:   m.table,
+		Alter:   m.alterStatement,
+	}, m.logger, scope)
 }
 
 // attemptMySQLDDL "attempts" to use DDL directly on MySQL with an assertion
@@ -365,21 +384,22 @@ func (m *Runner) setup(ctx context.Context) error {
 
 	// If the replica DSN was specified, attach a replication throttler.
 	// Otherwise it will default to the NOOP throttler.
+	var err error
 	if m.optReplicaDSN != "" {
-		replica, err := sql.Open("mysql", m.optReplicaDSN)
+		m.replica, err = sql.Open("mysql", m.optReplicaDSN)
 		if err != nil {
 			return err
 		}
 		// An error here means the connection to the replica is not valid, or it can't be detected
 		// This is fatal because if a user specifies a replica throttler and it can't be used,
 		// we should not proceed.
-		mythrottler, err := throttler.NewReplicationThrottler(replica, m.optReplicaMaxLagMs, m.logger)
+		m.throttler, err = throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLagMs, m.logger)
 		if err != nil {
 			m.logger.Warnf("could not create replication throttler: %v", err)
 			return err
 		}
-		m.copier.SetThrottler(mythrottler)
-		if err := mythrottler.Start(); err != nil {
+		m.copier.SetThrottler(m.throttler)
+		if err := m.throttler.Open(); err != nil {
 			return err
 		}
 	}
@@ -446,65 +466,10 @@ func (m *Runner) createShadowTable(ctx context.Context) error {
 	return nil
 }
 
-// TODO: should we check for DROP and ADD of the same name?
-// This would intersect as true, but semantically that is not the correct behavior.
-func (m *Runner) checkAlterTableIsNotRename(sql string) error {
-	p := parser.New()
-	stmtNodes, _, err := p.Parse(sql, "", "")
-	if err != nil {
-		return fmt.Errorf("could not parse alter table statement: %s", sql)
-	}
-	stmt := &stmtNodes[0]
-	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
-	if !ok {
-		return errors.New("not a valid alter table statement")
-	}
-	for _, spec := range alterStmt.Specs {
-		if spec.Tp == ast.AlterTableRenameTable || spec.Tp == ast.AlterTableRenameColumn {
-			return errors.New("renames are not supported by the shadow table algorithm")
-		}
-		// ALTER TABLE CHANGE COLUMN can be used to rename a column.
-		// But they can also be used commonly without a rename, so the check needs to be deeper.
-		if spec.Tp == ast.AlterTableChangeColumn {
-			if spec.NewColumns[0].Name.String() != spec.OldColumnName.String() {
-				return errors.New("renames are not supported by the shadow table algorithm")
-			}
-		}
-	}
-	return nil // no renames
-}
-
-func (m *Runner) checkAlterTableIsNotAlterPrimaryKey(sql string) error {
-	p := parser.New()
-	stmtNodes, _, err := p.Parse(sql, "", "")
-	if err != nil {
-		return fmt.Errorf("could not parse alter table statement: %s", sql)
-	}
-	stmt := &stmtNodes[0]
-	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
-	if !ok {
-		return errors.New("not a valid alter table statement")
-	}
-	for _, spec := range alterStmt.Specs {
-		if spec.Tp == ast.AlterTableDropPrimaryKey {
-			return errors.New("dropping primary key is not supported by the shadow table algorithm")
-		}
-	}
-	return nil // no problems
-}
-
-// alterShadowTable uses the TiDB parser to preflight check that the alter statement is not a rename
-// We only need to check here because it breaks this algorithm. In most cases,
-// renames work with INSTANT ddl so this code is not required. The typical
-// case where it is required is multiple changes in one alter and one is a rename.
+// alterShadowTable applies the ALTER to the shadow table.
+// It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (m *Runner) alterShadowTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", m.shadowTable.QuotedName(), m.alterStatement)
-	if err := m.checkAlterTableIsNotRename(query); err != nil {
-		return err
-	}
-	if err := m.checkAlterTableIsNotAlterPrimaryKey(query); err != nil {
-		return err
-	}
 	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
@@ -577,35 +542,13 @@ func (m *Runner) Close() error {
 	if m.replClient != nil {
 		m.replClient.Close()
 	}
+	if m.throttler != nil {
+		m.throttler.Close()
+	}
+	if m.replica != nil {
+		m.replica.Close()
+	}
 	return m.db.Close()
-}
-
-func (m *Runner) preflightChecks(ctx context.Context) error {
-	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
-	err := m.db.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
-	if err != nil {
-		return err
-	}
-	if binlogFormat != "ROW" {
-		return errors.New("binlog_format must be ROW")
-	}
-	if innodbAutoincLockMode != "2" {
-		// This is strongly encouraged because otherwise running parallel threads is pointless.
-		// i.e. on a test with 2 threads running INSERT INTO new SELECT * FROM old WHERE <range>
-		// the inserts will run in serial when there is an autoinc column on new and innodbAutoincLockMode != "2"
-		// This is the auto-inc lock. It won't show up in SHOW PROCESSLIST that they are serial.
-		m.logger.Warn("innodb_autoinc_lock_mode != 2. This will cause the migration to run slower than expected because concurrent inserts to the new table will be serialized.")
-	}
-	if binlogRowImage != "FULL" {
-		// This might not be required, but is the only option that has been tested so far.
-		// To keep the testing scope reduced for now, it is required.
-		return errors.New("binlog_row_image must be FULL")
-	}
-	if logBin != "1" {
-		// This is a hard requirement because we need to be able to read the binlog.
-		return errors.New("log_bin must be enabled")
-	}
-	return nil
 }
 
 func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
