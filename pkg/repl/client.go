@@ -54,6 +54,8 @@ type Client struct {
 	TableChangeNotificationCallback func()
 	KeyAboveCopierCallback          func(interface{}) bool
 
+	isClosed bool
+
 	logger loggers.Advanced
 }
 
@@ -250,12 +252,20 @@ func (c *Client) startCanal() {
 		// Canal has failed! In future we might be able to reconnect and resume
 		// if canal does not do so itself. For now, we just fail the migration
 		// since we can resume from checkpoint anyway.
+		if c.isClosed {
+			// this is probably a replication.ErrSyncClosed error
+			// but since canal is now closed we can safely return
+			return
+		}
 		c.logger.Errorf("canal has failed. error: %v", err)
 		panic("canal has failed")
 	}
 }
 
 func (c *Client) Close() {
+	c.Lock()
+	defer c.Unlock()
+	c.isClosed = true
 	if c.canal != nil {
 		c.canal.Close()
 	}
