@@ -165,7 +165,9 @@ func (m *Runner) SetLogger(logger loggers.Advanced) {
 
 func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
-	m.logger.Infof("Starting spirit migration")
+	m.logger.Infof("Starting spirit migration. Concurrency=%d TargetChunkSize=%d Table=%s.%s Alter=\"%s\"",
+		m.optConcurrency, m.optTargetChunkMs, m.schemaName, m.tableName, m.alterStatement,
+	)
 
 	// Create a database connection
 	// It will be closed in m.Close()
