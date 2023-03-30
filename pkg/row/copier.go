@@ -35,6 +35,7 @@ type Copier struct {
 	CopyChunksCount   int64
 	EtaRowsPerSecond  int64
 	isInvalid         bool
+	isOpen            bool
 	Throttler         throttler.Throttler
 	logger            loggers.Advanced
 }
@@ -91,6 +92,7 @@ func NewCopierFromCheckpoint(db *sql.DB, tbl, shadowTable *table.TableInfo, conf
 	if err := c.chunker.OpenAtWatermark(copyRowsAt); err != nil {
 		return c, err
 	}
+	c.isOpen = true
 	// Success from this point on
 	// Overwrite copy-rows
 	atomic.StoreInt64(&c.CopyRowsCount, copyRows)
@@ -133,8 +135,12 @@ func (c *Copier) isHealthy() bool {
 
 func (c *Copier) Run(ctx context.Context) error {
 	c.CopyRowsStartTime = time.Now()
-	if err := c.chunker.Open(); err != nil {
-		return err
+	if !c.isOpen {
+		// For practical reasons resume-from-checkpoint
+		// will already be open, new copy processes will not be.
+		if err := c.chunker.Open(); err != nil {
+			return err
+		}
 	}
 	defer func() {
 		c.CopyRowsExecTime = time.Since(c.CopyRowsStartTime)

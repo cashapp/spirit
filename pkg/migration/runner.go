@@ -37,9 +37,9 @@ const (
 )
 
 const (
-	checkpointDumpInterval  = 5 * time.Second
-	tableStatUpdateInterval = 5 * time.Minute
-	statusInterval          = 2 * time.Second
+	checkpointDumpInterval  = 50 * time.Second
+	tableStatUpdateInterval = 30 * time.Second
+	statusInterval          = 10 * time.Second
 	copyEstimateInterval    = 5 * time.Second
 	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
