@@ -42,7 +42,7 @@ type Copier struct {
 
 type CopierConfig struct {
 	Concurrency           int
-	TargetMs              int64
+	TargetChunkTime       time.Duration
 	FinalChecksum         bool
 	DisableTrivialChunker bool
 	Throttler             throttler.Throttler
@@ -53,7 +53,7 @@ type CopierConfig struct {
 func NewCopierDefaultConfig() *CopierConfig {
 	return &CopierConfig{
 		Concurrency:           4,
-		TargetMs:              1000,
+		TargetChunkTime:       1000 * time.Millisecond,
 		FinalChecksum:         true,
 		DisableTrivialChunker: false,
 		Throttler:             &throttler.Noop{},
@@ -66,7 +66,7 @@ func NewCopier(db *sql.DB, tbl, shadowTable *table.TableInfo, config *CopierConf
 	if shadowTable == nil || tbl == nil {
 		return nil, errors.New("table and shadowTable must be non-nil")
 	}
-	chunker, err := table.NewChunker(tbl, config.TargetMs, config.DisableTrivialChunker, config.Logger)
+	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
 	if err != nil {
 		return nil, err
 	}

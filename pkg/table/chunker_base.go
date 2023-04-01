@@ -24,7 +24,7 @@ type chunkerBase struct {
 	// Dynamic Chunking is time based instead of row based.
 	// It uses *time* to determine the target chunk size.
 	chunkTimingInfo []time.Duration
-	ChunkerTargetMs int64 // i.e. 100ms for target
+	ChunkerTarget   time.Duration // i.e. 500ms for target
 
 	// Some options which are usually good, but might want to be disabled
 	// particularly for the test suite.
@@ -126,13 +126,13 @@ func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
 
 	// If any copyRows tasks take 5x the target size we reduce immediately
 	// and don't wait for more feedback.
-	if int64(d) > (t.ChunkerTargetMs * DynamicPanicFactor * int64(time.Millisecond)) {
+	if d > t.ChunkerTarget*DynamicPanicFactor {
 		newTarget := uint64(float64(t.chunkSize) / float64(DynamicPanicFactor*2))
 		t.logger.Infof("high chunk processing time. time: %s threshold: %s target-rows: %v target-ms: %v new-target-rows: %v",
 			d,
-			time.Duration(t.ChunkerTargetMs*DynamicPanicFactor*int64(time.Millisecond)),
+			t.ChunkerTarget*DynamicPanicFactor,
 			t.chunkSize,
-			t.ChunkerTargetMs,
+			t.ChunkerTarget,
 			newTarget,
 		)
 		t.updateChunkerTarget(newTarget)
@@ -369,7 +369,7 @@ func (t *chunkerBase) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 func (t *chunkerBase) calculateNewTargetChunkSize() uint64 {
 	// We do all our math as float64 of time in ns
 	p90 := float64(lazyFindP90(t.chunkTimingInfo))
-	targetTime := float64(t.ChunkerTargetMs * int64(time.Millisecond))
+	targetTime := float64(t.ChunkerTarget)
 	newTargetRows := float64(t.chunkSize) * (targetTime / p90)
 	return uint64(newTargetRows)
 }
