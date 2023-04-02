@@ -1043,7 +1043,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 		m.setCurrentState(stateChecksum)
 		assert.NoError(t, m.checksum(context.TODO()))
-		assert.Equal(t, "checksum", m.getCurrentState().String())
+		assert.Equal(t, "postChecksum", m.getCurrentState().String())
 		// All done!
 	}
 }
