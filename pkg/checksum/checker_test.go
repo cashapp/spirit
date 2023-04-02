@@ -50,7 +50,11 @@ func TestBasicChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -77,7 +81,11 @@ func TestBasicValidation(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, feed.Run())
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
@@ -110,7 +118,11 @@ func TestCorruptChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -137,7 +149,11 @@ func TestBoundaryCases(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())

@@ -30,6 +30,7 @@ type Checker struct {
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
 	chunker     table.Chunker
+	recentValue interface{} // used for status
 	logger      loggers.Advanced
 }
 
@@ -99,7 +100,15 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	if sourceChecksum != targetChecksum {
 		return fmt.Errorf("checksum mismatch: %v != %v, sourceSQL: %s", sourceChecksum, targetChecksum, source)
 	}
+	if chunk.LowerBound != nil {
+		c.Lock()
+		c.recentValue = chunk.LowerBound.Value
+		c.Unlock()
+	}
 	return nil
+}
+func (c *Checker) RecentValue() string {
+	return fmt.Sprintf("%v", c.recentValue)
 }
 
 func (c *Checker) isHealthy() bool {
