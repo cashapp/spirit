@@ -791,8 +791,8 @@ func (m *Runner) dumpStatus() {
 			)
 		case stateChecksum:
 			// This could take a while if it's a large table. We just have to show approximate progress.
-			// This is a little bit harder for checksum because it doesn't have returned rows vs.
-			// estimated rows. Instead we compare to the number of chunks we used in the copy-rows.
+			// This is a little bit harder for checksum because it doesn't have returned rows
+			// so we just show a "recent value" over the "maximum value".
 			m.logger.Infof("migration status: state=%s, checksum-progress=%s/%s, binlog-deltas=%v, time-total=%v",
 				m.getCurrentState().String(),
 				m.checker.RecentValue(), m.table.MaxValue(),
