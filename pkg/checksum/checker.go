@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/siddontang/loggers"
 	"github.com/sirupsen/logrus"
@@ -30,12 +31,13 @@ type Checker struct {
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
 	chunker     table.Chunker
+	recentValue interface{} // used for status
 	logger      loggers.Advanced
 }
 
 type CheckerConfig struct {
 	Concurrency           int
-	TargetMs              int64
+	TargetChunkTime       time.Duration
 	DisableTrivialChunker bool
 	Logger                loggers.Advanced
 }
@@ -43,7 +45,7 @@ type CheckerConfig struct {
 func NewCheckerDefaultConfig() *CheckerConfig {
 	return &CheckerConfig{
 		Concurrency:           4,
-		TargetMs:              1000,
+		TargetChunkTime:       1000 * time.Millisecond,
 		DisableTrivialChunker: false,
 		Logger:                logrus.New(),
 	}
@@ -57,7 +59,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
-	chunker, err := table.NewChunker(tbl, config.TargetMs, config.DisableTrivialChunker, config.Logger)
+	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +101,15 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	if sourceChecksum != targetChecksum {
 		return fmt.Errorf("checksum mismatch: %v != %v, sourceSQL: %s", sourceChecksum, targetChecksum, source)
 	}
+	if chunk.LowerBound != nil {
+		c.Lock()
+		c.recentValue = chunk.LowerBound.Value
+		c.Unlock()
+	}
 	return nil
+}
+func (c *Checker) RecentValue() string {
+	return fmt.Sprintf("%v", c.recentValue)
 }
 
 func (c *Checker) isHealthy() bool {

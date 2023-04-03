@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/siddontang/loggers"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -56,10 +58,13 @@ type Client struct {
 
 	isClosed bool
 
+	batchSize   int64
+	concurrency int
+
 	logger loggers.Advanced
 }
 
-func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, username, password string, logger loggers.Advanced) *Client {
+func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, username, password string, config *ClientConfig) *Client {
 	return &Client{
 		db:              db,
 		host:            host,
@@ -68,7 +73,24 @@ func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, userna
 		username:        username,
 		password:        password,
 		binlogChangeset: make(map[string]bool),
-		logger:          logger,
+		logger:          config.Logger,
+		batchSize:       config.BatchSize,
+		concurrency:     config.Concurrency,
+	}
+}
+
+type ClientConfig struct {
+	BatchSize   int64
+	Concurrency int
+	Logger      loggers.Advanced
+}
+
+// NewClientDefaultConfig returns a default config for the copier.
+func NewClientDefaultConfig() *ClientConfig {
+	return &ClientConfig{
+		Concurrency: 4,
+		BatchSize:   10000,
+		Logger:      logrus.New(),
 	}
 }
 
@@ -180,7 +202,7 @@ func (c *Client) Run() (err error) {
 	cfg.Addr = c.host
 	cfg.User = c.username
 	cfg.Password = c.password
-	cfg.Logger = c.logger
+	cfg.Logger = NewLogWrapper(c.logger) // wrapper to filter the noise.
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
 	cfg.Dump.ExecutionPath = "" // skip dump
 	c.canal, err = canal.NewCanal(cfg)
@@ -300,7 +322,8 @@ func (c *Client) Flush(ctx context.Context) error {
 	// We must now apply the changeset setToFlush to the new table.
 	var deleteKeys []string
 	var replaceKeys []string
-	var i int
+	var stmts []string
+	var i int64
 	for key, isDelete := range setToFlush {
 		i++
 		if isDelete {
@@ -308,27 +331,40 @@ func (c *Client) Flush(ctx context.Context) error {
 		} else {
 			replaceKeys = append(replaceKeys, key)
 		}
-		if (i % 10000) == 0 {
-			if err := c.doFlush(ctx, deleteKeys, replaceKeys); err != nil {
-				return err
-			}
+		if (i % c.batchSize) == 0 {
+			stmts = append(stmts, c.createDeleteStmt(deleteKeys))
+			stmts = append(stmts, c.createReplaceStmt(replaceKeys))
 			deleteKeys = []string{}
 			replaceKeys = []string{}
-			atomic.AddInt64(&c.binlogChangesetDelta, -10000)
+			atomic.AddInt64(&c.binlogChangesetDelta, -c.batchSize)
 		}
 	}
-	err := c.doFlush(ctx, deleteKeys, replaceKeys)
+	stmts = append(stmts, c.createDeleteStmt(deleteKeys))
+	stmts = append(stmts, c.createReplaceStmt(replaceKeys))
+
+	// Execute the statements in parallel up to 16 threads.
+	// They should not conflict and order should not matter
+	// because they come from a consistent view of a map,
+	// which is distinct keys.
+	g := new(errgroup.Group)
+	g.SetLimit(16)
+	for _, stmt := range stmts {
+		s := stmt
+		g.Go(func() error {
+			_, err := dbconn.RetryableTransaction(ctx, c.db, false, s)
+			return err
+		})
+	}
+	// wait for all work to finish
+	err := g.Wait()
 	// Update the synced binlog position to the posOfFlush
 	// uses a mutex.
 	c.SetPos(&posOfFlush)
 	return err
 }
 
-// doFlush is called by Flush() to apply the changeset to the new table.
-// It runs the actual SQL statements using DELETE FROM and REPLACE INTO syntax.
-// This is called under a mutex from Flush().
-func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys []string) error {
-	var deleteStmt, replaceStmt string
+func (c *Client) createDeleteStmt(deleteKeys []string) string {
+	var deleteStmt string
 	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
 			c.newTable.QuotedName(),
@@ -336,6 +372,11 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys []string) 
 			c.pksToRowValueConstructor(deleteKeys),
 		)
 	}
+	return deleteStmt
+}
+
+func (c *Client) createReplaceStmt(replaceKeys []string) string {
+	var replaceStmt string
 	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
 			c.newTable.QuotedName(),
@@ -346,12 +387,7 @@ func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys []string) 
 			c.pksToRowValueConstructor(replaceKeys),
 		)
 	}
-	// This will start + commit the transaction
-	// And retry it if there are deadlocks etc.
-	if _, err := dbconn.RetryableTransaction(ctx, c.db, false, deleteStmt, replaceStmt); err != nil {
-		return err
-	}
-	return nil
+	return replaceStmt
 }
 
 func (c *Client) FlushUntilTrivial(ctx context.Context) error {

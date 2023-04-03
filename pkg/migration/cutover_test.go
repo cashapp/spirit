@@ -49,7 +49,11 @@ func TestCutOver(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -98,7 +102,11 @@ func TestMDLLockFails(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -132,7 +140,11 @@ func TestInvalidOptions(t *testing.T) {
 	t1new := table.NewTableInfo(db, "test", "t1_new")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	_, err = NewCutOver(db, nil, t1new, feed, logger)
 	assert.Error(t, err)
 }

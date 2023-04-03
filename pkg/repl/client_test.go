@@ -48,7 +48,11 @@ func TestReplClient(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, client.Run())
 
 	// Insert into t1.
@@ -89,7 +93,11 @@ func TestReplClientComplex(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, client.Run())
 
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
@@ -156,7 +164,11 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	client.SetPos(&mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
@@ -181,7 +193,11 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
 	pos.Pos = 4
@@ -212,7 +228,11 @@ func TestReplClientOpts(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, logger)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	assert.NoError(t, client.Run())
 
 	// Disable key above watermark.
