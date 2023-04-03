@@ -304,7 +304,6 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 	// This is because adding a unique index can not be differentiated from a
 	// duplicate key error caused by retrying partial work.
 	if m.optChecksum {
-		m.setCurrentState(stateChecksum)
 		if err := m.checksum(ctx); err != nil {
 			return err
 		}
@@ -652,6 +651,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 // checksum creates the checksum which opens the read view.
 func (m *Runner) checksum(ctx context.Context) error {
+	m.setCurrentState(stateChecksum)
 	var err error
 	m.checker, err = checksum.NewChecker(m.db, m.table, m.shadowTable, m.replClient, &checksum.CheckerConfig{
 		Concurrency:           m.optChecksumConcurrency,
@@ -758,7 +758,8 @@ func (m *Runner) updateTableStatisticsContinuously(ctx context.Context) {
 	ticker := time.NewTicker(tableStatUpdateInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		if m.getCurrentState() > stateCopyRows {
+		// We need to update statistics for copy-rows and checksum
+		if m.getCurrentState() > stateCutOver {
 			return
 		}
 		if err := m.table.UpdateTableStatistics(ctx); err != nil {
