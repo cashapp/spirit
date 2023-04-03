@@ -707,7 +707,7 @@ func TestCheckpoint(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.CopyRowsStartTime = time.Now()
+	m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -731,9 +731,9 @@ func TestCheckpoint(t *testing.T) {
 	assert.Error(t, m.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk1))
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk3))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk2))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk1))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk3))
 
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
@@ -765,7 +765,7 @@ func TestCheckpoint(t *testing.T) {
 	chunk, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1001), chunk.LowerBound.Value)
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from
 	// a restored checkpoint state. We won't have advanced anywhere from
@@ -781,7 +781,7 @@ func TestCheckpoint(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 	}
 
 	watermark, err = m.copier.GetLowWatermark()
@@ -856,7 +856,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.CopyRowsStartTime = time.Now()
+	m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -879,9 +879,9 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.Error(t, m.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk2))
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk1))
-	assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk3))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk2))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk1))
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk3))
 
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
@@ -982,7 +982,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// Instead of calling m.copyRows() we will step through it manually.
 		// Since we want to checkpoint after a few chunks.
 
-		m.copier.CopyRowsStartTime = time.Now()
+		m.copier.StartTime = time.Now()
 		m.setCurrentState(stateCopyRows)
 		assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -994,7 +994,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		chunk, err := m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NotNil(t, chunk)
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 		// Now insert some data.
 		// This will be ignored by the binlog subscription.
@@ -1010,7 +1010,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// second chunk.
 		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 		// Now insert some data.
 		// This should be picked up by the binlog subscription.
@@ -1027,7 +1027,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// third (and last) chunk.
 		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, m.copier.MigrateChunk(context.TODO(), chunk))
+		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 		// Some data is inserted later, even though the last chunk is done.
 		// We still care to pick it up.

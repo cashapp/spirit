@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	binlogTrivialThreshold = 1000
+	binlogTrivialThreshold = 10000
+	DefaultBatchSize       = 10000
 )
 
 type Client struct {
@@ -89,7 +90,7 @@ type ClientConfig struct {
 func NewClientDefaultConfig() *ClientConfig {
 	return &ClientConfig{
 		Concurrency: 4,
-		BatchSize:   10000,
+		BatchSize:   DefaultBatchSize,
 		Logger:      logrus.New(),
 	}
 }

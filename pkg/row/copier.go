@@ -23,21 +23,21 @@ import (
 
 type Copier struct {
 	sync.Mutex
-	db                *sql.DB
-	table             *table.TableInfo
-	shadowTable       *table.TableInfo
-	chunker           table.Chunker
-	concurrency       int
-	finalChecksum     bool
-	CopyRowsStartTime time.Time
-	CopyRowsExecTime  time.Duration
-	CopyRowsCount     int64
-	CopyChunksCount   int64
-	EtaRowsPerSecond  int64
-	isInvalid         bool
-	isOpen            bool
-	Throttler         throttler.Throttler
-	logger            loggers.Advanced
+	db               *sql.DB
+	table            *table.TableInfo
+	shadowTable      *table.TableInfo
+	chunker          table.Chunker
+	concurrency      int
+	finalChecksum    bool
+	StartTime        time.Time
+	ExecTime         time.Duration
+	CopyRowsCount    int64
+	CopyChunksCount  int64
+	EtaRowsPerSecond int64
+	isInvalid        bool
+	isOpen           bool
+	Throttler        throttler.Throttler
+	logger           loggers.Advanced
 }
 
 type CopierConfig struct {
@@ -99,9 +99,9 @@ func NewCopierFromCheckpoint(db *sql.DB, tbl, shadowTable *table.TableInfo, conf
 	return c, nil
 }
 
-// MigrateChunk copies a chunk from the table to the shadowTable.
+// CopyChunk copies a chunk from the table to the shadowTable.
 // it is public so it can be used in tests incrementally.
-func (c *Copier) MigrateChunk(ctx context.Context, chunk *table.Chunk) error {
+func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.Throttler.BlockWait()
 	startTime := time.Now()
 	// INSERT INGORE because we can have duplicate rows in the chunk because in
@@ -134,7 +134,10 @@ func (c *Copier) isHealthy() bool {
 }
 
 func (c *Copier) Run(ctx context.Context) error {
-	c.CopyRowsStartTime = time.Now()
+	c.StartTime = time.Now()
+	defer func() {
+		c.ExecTime = time.Since(c.StartTime)
+	}()
 	if !c.isOpen {
 		// For practical reasons resume-from-checkpoint
 		// will already be open, new copy processes will not be.
@@ -142,9 +145,6 @@ func (c *Copier) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	defer func() {
-		c.CopyRowsExecTime = time.Since(c.CopyRowsStartTime)
-	}()
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
 	for !c.chunker.IsRead() && c.isHealthy() {
@@ -157,7 +157,7 @@ func (c *Copier) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.MigrateChunk(ctx, chunk); err != nil {
+			if err := c.CopyChunk(ctx, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}

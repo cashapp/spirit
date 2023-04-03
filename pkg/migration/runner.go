@@ -169,7 +169,7 @@ func (m *Runner) SetLogger(logger loggers.Advanced) {
 
 func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
-	m.logger.Infof("Starting spirit migration. Concurrency=%d TargetChunkSize=%d Table=%s.%s Alter=\"%s\"",
+	m.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%d table=%s.%s alter=\"%s\"",
 		m.optConcurrency, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
 	)
 
@@ -195,7 +195,7 @@ func (m *Runner) Run(ctx context.Context) error {
 	// has been successful and the DDL is complete.
 	err = m.attemptMySQLDDL(ctx)
 	if err == nil {
-		m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v", m.usedInstantDDL, m.usedInplaceDDL)
+		m.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v", m.usedInstantDDL, m.usedInplaceDDL)
 		return nil // success!
 	}
 
@@ -256,11 +256,18 @@ func (m *Runner) Run(ctx context.Context) error {
 	if err := cutover.Run(ctx); err != nil {
 		return err
 	}
-	m.logger.Infof("apply complete. instant-ddl: %v inplace-ddl: %v total-chunks: %v duration: %v",
+
+	checksumTime := time.Duration(0)
+	if m.checker != nil {
+		checksumTime = m.checker.ExecTime
+	}
+	m.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v total-chunks=%v copy-rows-time=%s checksum-time=%s total-time=%s",
 		m.usedInstantDDL,
 		m.usedInplaceDDL,
 		m.copier.CopyChunksCount,
-		time.Since(m.startTime).String(),
+		m.copier.ExecTime,
+		checksumTime,
+		time.Since(m.startTime),
 	)
 	return nil
 }
@@ -382,7 +389,7 @@ func (m *Runner) setup(ctx context.Context) error {
 		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
 			Logger:      m.logger,
 			Concurrency: m.optConcurrency,
-			BatchSize:   10000,
+			BatchSize:   repl.DefaultBatchSize,
 		})
 		// Start the binary log feed now
 		if err := m.replClient.Run(); err != nil {
@@ -619,7 +626,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
 		Logger:      m.logger,
 		Concurrency: m.optConcurrency,
-		BatchSize:   10000,
+		BatchSize:   repl.DefaultBatchSize,
 	})
 	m.replClient.SetPos(&mysql.Position{
 		Name: binlogName,
@@ -696,7 +703,7 @@ func (m *Runner) dumpCheckpoint(ctx context.Context) error {
 		return err // it might not be ready, we can try again.
 	}
 	copyRows := atomic.LoadInt64(&m.copier.CopyRowsCount)
-	m.logger.Infof("checkpoint: low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
+	m.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d copy-rows=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
 	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
 	_, err = m.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
@@ -743,7 +750,7 @@ func (m *Runner) periodicFlush(ctx context.Context) {
 			m.logger.Errorf("error flushing binary log: %v", err)
 		}
 		m.periodicFlushLock.Unlock()
-		m.logger.Infof("finished periodic flush of binary log in %v", time.Since(startLoop))
+		m.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
 	}
 }
 
@@ -773,18 +780,19 @@ func (m *Runner) dumpStatus() {
 		case stateCopyRows:
 			// Status for copy rows
 			pct := float64(atomic.LoadInt64(&m.copier.CopyRowsCount)) / float64(m.table.EstimatedRows) * 100
-			m.logger.Infof("migration status: state=%s, copy-progress=%s, binlog-deltas=%v, time-total=%v, copier-remaining-time=%v, copier-is-throttled=%v",
+			m.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
 				m.getCurrentState().String(),
 				fmt.Sprintf("%.2f%%", pct),
 				m.replClient.GetDeltaLen(),
-				time.Since(m.startTime).String(),
+				time.Since(m.startTime),
+				time.Since(m.copier.StartTime),
 				m.getETAFromRowsPerSecond(pct > 99.9),
 				m.copier.Throttler.IsThrottled(),
 			)
 		case stateApplyChangeset, statePostChecksum:
 			// We've finished copying rows and we are now trying to reduce the number of binlog deltas before
 			// proceeding to the checksum and then the final cutover.
-			m.logger.Infof("migration status: state=%s, binlog-deltas=%v, time-total=%v",
+			m.logger.Infof("migration status: state=%s binlog-deltas=%v time-total=%v",
 				m.getCurrentState().String(),
 				m.replClient.GetDeltaLen(),
 				time.Since(m.startTime).String(),
@@ -793,11 +801,12 @@ func (m *Runner) dumpStatus() {
 			// This could take a while if it's a large table. We just have to show approximate progress.
 			// This is a little bit harder for checksum because it doesn't have returned rows
 			// so we just show a "recent value" over the "maximum value".
-			m.logger.Infof("migration status: state=%s, checksum-progress=%s/%s, binlog-deltas=%v, time-total=%v",
+			m.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-total=%s checksum-time=%s",
 				m.getCurrentState().String(),
 				m.checker.RecentValue(), m.table.MaxValue(),
 				m.replClient.GetDeltaLen(),
-				time.Since(m.startTime).String(),
+				time.Since(m.startTime),
+				time.Since(m.checker.StartTime),
 			)
 		default:
 			// For the linter:
