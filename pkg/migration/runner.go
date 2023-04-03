@@ -104,12 +104,12 @@ type Runner struct {
 	// defaults will be set in NewRunner()
 	optConcurrency           int
 	optChecksumConcurrency   int
-	optTargetChunkMs         int64
+	optTargetChunkTime       time.Duration
 	optAttemptInplaceDDL     bool
 	optChecksum              bool
 	optDisableTrivialChunker bool
 	optReplicaDSN            string
-	optReplicaMaxLagMs       int64
+	optReplicaMaxLag         time.Duration
 
 	// We want to block periodic flushes while we're doing a checksums etc
 	periodicFlushLock sync.Mutex
@@ -128,16 +128,16 @@ func NewRunner(migration *Migration) (*Runner, error) {
 		alterStatement:           migration.Alter,
 		optConcurrency:           migration.Concurrency,
 		optChecksumConcurrency:   migration.ChecksumConcurrency,
-		optTargetChunkMs:         migration.TargetChunkMs,
+		optTargetChunkTime:       migration.TargetChunkTime,
 		optAttemptInplaceDDL:     migration.AttemptInplaceDDL,
 		optChecksum:              migration.Checksum,
 		optDisableTrivialChunker: migration.DisableTrivialChunker,
 		optReplicaDSN:            migration.ReplicaDSN,
-		optReplicaMaxLagMs:       migration.ReplicaMaxLagMs,
+		optReplicaMaxLag:         migration.ReplicaMaxLag,
 		logger:                   logrus.New(),
 	}
-	if m.optTargetChunkMs == 0 {
-		m.optTargetChunkMs = 100
+	if m.optTargetChunkTime == 0 {
+		m.optTargetChunkTime = 100 * time.Millisecond
 	}
 	if m.optConcurrency == 0 {
 		m.optConcurrency = 4
@@ -170,7 +170,7 @@ func (m *Runner) SetLogger(logger loggers.Advanced) {
 func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
 	m.logger.Infof("Starting spirit migration. Concurrency=%d TargetChunkSize=%d Table=%s.%s Alter=\"%s\"",
-		m.optConcurrency, m.optTargetChunkMs, m.schemaName, m.tableName, m.alterStatement,
+		m.optConcurrency, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
 	)
 
 	// Create a database connection
@@ -370,7 +370,7 @@ func (m *Runner) setup(ctx context.Context) error {
 		}
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
 			Concurrency:           m.optConcurrency,
-			TargetMs:              m.optTargetChunkMs,
+			TargetChunkTime:       m.optTargetChunkTime,
 			FinalChecksum:         m.optChecksum,
 			DisableTrivialChunker: m.optDisableTrivialChunker,
 			Throttler:             &throttler.Noop{},
@@ -401,7 +401,7 @@ func (m *Runner) setup(ctx context.Context) error {
 		// An error here means the connection to the replica is not valid, or it can't be detected
 		// This is fatal because if a user specifies a replica throttler and it can't be used,
 		// we should not proceed.
-		m.throttler, err = throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLagMs, m.logger)
+		m.throttler, err = throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLag, m.logger)
 		if err != nil {
 			m.logger.Warnf("could not create replication throttler: %v", err)
 			return err
@@ -604,7 +604,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	m.optChecksum = true
 	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.shadowTable, &row.CopierConfig{
 		Concurrency:           m.optConcurrency,
-		TargetMs:              m.optTargetChunkMs,
+		TargetChunkTime:       m.optTargetChunkTime,
 		FinalChecksum:         m.optChecksum,
 		DisableTrivialChunker: m.optDisableTrivialChunker,
 		Throttler:             &throttler.Noop{},
@@ -648,7 +648,7 @@ func (m *Runner) checksum(ctx context.Context) error {
 	var err error
 	m.checker, err = checksum.NewChecker(m.db, m.table, m.shadowTable, m.replClient, &checksum.CheckerConfig{
 		Concurrency:           m.optChecksumConcurrency,
-		TargetMs:              m.optTargetChunkMs,
+		TargetChunkTime:       m.optTargetChunkTime,
 		DisableTrivialChunker: m.optDisableTrivialChunker,
 		Logger:                m.logger,
 	})

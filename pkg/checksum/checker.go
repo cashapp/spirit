@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/siddontang/loggers"
 	"github.com/sirupsen/logrus"
@@ -36,7 +37,7 @@ type Checker struct {
 
 type CheckerConfig struct {
 	Concurrency           int
-	TargetMs              int64
+	TargetChunkTime       time.Duration
 	DisableTrivialChunker bool
 	Logger                loggers.Advanced
 }
@@ -44,7 +45,7 @@ type CheckerConfig struct {
 func NewCheckerDefaultConfig() *CheckerConfig {
 	return &CheckerConfig{
 		Concurrency:           4,
-		TargetMs:              1000,
+		TargetChunkTime:       1000 * time.Millisecond,
 		DisableTrivialChunker: false,
 		Logger:                logrus.New(),
 	}
@@ -58,7 +59,7 @@ func NewChecker(db *sql.DB, tbl, shadowTable *table.TableInfo, feed *repl.Client
 	if shadowTable == nil || tbl == nil {
 		return nil, errors.New("table and shadowTable must be non-nil")
 	}
-	chunker, err := table.NewChunker(tbl, config.TargetMs, config.DisableTrivialChunker, config.Logger)
+	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
 	if err != nil {
 		return nil, err
 	}

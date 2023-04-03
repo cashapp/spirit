@@ -967,7 +967,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		})
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
 			Concurrency:           m.optConcurrency,
-			TargetMs:              m.optTargetChunkMs,
+			TargetChunkTime:       m.optTargetChunkTime,
 			FinalChecksum:         m.optChecksum,
 			DisableTrivialChunker: m.optDisableTrivialChunker,
 			Throttler:             &throttler.Noop{},
