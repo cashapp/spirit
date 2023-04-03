@@ -42,20 +42,20 @@ type Chunker interface {
 
 var _ Chunker = &chunkerBase{}
 
-func NewChunker(t *TableInfo, chunkerTargetMs int64, disableTrivialChunker bool, logger loggers.Advanced) (Chunker, error) {
+func NewChunker(t *TableInfo, chunkerTarget time.Duration, disableTrivialChunker bool, logger loggers.Advanced) (Chunker, error) {
 	if t.EstimatedRows < trivialChunkerThreshold && !disableTrivialChunker {
 		// If the row count is low we attach the trivial chunker,
 		// which will return everything as one chunk.
 		return &chunkerBase{Ti: t, logger: logger}, nil
 	}
-	if chunkerTargetMs == 0 {
-		chunkerTargetMs = 100
+	if chunkerTarget == 0 {
+		chunkerTarget = 100 * time.Millisecond
 	}
 	chunkerBase := &chunkerBase{
-		Ti:              t,
-		chunkSize:       uint64(1000),    // later this might become configurable.
-		ChunkerTargetMs: chunkerTargetMs, // this is the main chunker target.
-		logger:          logger,
+		Ti:            t,
+		chunkSize:     uint64(1000),  // later this might become configurable.
+		ChunkerTarget: chunkerTarget, // this is the main chunker target.
+		logger:        logger,
 	}
 	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
 	case signedType:

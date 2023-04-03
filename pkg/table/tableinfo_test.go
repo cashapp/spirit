@@ -322,7 +322,7 @@ func TestDynamicChunking(t *testing.T) {
 	t1.primaryKeyType = "bigint"
 	t1.primaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	chunker, err := NewChunker(t1, 100, true, logrus.New())
+	chunker, err := NewChunker(t1, 100*time.Millisecond, true, logrus.New())
 	assert.NoError(t, err)
 	chunker.SetDynamicChunking(true)
 

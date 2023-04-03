@@ -73,7 +73,7 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	migration.Table = "replicatest"
 	migration.Alter = "ENGINE=InnoDB"
 	migration.ReplicaDSN = replicaDSN
-	migration.ReplicaMaxLagMs = 1000
+	migration.ReplicaMaxLag = 1000 * time.Millisecond
 
 	err = migration.Run()
 	assert.NoError(t, err)

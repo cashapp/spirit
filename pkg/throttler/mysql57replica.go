@@ -74,7 +74,7 @@ func (l *MySQL57Replica) UpdateLag() error {
 		// Store the new value.
 		atomic.StoreInt64(&l.currentLagInMs, int64(newLag*1000))
 		if l.IsThrottled() {
-			l.logger.Warnf("replication delayed, copier is now being throttled. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagToleranceInMs)
+			l.logger.Warnf("replication delayed, copier is now being throttled. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagTolerance)
 		}
 	}
 	return nil
