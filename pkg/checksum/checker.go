@@ -23,7 +23,7 @@ import (
 type Checker struct {
 	sync.Mutex
 	table       *table.TableInfo
-	shadowTable *table.TableInfo
+	newTable    *table.TableInfo
 	concurrency int
 	feed        *repl.Client
 	db          *sql.DB
@@ -50,12 +50,12 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 }
 
 // NewChecker creates a new checksum object.
-func NewChecker(db *sql.DB, tbl, shadowTable *table.TableInfo, feed *repl.Client, config *CheckerConfig) (*Checker, error) {
+func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, config *CheckerConfig) (*Checker, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
-	if shadowTable == nil || tbl == nil {
-		return nil, errors.New("table and shadowTable must be non-nil")
+	if newTable == nil || tbl == nil {
+		return nil, errors.New("table and newTable must be non-nil")
 	}
 	chunker, err := table.NewChunker(tbl, config.TargetMs, config.DisableTrivialChunker, config.Logger)
 	if err != nil {
@@ -63,7 +63,7 @@ func NewChecker(db *sql.DB, tbl, shadowTable *table.TableInfo, feed *repl.Client
 	}
 	checksum := &Checker{
 		table:       tbl,
-		shadowTable: shadowTable,
+		newTable:    newTable,
 		concurrency: config.Concurrency,
 		db:          db,
 		feed:        feed,
@@ -78,13 +78,13 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	defer trxPool.Put(trx)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
-		utils.IntersectColumns(c.table, c.shadowTable, true),
+		utils.IntersectColumns(c.table, c.newTable, true),
 		c.table.QuotedName(),
 		chunk.String(),
 	)
 	target := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
-		utils.IntersectColumns(c.table, c.shadowTable, true),
-		c.shadowTable.QuotedName(),
+		utils.IntersectColumns(c.table, c.newTable, true),
+		c.newTable.QuotedName(),
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
@@ -136,7 +136,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	// With the lock held, flush one more time under the lock tables.
 	// Because we know canal is up to date this now guarantees
-	// we have everything in the shadow table.
+	// we have everything in the new table.
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}

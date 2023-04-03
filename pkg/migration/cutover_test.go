@@ -22,14 +22,14 @@ func dsn() string {
 }
 
 func TestCutOver(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_shadow, _cutovert1_old, _cutovert1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_new, _cutovert1_old, _cutovert1_chkpnt`)
 	tbl := `CREATE TABLE cutovert1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	tbl = `CREATE TABLE _cutovert1_shadow (
+	tbl = `CREATE TABLE _cutovert1_new (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
@@ -45,15 +45,15 @@ func TestCutOver(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
-	t1shadow := table.NewTableInfo(db, "test", "_cutovert1_shadow")
+	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1shadow, feed, logger)
+	cutover, err := NewCutOver(db, t1, t1new, feed, logger)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -72,14 +72,14 @@ func TestCutOver(t *testing.T) {
 }
 
 func TestMDLLockFails(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_shadow, _mdllocks_old, _mdllocks_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_new, _mdllocks_old, _mdllocks_chkpnt`)
 	tbl := `CREATE TABLE mdllocks (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, tbl)
-	tbl = `CREATE TABLE _mdllocks_shadow (
+	tbl = `CREATE TABLE _mdllocks_new (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
@@ -94,15 +94,15 @@ func TestMDLLockFails(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
-	t1shadow := table.NewTableInfo(db, "test", "_mdllocks_shadow")
+	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1shadow, feed, logger)
+	cutover, err := NewCutOver(db, t1, t1new, feed, logger)
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -129,10 +129,10 @@ func TestInvalidOptions(t *testing.T) {
 	_, err = NewCutOver(db, nil, nil, nil, logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
-	t1shadow := table.NewTableInfo(db, "test", "t1_shadow")
+	t1new := table.NewTableInfo(db, "test", "t1_new")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1shadow, cfg.User, cfg.Passwd, logger)
-	_, err = NewCutOver(db, nil, t1shadow, feed, logger)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, logger)
+	_, err = NewCutOver(db, nil, t1new, feed, logger)
 	assert.Error(t, err)
 }

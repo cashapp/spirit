@@ -81,9 +81,9 @@ func TestBasicValidation(t *testing.T) {
 	assert.NoError(t, feed.Run())
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
-	assert.EqualError(t, err, "table and shadowTable must be non-nil")
+	assert.EqualError(t, err, "table and newTable must be non-nil")
 	_, err = NewChecker(db, t1, nil, feed, NewCheckerDefaultConfig())
-	assert.EqualError(t, err, "table and shadowTable must be non-nil")
+	assert.EqualError(t, err, "table and newTable must be non-nil")
 	_, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	_, err = NewChecker(db, t1, t2, nil, NewCheckerDefaultConfig()) // no feed

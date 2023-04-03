@@ -34,7 +34,7 @@ type Client struct {
 
 	binlogChangeset      map[string]bool // bool is deleted
 	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off.
-	binlogPosSynced      *mysql.Position // safely written to shadow table
+	binlogPosSynced      *mysql.Position // safely written to new table
 	binlogPosInMemory    *mysql.Position // available in the binlog binlogChangeset
 	lastLogFileName      string          // last log file name we've seen in a rotation event
 
@@ -46,8 +46,8 @@ type Client struct {
 	db *sql.DB // connection to run queries like SHOW MASTER STATUS
 
 	// Infoschema version of table.
-	table       *table.TableInfo
-	shadowTable *table.TableInfo
+	table    *table.TableInfo
+	newTable *table.TableInfo
 
 	disableKeyAboveWatermarkOptimization bool
 
@@ -59,12 +59,12 @@ type Client struct {
 	logger loggers.Advanced
 }
 
-func NewClient(db *sql.DB, host string, table, shadowTable *table.TableInfo, username, password string, logger loggers.Advanced) *Client {
+func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, username, password string, logger loggers.Advanced) *Client {
 	return &Client{
 		db:              db,
 		host:            host,
 		table:           table,
-		shadowTable:     shadowTable,
+		newTable:        newTable,
 		username:        username,
 		password:        password,
 		binlogChangeset: make(map[string]bool),
@@ -116,7 +116,7 @@ func (c *Client) OnRotate(header *replication.EventHeader, rotateEvent *replicat
 // This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
 func (c *Client) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
 	if (c.table.SchemaName == schema && c.table.TableName == table) ||
-		(c.shadowTable.SchemaName == schema && c.shadowTable.TableName == table) {
+		(c.newTable.SchemaName == schema && c.newTable.TableName == table) {
 		if c.TableChangeNotificationCallback != nil {
 			c.TableChangeNotificationCallback()
 		}
@@ -297,7 +297,7 @@ func (c *Client) Flush(ctx context.Context) error {
 		atomic.StoreInt64(&c.binlogChangesetDelta, int64(0)) // reset the delta
 	}()
 
-	// We must now apply the changeset setToFlush to the shadow table.
+	// We must now apply the changeset setToFlush to the new table.
 	var deleteKeys []string
 	var replaceKeys []string
 	var i int
@@ -324,25 +324,25 @@ func (c *Client) Flush(ctx context.Context) error {
 	return err
 }
 
-// doFlush is called by Flush() to apply the changeset to the shadow table.
+// doFlush is called by Flush() to apply the changeset to the new table.
 // It runs the actual SQL statements using DELETE FROM and REPLACE INTO syntax.
 // This is called under a mutex from Flush().
 func (c *Client) doFlush(ctx context.Context, deleteKeys, replaceKeys []string) error {
 	var deleteStmt, replaceStmt string
 	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
-			c.shadowTable.QuotedName(),
-			strings.Join(c.shadowTable.PrimaryKey, ","),
+			c.newTable.QuotedName(),
+			strings.Join(c.newTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(deleteKeys),
 		)
 	}
 	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
-			c.shadowTable.QuotedName(),
-			utils.IntersectColumns(c.table, c.shadowTable, false),
-			utils.IntersectColumns(c.table, c.shadowTable, false),
+			c.newTable.QuotedName(),
+			utils.IntersectColumns(c.table, c.newTable, false),
+			utils.IntersectColumns(c.table, c.newTable, false),
 			c.table.QuotedName(),
-			strings.Join(c.shadowTable.PrimaryKey, ","),
+			strings.Join(c.newTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(replaceKeys),
 		)
 	}
@@ -400,7 +400,7 @@ func (c *Client) BlockWait(ctx context.Context) error {
 // This helps ensure that we are "past" a binary log position if there is some off-by-one
 // problem where the most recent canal event is not yet updating the canal SyncedPosition,
 // and there are no current changes on the MySQL server to advance itself.
-// Note: We can not update the table or the shadowTable, because this intentionally
+// Note: We can not update the table or the newTable, because this intentionally
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
