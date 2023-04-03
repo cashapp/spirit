@@ -239,3 +239,8 @@ func (t *TableInfo) UpdateTableStatistics(ctx context.Context) error {
 	}
 	return t.setRowEstimate(ctx)
 }
+
+// MaxValue as a string
+func (t *TableInfo) MaxValue() string {
+	return fmt.Sprintf("%v", t.maxValue)
+}

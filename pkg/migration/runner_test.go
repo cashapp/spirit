@@ -271,12 +271,12 @@ func TestTableLength(t *testing.T) {
 }
 
 func TestMigrationStateString(t *testing.T) {
-	assert.Equal(t, "initial", migrationStateInitial.String())
-	assert.Equal(t, "copyRows", migrationStateCopyRows.String())
-	assert.Equal(t, "applyChangeset", migrationStateApplyChangeset.String())
-	assert.Equal(t, "checksum", migrationStateChecksum.String())
-	assert.Equal(t, "cutOver", migrationStateCutOver.String())
-	assert.Equal(t, "errCleanup", migrationStateErrCleanup.String())
+	assert.Equal(t, "initial", stateInitial.String())
+	assert.Equal(t, "copyRows", stateCopyRows.String())
+	assert.Equal(t, "applyChangeset", stateApplyChangeset.String())
+	assert.Equal(t, "checksum", stateChecksum.String())
+	assert.Equal(t, "cutOver", stateCutOver.String())
+	assert.Equal(t, "errCleanup", stateErrCleanup.String())
 }
 
 func TestBadOptions(t *testing.T) {
@@ -632,7 +632,7 @@ func TestETA(t *testing.T) {
 	m.copier.EtaRowsPerSecond = 1000
 	m.table.EstimatedRows = 1000000
 
-	m.setCurrentState(migrationStateCopyRows)
+	m.setCurrentState(stateCopyRows)
 
 	assert.Equal(t, "16m40s", m.getETAFromRowsPerSecond(false))
 	m.copier.CopyRowsCount = 10000
@@ -693,7 +693,11 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, m.alterShadowTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
@@ -704,7 +708,7 @@ func TestCheckpoint(t *testing.T) {
 	// Since we want to checkpoint after a few chunks.
 
 	m.copier.CopyRowsStartTime = time.Now()
-	m.setCurrentState(migrationStateCopyRows)
+	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
 	// because we are not calling copier.Run() we need to manually open.
@@ -838,7 +842,11 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.alterShadowTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
@@ -849,7 +857,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Since we want to checkpoint after a few chunks.
 
 	m.copier.CopyRowsStartTime = time.Now()
-	m.setCurrentState(migrationStateCopyRows)
+	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
 	assert.NoError(t, m.copier.Open4Test())
@@ -952,7 +960,11 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.alterShadowTable(context.TODO()))
 		assert.NoError(t, m.createCheckpointTable(context.TODO()))
 		logger := logrus.New()
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, logger)
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+			Logger:      logger,
+			Concurrency: 4,
+			BatchSize:   10000,
+		})
 		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
 			Concurrency:           m.optConcurrency,
 			TargetChunkTime:       m.optTargetChunkTime,
@@ -971,7 +983,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// Since we want to checkpoint after a few chunks.
 
 		m.copier.CopyRowsStartTime = time.Now()
-		m.setCurrentState(migrationStateCopyRows)
+		m.setCurrentState(stateCopyRows)
 		assert.Equal(t, "copyRows", m.getCurrentState().String())
 
 		// We expect 3 chunks to be copied.
@@ -1027,11 +1039,11 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// Now that copy rows is done, we flush the changeset until trivial.
 		// and perform the optional checksum.
 		assert.NoError(t, m.replClient.FlushUntilTrivial(context.TODO()))
-		m.setCurrentState(migrationStateApplyChangeset)
+		m.setCurrentState(stateApplyChangeset)
 		assert.Equal(t, "applyChangeset", m.getCurrentState().String())
-		m.setCurrentState(migrationStateChecksum)
+		m.setCurrentState(stateChecksum)
 		assert.NoError(t, m.checksum(context.TODO()))
-		assert.Equal(t, "checksum", m.getCurrentState().String())
+		assert.Equal(t, "postChecksum", m.getCurrentState().String())
 		// All done!
 	}
 }
