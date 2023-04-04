@@ -18,7 +18,7 @@ import (
 )
 
 func TestVarcharNonBinaryComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_shadow`)
+	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_new`)
 	table := `CREATE TABLE nonbinarycompatt1 (
 		uuid varchar(40) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -43,7 +43,7 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 }
 
 func TestVarbinary(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_shadow`)
+	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_new`)
 	table := `CREATE TABLE varbinaryt1 (
 		uuid varbinary(40) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -70,7 +70,7 @@ func TestVarbinary(t *testing.T) {
 
 // TestDataFromBadSqlMode tests that data previously inserted like 0000-00-00 can still be migrated.
 func TestDataFromBadSqlMode(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_shadow`)
+	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_new`)
 	table := `CREATE TABLE badsqlt1 (
 		id int not null primary key auto_increment,
 		d date NOT NULL,
@@ -386,7 +386,7 @@ func TestBadAlter(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Test DROP PRIMARY KEY, change primary key.
-	// The REPLACE statement likely relies on the same PRIMARY KEY on the shadow table,
+	// The REPLACE statement likely relies on the same PRIMARY KEY on the new table,
 	// so things get a lot more complicated if the primary key changes.
 	m, err = NewRunner(&Migration{
 		Host:        cfg.Addr,
@@ -602,7 +602,7 @@ func TestChangeNonIntPK(t *testing.T) {
 
 func TestETA(t *testing.T) {
 	t.Skip("skip for now")
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_shadow`)
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
 		uuid varchar(40) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -649,7 +649,7 @@ func TestCheckpoint(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_shadow, _cpt1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_new, _cpt1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
@@ -689,16 +689,16 @@ func TestCheckpoint(t *testing.T) {
 	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createShadowTable(context.TODO()))
-	assert.NoError(t, m.alterShadowTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(context.TODO()))
+	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -796,7 +796,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_shadow, _cpt1difft1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_new, _cpt1difft1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
@@ -838,16 +838,16 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createShadowTable(context.TODO()))
-	assert.NoError(t, m.alterShadowTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(context.TODO()))
+	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, row.NewCopierDefaultConfig())
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -923,7 +923,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 	assert.NoError(t, err)
 
 	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_shadow`)
+		runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
 		runSQL(t, tbl)
 		runSQL(t, `insert into e2et1 (id1, id2) values (1, 1)`)
 		runSQL(t, `insert into e2et1 (id1, id2) values (2, 1)`)
@@ -956,16 +956,16 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		// migration.Run usually calls m.Migrate() here.
 		// Which does the following before calling copyRows:
 		// So we proceed with the initial steps.
-		assert.NoError(t, m.createShadowTable(context.TODO()))
-		assert.NoError(t, m.alterShadowTable(context.TODO()))
+		assert.NoError(t, m.createNewTable(context.TODO()))
+		assert.NoError(t, m.alterNewTable(context.TODO()))
 		assert.NoError(t, m.createCheckpointTable(context.TODO()))
 		logger := logrus.New()
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 			Logger:      logger,
 			Concurrency: 4,
 			BatchSize:   10000,
 		})
-		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
+		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 			Concurrency:           m.optConcurrency,
 			TargetChunkTime:       m.optTargetChunkTime,
 			FinalChecksum:         m.optChecksum,
@@ -1049,9 +1049,9 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 }
 
 // TestForRemainingTableArtifacts tests that the _{name}_old table is left after
-// the migration is complete, but no _chkpnt or _shadow table.
+// the migration is complete, but no _chkpnt or _new table.
 func TestForRemainingTableArtifacts(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_shadow, _remainingtbl_old, _remainingtbl_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
 		id INT NOT NULL PRIMARY KEY,
 		name varchar(255) NOT NULL
@@ -1074,7 +1074,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
-	// but no _remainingtbl_shadow table or _remainingtbl_chkpnt table.
+	// but no _remainingtbl_new table or _remainingtbl_chkpnt table.
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
@@ -1085,7 +1085,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 }
 
 func TestDropColumn(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_shadow`)
+	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_new`)
 	table := `CREATE TABLE dropcol (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		a varchar(255) NOT NULL,

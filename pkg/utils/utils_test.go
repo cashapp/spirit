@@ -9,20 +9,20 @@ import (
 
 func TestIntersectColumns(t *testing.T) {
 	t1 := table.NewTableInfo(nil, "test", "t1")
-	t1shadow := table.NewTableInfo(nil, "test", "t1_shadow")
+	t1new := table.NewTableInfo(nil, "test", "t1_new")
 	t1.Columns = []string{"a", "b", "c"}
-	t1shadow.Columns = []string{"a", "b", "c"}
-	str := IntersectColumns(t1, t1shadow, false)
+	t1new.Columns = []string{"a", "b", "c"}
+	str := IntersectColumns(t1, t1new, false)
 	assert.Equal(t, "`a`, `b`, `c`", str)
-	str = IntersectColumns(t1, t1shadow, true)
+	str = IntersectColumns(t1, t1new, true)
 	assert.Equal(t, "IFNULL(`a`,''), ISNULL(`a`), IFNULL(`b`,''), ISNULL(`b`), IFNULL(`c`,''), ISNULL(`c`)", str)
 
-	t1shadow.Columns = []string{"a", "c"}
-	str = IntersectColumns(t1, t1shadow, false)
+	t1new.Columns = []string{"a", "c"}
+	str = IntersectColumns(t1, t1new, false)
 	assert.Equal(t, "`a`, `c`", str)
 
-	t1shadow.Columns = []string{"a", "c", "d"}
-	str = IntersectColumns(t1, t1shadow, false)
+	t1new.Columns = []string{"a", "c", "d"}
+	str = IntersectColumns(t1, t1new, false)
 	assert.Equal(t, "`a`, `c`", str)
 }
 
