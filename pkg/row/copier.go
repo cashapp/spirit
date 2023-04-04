@@ -23,21 +23,23 @@ import (
 
 type Copier struct {
 	sync.Mutex
-	db               *sql.DB
-	table            *table.TableInfo
-	shadowTable      *table.TableInfo
-	chunker          table.Chunker
-	concurrency      int
-	finalChecksum    bool
-	StartTime        time.Time
-	ExecTime         time.Duration
-	CopyRowsCount    int64
-	CopyChunksCount  int64
-	EtaRowsPerSecond int64
-	isInvalid        bool
-	isOpen           bool
-	Throttler        throttler.Throttler
-	logger           loggers.Advanced
+	db                *sql.DB
+	table             *table.TableInfo
+	newTable          *table.TableInfo
+	chunker           table.Chunker
+	concurrency       int
+	finalChecksum     bool
+	CopyRowsStartTime time.Time
+	CopyRowsExecTime  time.Duration
+	CopyRowsCount     int64
+	CopyChunksCount   int64
+	EtaRowsPerSecond  int64
+	isInvalid         bool
+	isOpen            bool
+	StartTime         time.Time
+	ExecTime          time.Duration
+	Throttler         throttler.Throttler
+	logger            loggers.Advanced
 }
 
 type CopierConfig struct {
@@ -62,9 +64,9 @@ func NewCopierDefaultConfig() *CopierConfig {
 }
 
 // NewCopier creates a new copier object.
-func NewCopier(db *sql.DB, tbl, shadowTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
-	if shadowTable == nil || tbl == nil {
-		return nil, errors.New("table and shadowTable must be non-nil")
+func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
+	if newTable == nil || tbl == nil {
+		return nil, errors.New("table and newTable must be non-nil")
 	}
 	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
 	if err != nil {
@@ -73,7 +75,7 @@ func NewCopier(db *sql.DB, tbl, shadowTable *table.TableInfo, config *CopierConf
 	return &Copier{
 		db:            db,
 		table:         tbl,
-		shadowTable:   shadowTable,
+		newTable:      newTable,
 		concurrency:   config.Concurrency,
 		finalChecksum: config.FinalChecksum,
 		Throttler:     config.Throttler,
@@ -83,8 +85,8 @@ func NewCopier(db *sql.DB, tbl, shadowTable *table.TableInfo, config *CopierConf
 }
 
 // NewCopierFromCheckpoint creates a new copier object, from a checkpoint (copyRowsAt, copyRows)
-func NewCopierFromCheckpoint(db *sql.DB, tbl, shadowTable *table.TableInfo, config *CopierConfig, copyRowsAt string, copyRows int64) (*Copier, error) {
-	c, err := NewCopier(db, tbl, shadowTable, config)
+func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig, copyRowsAt string, copyRows int64) (*Copier, error) {
+	c, err := NewCopier(db, tbl, newTable, config)
 	if err != nil {
 		return c, err
 	}
@@ -99,7 +101,7 @@ func NewCopierFromCheckpoint(db *sql.DB, tbl, shadowTable *table.TableInfo, conf
 	return c, nil
 }
 
-// CopyChunk copies a chunk from the table to the shadowTable.
+// CopyChunk copies a chunk from the table to the newTable.
 // it is public so it can be used in tests incrementally.
 func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.Throttler.BlockWait()
@@ -107,9 +109,9 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	// INSERT INGORE because we can have duplicate rows in the chunk because in
 	// resuming from checkpoint we will be re-applying some of the previous executed work.
 	query := fmt.Sprintf("INSERT IGNORE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE %s",
-		c.shadowTable.QuotedName(),
-		utils.IntersectColumns(c.table, c.shadowTable, false),
-		utils.IntersectColumns(c.table, c.shadowTable, false),
+		c.newTable.QuotedName(),
+		utils.IntersectColumns(c.table, c.newTable, false),
+		utils.IntersectColumns(c.table, c.newTable, false),
 		c.table.QuotedName(),
 		chunk.String(),
 	)
@@ -188,7 +190,7 @@ func (c *Copier) KeyAboveHighWatermark(key interface{}) bool {
 }
 
 // GetLowWatermark returns the low watermark of the chunker, i.e. the lowest key that has been
-// guaranteed to be written to the shadow table.
+// guaranteed to be written to the new table.
 func (c *Copier) GetLowWatermark() (string, error) {
 	return c.chunker.GetLowWatermark()
 }

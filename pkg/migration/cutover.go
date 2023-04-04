@@ -15,11 +15,11 @@ import (
 )
 
 type CutOver struct {
-	db          *sql.DB
-	table       *table.TableInfo
-	shadowTable *table.TableInfo
-	feed        *repl.Client
-	logger      loggers.Advanced
+	db       *sql.DB
+	table    *table.TableInfo
+	newTable *table.TableInfo
+	feed     *repl.Client
+	logger   loggers.Advanced
 }
 
 const (
@@ -27,20 +27,20 @@ const (
 )
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
-// shadow table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, shadowTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
+// new table, and a replication feed which is used to ensure consistency before the cut over.
+func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
-	if table == nil || shadowTable == nil {
-		return nil, errors.New("table and shadowTable must be non-nil")
+	if table == nil || newTable == nil {
+		return nil, errors.New("table and newTable must be non-nil")
 	}
 	return &CutOver{
-		db:          db,
-		table:       table,
-		shadowTable: shadowTable,
-		feed:        feed,
-		logger:      logger,
+		db:       db,
+		table:    table,
+		newTable: newTable,
+		feed:     feed,
+		logger:   logger,
 	}, nil
 }
 
@@ -80,7 +80,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 		return err
 	}
 	// With the lock held, flush one more time under the lock tables.
-	// This guarantees we have everything in the shadow table.
+	// This guarantees we have everything in the new table.
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName(), oldQuotedName,
-			c.shadowTable.QuotedName(), c.table.QuotedName())
+			c.newTable.QuotedName(), c.table.QuotedName())
 		return dbconn.DBExec(ctx, c.db, query)
 	})
 	// We can now unlock the table to allow the rename to go through.

@@ -83,7 +83,7 @@ type Runner struct {
 	db              *sql.DB
 	replica         *sql.DB
 	table           *table.TableInfo
-	shadowTable     *table.TableInfo
+	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
 
 	currentState migrationState // must use atomic to get/set
@@ -205,7 +205,7 @@ func (m *Runner) Run(ctx context.Context) error {
 	}
 
 	// Perform setup steps, including resuming from a checkpoint (if available)
-	// and creating the shadow and checkpoint tables.
+	// and creating the new and checkpoint tables.
 	// The replication client is also created here.
 	if err := m.setup(ctx); err != nil {
 		return err
@@ -244,7 +244,7 @@ func (m *Runner) Run(ctx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	m.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(m.db, m.table, m.shadowTable, m.replClient, m.logger)
+	cutover, err := NewCutOver(m.db, m.table, m.newTable, m.replClient, m.logger)
 	if err != nil {
 		return err
 	}
@@ -286,12 +286,12 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 	}
 	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
 
-	// Run ANALYZE TABLE to update the statistics on the shadow table.
+	// Run ANALYZE TABLE to update the statistics on the new table.
 	// This is required so on cutover plans don't go sideways, which
 	// is at elevated risk because the batch loading can cause statistics
 	// to be out of date.
 	m.setCurrentState(stateAnalyzeTable)
-	stmt := fmt.Sprintf("ANALYZE TABLE %s", m.shadowTable.QuotedName())
+	stmt := fmt.Sprintf("ANALYZE TABLE %s", m.newTable.QuotedName())
 	m.logger.Infof("Running: %s", stmt)
 	if err := dbconn.DBExec(ctx, m.db, stmt); err != nil {
 		return err
@@ -365,16 +365,16 @@ func (m *Runner) setup(ctx context.Context) error {
 	if err := m.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
 		m.logger.Info("could not resume from checkpoint")
-		if err := m.createShadowTable(ctx); err != nil {
+		if err := m.createNewTable(ctx); err != nil {
 			return err
 		}
-		if err := m.alterShadowTable(ctx); err != nil {
+		if err := m.alterNewTable(ctx); err != nil {
 			return err
 		}
 		if err := m.createCheckpointTable(ctx); err != nil {
 			return err
 		}
-		m.copier, err = row.NewCopier(m.db, m.table, m.shadowTable, &row.CopierConfig{
+		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 			Concurrency:           m.optConcurrency,
 			TargetChunkTime:       m.optTargetChunkTime,
 			FinalChecksum:         m.optChecksum,
@@ -385,7 +385,7 @@ func (m *Runner) setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+		m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 			Logger:      m.logger,
 			Concurrency: m.optConcurrency,
 			BatchSize:   repl.DefaultBatchSize,
@@ -457,40 +457,40 @@ func (m *Runner) dropCheckpoint(ctx context.Context) error {
 	return nil
 }
 
-func (m *Runner) createShadowTable(ctx context.Context) error {
-	shadowName := fmt.Sprintf("_%s_shadow", m.table.TableName)
-	if len(shadowName) > 64 {
-		return fmt.Errorf("table name is too long: '%s'. shadow table name will exceed 64 characters", m.table.TableName)
+func (m *Runner) createNewTable(ctx context.Context) error {
+	newName := fmt.Sprintf("_%s_new", m.table.TableName)
+	if len(newName) > 64 {
+		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", m.table.TableName)
 	}
 	// drop both if we've decided to call this func.
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, shadowName)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, newName)
 	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", m.table.SchemaName, shadowName, m.table.QuotedName())
+	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", m.table.SchemaName, newName, m.table.QuotedName())
 	_, err = m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	m.shadowTable = table.NewTableInfo(m.db, m.schemaName, shadowName)
-	if err := m.shadowTable.SetInfo(ctx); err != nil {
+	m.newTable = table.NewTableInfo(m.db, m.schemaName, newName)
+	if err := m.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
 	return nil
 }
 
-// alterShadowTable applies the ALTER to the shadow table.
+// alterNewTable applies the ALTER to the new table.
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
-func (m *Runner) alterShadowTable(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s", m.shadowTable.QuotedName(), m.alterStatement)
+func (m *Runner) alterNewTable(ctx context.Context) error {
+	query := fmt.Sprintf("ALTER TABLE %s %s", m.newTable.QuotedName(), m.alterStatement)
 	_, err := m.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	// Call GetInfo on the table again, since the columns
 	// might have changed and this will affect the row copier's intersect func.
-	return m.shadowTable.SetInfo(ctx)
+	return m.newTable.SetInfo(ctx)
 }
 
 func (m *Runner) dropOldTable(ctx context.Context) error {
@@ -535,10 +535,10 @@ func (m *Runner) createCheckpointTable(ctx context.Context) error {
 
 func (m *Runner) Close() error {
 	m.setCurrentState(stateClose)
-	if m.shadowTable == nil {
+	if m.newTable == nil {
 		return nil
 	}
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.shadowTable.QuotedName())
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.newTable.QuotedName())
 	_, err := m.db.Exec(query)
 	if err != nil {
 		return err
@@ -566,17 +566,17 @@ func (m *Runner) Close() error {
 }
 
 func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
-	// Check that the shadow table exists and the checkpoint table
+	// Check that the new table exists and the checkpoint table
 	// has at least one row in it.
 
 	// The objects for these are not available until we confirm
 	// tables exist and we
-	shadowName := fmt.Sprintf("_%s_shadow", m.table.TableName)
+	newName := fmt.Sprintf("_%s_new", m.table.TableName)
 	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
 
-	// Make sure we can read from the shadow table.
+	// Make sure we can read from the new table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
-		m.schemaName, shadowName)
+		m.schemaName, newName)
 	_, err := m.db.Exec(query)
 	if err != nil {
 		return err
@@ -595,8 +595,8 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
-	m.shadowTable = table.NewTableInfo(m.db, m.schemaName, shadowName)
-	if err := m.shadowTable.SetInfo(ctx); err != nil {
+	m.newTable = table.NewTableInfo(m.db, m.schemaName, newName)
+	if err := m.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
 
@@ -608,7 +608,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
 	// have the checksum enabled to apply all changes safely.
 	m.optChecksum = true
-	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.shadowTable, &row.CopierConfig{
+	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:           m.optConcurrency,
 		TargetChunkTime:       m.optTargetChunkTime,
 		FinalChecksum:         m.optChecksum,
@@ -622,7 +622,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.shadowTable, m.username, m.password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 		Logger:      m.logger,
 		Concurrency: m.optConcurrency,
 		BatchSize:   repl.DefaultBatchSize,
@@ -653,7 +653,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 func (m *Runner) checksum(ctx context.Context) error {
 	m.setCurrentState(stateChecksum)
 	var err error
-	m.checker, err = checksum.NewChecker(m.db, m.table, m.shadowTable, m.replClient, &checksum.CheckerConfig{
+	m.checker, err = checksum.NewChecker(m.db, m.table, m.newTable, m.replClient, &checksum.CheckerConfig{
 		Concurrency:           m.optChecksumConcurrency,
 		TargetChunkTime:       m.optTargetChunkTime,
 		DisableTrivialChunker: m.optDisableTrivialChunker,
@@ -733,7 +733,7 @@ func (m *Runner) periodicFlush(ctx context.Context) {
 	for range ticker.C {
 		// We only want to continuously flush during copy-rows.
 		// During checkpoint we only lock the source table, so if we
-		// are in a periodic flush we can't be writing data to the shadow table.
+		// are in a periodic flush we can't be writing data to the new table.
 		// If we do, then we'll need to lock it as well so that the read-view is consistent.
 		m.periodicFlushLock.Lock()
 		if m.getCurrentState() > stateCopyRows {
