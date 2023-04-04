@@ -1,6 +1,8 @@
 package repl
 
 import (
+	"fmt"
+
 	"github.com/siddontang/loggers"
 )
 
@@ -39,8 +41,11 @@ func (c *LogWrapper) Warnf(format string, args ...interface{}) {
 func (c *LogWrapper) Errorf(format string, args ...interface{}) {
 	// Noisy bug on close, can be ignored.
 	// https://github.com/squareup/spirit/pull/65
-	if format == "canal start sync binlog err: %v" && args[0] == "Sync was closed" {
-		return
+	if len(args) == 1 {
+		message := fmt.Sprintf("%s", args[0])
+		if format == "canal start sync binlog err: %v" && message == "Sync was closed" {
+			return
+		}
 	}
 	c.logger.Errorf(format, args...)
 }

@@ -169,7 +169,7 @@ func (m *Runner) SetLogger(logger loggers.Advanced) {
 
 func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
-	m.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%d table=%s.%s alter=\"%s\"",
+	m.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
 		m.optConcurrency, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
 	)
 
@@ -663,7 +663,9 @@ func (m *Runner) checksum(ctx context.Context) error {
 		return err
 	}
 	if err := m.checker.Run(ctx); err != nil {
-		return err
+		// Panic: this is really not expected to happen, and if it does
+		// we don't want cleanup to happen in Close() so we can inspect it.
+		panic(err)
 	}
 	m.logger.Info("checksum passed")
 
