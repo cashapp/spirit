@@ -31,6 +31,8 @@ type Checker struct {
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
 	chunker     table.Chunker
+	StartTime   time.Time
+	ExecTime    time.Duration
 	recentValue interface{} // used for status
 	logger      loggers.Advanced
 }
@@ -76,6 +78,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 }
 
 func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
+	startTime := time.Now()
 	trx := trxPool.Get()
 	defer trxPool.Put(trx)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
@@ -106,6 +109,7 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 		c.recentValue = chunk.LowerBound.Value
 		c.Unlock()
 	}
+	c.chunker.Feedback(chunk, time.Since(startTime))
 	return nil
 }
 func (c *Checker) RecentValue() string {
@@ -119,6 +123,10 @@ func (c *Checker) isHealthy() bool {
 }
 
 func (c *Checker) Run(ctx context.Context) error {
+	c.StartTime = time.Now()
+	defer func() {
+		c.ExecTime = time.Since(c.StartTime)
+	}()
 	if err := c.chunker.Open(); err != nil {
 		return err
 	}
