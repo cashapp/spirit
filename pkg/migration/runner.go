@@ -767,6 +767,7 @@ func (m *Runner) updateTableStatisticsContinuously(ctx context.Context) {
 		if err := m.table.UpdateTableStatistics(ctx); err != nil {
 			m.logger.Errorf("error updating table statistics: %v", err)
 		}
+		m.logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", m.table.EstimatedRows, m.table.MaxValue())
 	}
 }
 
