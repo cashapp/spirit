@@ -481,7 +481,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err) // works because there are no violations.
-	assert.Equal(t, int64(1), m.copier.CopyChunksCount)
+	assert.Equal(t, uint64(1), m.copier.CopyChunksCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -597,47 +597,6 @@ func TestChangeNonIntPK(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
-	assert.NoError(t, m.Close())
-}
-
-func TestETA(t *testing.T) {
-	t.Skip("skip for now")
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
-	table := `CREATE TABLE t1 (
-		uuid varchar(40) NOT NULL,
-		name varchar(255) NOT NULL,
-		PRIMARY KEY (uuid)
-	)`
-	runSQL(t, table)
-
-	cfg, err := mysql.ParseDSN(dsn())
-	assert.NoError(t, err)
-	m, err := NewRunner(&Migration{
-		Host:              cfg.Addr,
-		Username:          cfg.User,
-		Password:          cfg.Passwd,
-		Database:          cfg.DBName,
-		Concurrency:       16,
-		Table:             "t1",
-		Alter:             "ADD INDEX(b)",
-		AttemptInplaceDDL: true,
-	})
-	assert.NoError(t, err)
-	m.copier, err = row.NewCopier(nil, nil, nil, row.NewCopierDefaultConfig())
-	assert.NoError(t, err)
-
-	assert.Equal(t, "Due", m.getETAFromRowsPerSecond(true))
-	assert.Equal(t, "-", m.getETAFromRowsPerSecond(false)) // not enough info
-
-	m.copier.EtaRowsPerSecond = 1000
-	m.table.EstimatedRows = 1000000
-
-	m.setCurrentState(stateCopyRows)
-
-	assert.Equal(t, "16m40s", m.getETAFromRowsPerSecond(false))
-	m.copier.CopyRowsCount = 10000
-	assert.Equal(t, "16m30s", m.getETAFromRowsPerSecond(false))
-	assert.Equal(t, "copyRows", m.getCurrentState().String())
 	assert.NoError(t, m.Close())
 }
 

@@ -12,7 +12,7 @@ func TestBaseChunker(t *testing.T) {
 	t1.EstimatedRows = 100 // target trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	chunker, err := NewChunker(t1, 100, false, logrus.New())
@@ -31,7 +31,7 @@ func TestBaseChunkerIntSigned(t *testing.T) {
 	t1.EstimatedRows = 100 // target trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, false, logrus.New())
 	assert.NoError(t, err)

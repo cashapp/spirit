@@ -313,7 +313,7 @@ func (t *chunkerBase) chunkToIncrementSize() uint64 {
 	// already called under a mutex.
 	var increment = t.chunkSize
 
-	if t.Ti.primaryKeyIsAutoInc {
+	if t.Ti.PrimaryKeyIsAutoInc {
 		// There is a case when there are large "gaps" in the table because
 		// the difference between min<->max is larger than the estimated rows.
 		// Estimated rows is often wrong, and it could just be a large chunk deleted,

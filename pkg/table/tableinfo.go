@@ -36,7 +36,7 @@ type TableInfo struct {
 	PrimaryKey          []string
 	Columns             []string
 	primaryKeyType      string // the MySQL type.
-	primaryKeyIsAutoInc bool
+	PrimaryKeyIsAutoInc bool
 	minValue            interface{} // known minValue of pk[0] (using type of PK)
 	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
 }
@@ -166,7 +166,7 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 		return err
 	}
 	t.primaryKeyType = removeWidth(t.primaryKeyType)
-	t.primaryKeyIsAutoInc = (extra == "auto_increment")
+	t.PrimaryKeyIsAutoInc = (extra == "auto_increment")
 	return nil
 }
 

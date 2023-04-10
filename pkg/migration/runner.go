@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +40,6 @@ const (
 	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 30 * time.Second
 	statusInterval          = 10 * time.Second
-	copyEstimateInterval    = 5 * time.Second
 	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in future.
@@ -216,7 +214,6 @@ func (m *Runner) Run(ctx context.Context) error {
 		return err
 	}
 
-	go m.estimateRowsPerSecondLoop()            // start estimating rows per second
 	go m.dumpStatus()                           // start periodically writing status
 	go m.dumpCheckpointContinuously(ctx)        // start periodically dumping the checkpoint.
 	go m.updateTableStatisticsContinuously(ctx) // update the min/max and estimated rows.
@@ -364,7 +361,7 @@ func (m *Runner) setup(ctx context.Context) error {
 	// It's OK if it fails, it just means it's a fresh migration.
 	if err := m.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
-		m.logger.Info("could not resume from checkpoint")
+		m.logger.Infof("could not resume from checkpoint: reason=%s", err)
 		if err := m.createNewTable(ctx); err != nil {
 			return err
 		}
@@ -520,7 +517,7 @@ func (m *Runner) createCheckpointTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, copy_rows_at TEXT, binlog_name VARCHAR(255), binlog_pos INT, copy_rows BIGINT, alter_statement TEXT)",
+	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
 		m.table.SchemaName, cpName)
 	_, err = m.db.ExecContext(ctx, query)
 	if err != nil {
@@ -579,17 +576,17 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		m.schemaName, newName)
 	_, err := m.db.Exec(query)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not read from table '%s'", newName)
 	}
 
-	query = fmt.Sprintf("SELECT copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
+	query = fmt.Sprintf("SELECT low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
 		m.schemaName, cpName)
-	var copyRowsAt, binlogName, alterStatement string
+	var lowWatermark, binlogName, alterStatement string
 	var binlogPos int
-	var copyRows int64
-	err = m.db.QueryRow(query).Scan(&copyRowsAt, &binlogName, &binlogPos, &copyRows, &alterStatement)
+	var rowsCopied, rowsCopiedLogical uint64
+	err = m.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
 	if m.alterStatement != alterStatement {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
@@ -615,7 +612,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		DisableTrivialChunker: m.optDisableTrivialChunker,
 		Throttler:             &throttler.Noop{},
 		Logger:                m.logger,
-	}, copyRowsAt, copyRows)
+	}, lowWatermark, rowsCopied, rowsCopiedLogical)
 	if err != nil {
 		return err
 	}
@@ -645,7 +642,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		m.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
-	m.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", copyRowsAt, binlogName, binlogPos, copyRows)
+	m.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlogName, binlogPos, rowsCopied)
 	return nil
 }
 
@@ -704,11 +701,12 @@ func (m *Runner) dumpCheckpoint(ctx context.Context) error {
 	if err != nil {
 		return err // it might not be ready, we can try again.
 	}
-	copyRows := atomic.LoadInt64(&m.copier.CopyRowsCount)
-	m.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d copy-rows=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows)
-	query := fmt.Sprintf("INSERT INTO %s (copy_rows_at, binlog_name, binlog_pos, copy_rows, alter_statement) VALUES (?, ?, ?, ?, ?)",
+	copyRows := atomic.LoadUint64(&m.copier.CopyRowsCount)
+	logicalCopyRows := atomic.LoadUint64(&m.copier.CopyRowsLogicalCount)
+	m.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
+	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		m.checkpointTable.QuotedName())
-	_, err = m.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, m.alterStatement)
+	_, err = m.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, m.alterStatement)
 	return err
 }
 
@@ -761,7 +759,7 @@ func (m *Runner) updateTableStatisticsContinuously(ctx context.Context) {
 	defer ticker.Stop()
 	for range ticker.C {
 		// We need to update statistics for copy-rows and checksum
-		if m.getCurrentState() > stateCutOver {
+		if m.getCurrentState() >= stateCutOver {
 			return
 		}
 		if err := m.table.UpdateTableStatistics(ctx); err != nil {
@@ -782,14 +780,13 @@ func (m *Runner) dumpStatus() {
 		switch state {
 		case stateCopyRows:
 			// Status for copy rows
-			pct := float64(atomic.LoadInt64(&m.copier.CopyRowsCount)) / float64(m.table.EstimatedRows) * 100
 			m.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
 				m.getCurrentState().String(),
-				fmt.Sprintf("%.2f%%", pct),
+				m.copier.GetProgress(),
 				m.replClient.GetDeltaLen(),
 				time.Since(m.startTime),
 				time.Since(m.copier.StartTime),
-				m.getETAFromRowsPerSecond(pct > 99.9),
+				m.copier.GetETA(),
 				m.copier.Throttler.IsThrottled(),
 			)
 		case stateApplyChangeset, statePostChecksum:
@@ -816,39 +813,4 @@ func (m *Runner) dumpStatus() {
 			// Status for all other states
 		}
 	}
-}
-
-func (m *Runner) estimateRowsPerSecondLoop() {
-	// We take 10 second averages not 1 second
-	// because with parallel copy it bounces around a lot.
-	prevRowsCount := atomic.LoadInt64(&m.copier.CopyRowsCount)
-	ticker := time.NewTicker(copyEstimateInterval)
-	defer ticker.Stop()
-	for range ticker.C {
-		if m.getCurrentState() > stateCopyRows {
-			return
-		}
-		newRowsCount := atomic.LoadInt64(&m.copier.CopyRowsCount)
-		rowsPerSecond := (newRowsCount - prevRowsCount) / 10
-		atomic.StoreInt64(&m.copier.EtaRowsPerSecond, rowsPerSecond)
-		prevRowsCount = newRowsCount
-	}
-}
-
-func (m *Runner) getETAFromRowsPerSecond(due bool) string {
-	rowsPerSecond := atomic.LoadInt64(&m.copier.EtaRowsPerSecond)
-	if m.getCurrentState() > stateCopyRows || due {
-		return "Due" // in apply rows phase or checksum
-	}
-	if rowsPerSecond == 0 {
-		return "TBD" // not enough data yet, or in last phase
-	}
-
-	remainingRows := m.table.EstimatedRows - uint64(atomic.LoadInt64(&m.copier.CopyRowsCount))
-	remainingSeconds := math.Floor(float64(remainingRows) / float64(rowsPerSecond))
-
-	// We could just return it as "12345 seconds" but to group it to hours/days.
-	// We convert to time.Duration which will interpret this as nanoseconds,
-	// so we need to multiply by seconds.
-	return time.Duration(remainingSeconds * float64(time.Second)).String()
 }
