@@ -14,8 +14,19 @@ func init() {
 // check the configuration of the database. There are some hard nos,
 // and some suggestions around configuration for performance.
 func configurationCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
-	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin string
-	err := r.DB.QueryRowContext(ctx, "SELECT @@global.binlog_format, @@global.innodb_autoinc_lock_mode, @@global.binlog_row_image, @@global.log_bin").Scan(&binlogFormat, &innodbAutoincLockMode, &binlogRowImage, &logBin)
+	var binlogFormat, innodbAutoincLockMode, binlogRowImage, logBin, logSlaveUpdates string
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT @@global.binlog_format,
+		@@global.innodb_autoinc_lock_mode,
+		@@global.binlog_row_image,
+		@@global.log_bin,
+		@@global.log_slave_updates`).Scan(
+		&binlogFormat,
+		&innodbAutoincLockMode,
+		&binlogRowImage,
+		&logBin,
+		&logSlaveUpdates,
+	)
 	if err != nil {
 		return err
 	}
@@ -37,6 +48,11 @@ func configurationCheck(ctx context.Context, r Resources, logger loggers.Advance
 	if logBin != "1" {
 		// This is a hard requirement because we need to be able to read the binlog.
 		return errors.New("log_bin must be enabled")
+	}
+	if logSlaveUpdates != "1" {
+		// This is a hard requirement unless we enhance this to confirm
+		//  its not receiving any updates via the replication stream.
+		return errors.New("log_slave_updates must be enabled")
 	}
 	return nil
 }

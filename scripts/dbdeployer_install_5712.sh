@@ -15,6 +15,7 @@ dbdeployer deploy single 5.7.12
 # It is not by default in MySQL 5.7
 
 echo "log-bin" >> ~/sandboxes/msb_5_7_12/my.sandbox.cnf
+echo "log-slave-updates" >> ~/sandboxes/msb_5_7_12/my.sandbox.cnf
 echo "server-id=123" >> ~/sandboxes/msb_5_7_12/my.sandbox.cnf
 
 ~/sandboxes/msb_5_7_12/restart
