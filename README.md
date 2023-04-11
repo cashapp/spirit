@@ -4,7 +4,7 @@ Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github
 
 It works very similar to gh-ost except:
 - It only supports MySQL 5.7 and MySQL 8.0 (it is anticipated only 8.0 will be supported once Aurora v2 reaches end of life)
-- It is multi-threaded in the row-copying phase
+- It is multi-threaded in both the row-copying and the binlog applying phase
 - It supports resume-from-checkpoint
 
 The goal of spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
@@ -20,13 +20,15 @@ The following are some of the optimizations that make spirit faster than gh-ost:
 
 ### Dynamic Chunking
 
-Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes a target chunk time (such as 500ms). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
+Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes a target chunk time (such as 2s). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
 
-500ms is quite "high" for traditional MySQL environments, but remember _spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
+2s is quite "high" for traditional MySQL environments, but remember _spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
 
 ### Ignore Key Above Watermark
 
 As spirit is copying rows, it keeps track of the highest key-value that either has been copied, or could be in the process of being copied. This is called the "high watermark". As rows are discovered from the binary log, they can be discarded if the key is above the high watermark. This is because once the copier reaches this point, it is guaranteed it will copy the latest version of the row.
+
+In practice, this optimization works really well when your table has a `auto_increment` `PRIMARY KEY` and most of the inserts or modifications are at the end of the table.
 
 **Note:** Spirit does not support `VARCHAR` primary keys, so it does not need to worry about collation issues when comparing if a key is above another key.
 
@@ -71,7 +73,6 @@ Notes:
 
 Writing a new data migration tool is scary, since bugs have real consequences (data loss). These are the main problems we anticipate:
 
-1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable.
-2. The optimal configuration (i.e. number of threads, chunk-target-in-ms) is not well understood and doesn't scale based on DB instance size. Since the goal is to be more aggressive than gh-ost, there may be some real-world cases where performance is impacted quite significantly while running Spirit.
-3. The chunker expands ranges if the estimated rows is lower than the logical space between min/max key. This is disabled for auto_inc keys, since it's likely there are some areas where there aren't gaps in the sequence, and chunks could be very slow. Maybe disabling just for this case is a bad idea, since we hide other cases where dynamic expanding ranges is not good. In the case of auto-inc keys, this could mean very slow migrations where there is a large gap between min/max key. In other cases it could mean stalls as a lot of keys are concentrated in one area.
-4. It does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are supported, but it's currently not planned to support `VARCHAR` primary keys.
+1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable. We believe we've managed to mitigate the other risks up until cut-over with the introduction of a checksum feature, which is enabled by default.
+2. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
+3. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
