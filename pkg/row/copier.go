@@ -209,7 +209,7 @@ func (c *Copier) getCopyStats() (uint64, uint64, float64) {
 	// This is the legacy estimation method, which is not as accurate as the one above.
 	// It is required for scenarios like VARBINARY primary keys. The downside here is that
 	// the estimated rows can jump around a lot on a big table with a high variability of row size.
-	// Because we include the CopyRowsCount to users at least it will *at least*
+	// Because we include the CopyRowsCount to users at least it will
 	// appear like it is always progressing.
 	pct := float64(atomic.LoadUint64(&c.CopyRowsCount)) / float64(c.table.EstimatedRows) * 100
 	return atomic.LoadUint64(&c.CopyRowsCount), c.table.EstimatedRows, pct
