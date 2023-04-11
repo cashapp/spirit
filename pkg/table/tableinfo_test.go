@@ -22,7 +22,7 @@ func TestChunkerBasic(t *testing.T) {
 		TableName:           "t1",
 		PrimaryKey:          []string{"id"},
 		primaryKeyType:      "int",
-		primaryKeyIsAutoInc: true,
+		PrimaryKeyIsAutoInc: true,
 		Columns:             []string{"id", "name"},
 	}
 	chunker, err := NewChunker(t1, 100, false, logrus.New())
@@ -122,7 +122,7 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varchar(100)"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	_, err := NewChunker(t1, 100, true, logrus.New())
@@ -136,7 +136,7 @@ func TestOpenOnBinaryType(t *testing.T) {
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, true, logrus.New())
 	assert.NoError(t, err)
@@ -149,7 +149,7 @@ func TestOpenOnNoMinMax(t *testing.T) {
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, true, logrus.New())
 	assert.NoError(t, err)
@@ -162,7 +162,7 @@ func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, true, logrus.New())
 	assert.NoError(t, err)
@@ -235,7 +235,7 @@ func TestLowWatermark(t *testing.T) {
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
@@ -320,7 +320,7 @@ func TestDynamicChunking(t *testing.T) {
 	t1.EstimatedRows = 1000000
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100*time.Millisecond, true, logrus.New())
 	assert.NoError(t, err)
@@ -384,7 +384,7 @@ func TestDynamicChunking(t *testing.T) {
 	t2.EstimatedRows = 1000000
 	t2.PrimaryKey = []string{"id"}
 	t2.primaryKeyType = "bigint"
-	t2.primaryKeyIsAutoInc = true
+	t2.PrimaryKeyIsAutoInc = true
 
 	chunker2, err := NewChunker(t1, 100, true, logrus.New())
 	assert.NoError(t, err)
@@ -454,7 +454,7 @@ func TestDiscovery(t *testing.T) {
 
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, "int", t1.primaryKeyType)
-	assert.True(t, t1.primaryKeyIsAutoInc)
+	assert.True(t, t1.PrimaryKeyIsAutoInc)
 	assert.Equal(t, 2, len(t1.Columns))
 }
 
@@ -489,7 +489,7 @@ func TestDiscoveryUInt(t *testing.T) {
 
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, "int unsigned", t1.primaryKeyType)
-	assert.True(t, t1.primaryKeyIsAutoInc)
+	assert.True(t, t1.PrimaryKeyIsAutoInc)
 	assert.Equal(t, 2, len(t1.Columns))
 }
 
@@ -543,7 +543,7 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	t1 := NewTableInfo(db, "test", "balances")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
-	assert.True(t, t1.primaryKeyIsAutoInc)
+	assert.True(t, t1.PrimaryKeyIsAutoInc)
 	assert.Equal(t, "bigint", t1.primaryKeyType)
 	assert.Equal(t, []string{"id"}, t1.PrimaryKey)
 	assert.Equal(t, nil, t1.minValue)

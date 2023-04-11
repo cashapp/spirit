@@ -12,7 +12,7 @@ func TestUnsignedChunker(t *testing.T) {
 	t1.EstimatedRows = 100
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint unsigned"
-	t1.primaryKeyIsAutoInc = true
+	t1.PrimaryKeyIsAutoInc = true
 	t1.EstimatedRows = 100000
 	t1.minValue = uint64(1)
 	t1.maxValue = uint64(101)

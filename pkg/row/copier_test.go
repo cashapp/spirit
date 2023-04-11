@@ -262,3 +262,63 @@ func TestCopierValidation(t *testing.T) {
 	_, err = NewCopier(db, t1, nil, NewCopierDefaultConfig())
 	assert.Error(t, err)
 }
+
+func TestETA(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS testeta1, testeta2, _testeta1_new, _testeta2_new")
+	runSQL(t, "CREATE TABLE testeta1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE testeta2 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _testeta1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _testeta2_new (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	// high max value
+	runSQL(t, "INSERT IGNORE INTO testeta2 VALUES (10000, 2, 3)")
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "testeta1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "testeta2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+	t1new := table.NewTableInfo(db, "test", "_testeta1_new")
+	assert.NoError(t, t1new.SetInfo(context.TODO()))
+	t2new := table.NewTableInfo(db, "test", "_testeta2_new")
+	assert.NoError(t, t2new.SetInfo(context.TODO()))
+
+	t1.EstimatedRows = 1000
+	t2.EstimatedRows = 1000
+
+	copier1, err := NewCopier(db, t1, t1new, NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	copier2, err := NewCopier(db, t2, t2new, NewCopierDefaultConfig())
+	assert.NoError(t, err)
+
+	// set the start time to -copyETAInitialWaitTime ago so the ETAs will show.
+	copier1.CopyRowsStartTime = time.Now().Add(-time.Hour)
+	copier2.CopyRowsStartTime = time.Now().Add(-time.Hour)
+
+	// Ask for the ETA, it should be "TBD" because the perSecond estimate is not set yet.
+	assert.Equal(t, "TBD", copier1.GetETA())
+	assert.Equal(t, "TBD", copier2.GetETA())
+
+	// Imply we copied 90 rows (in a chunk of 100)
+	copier1.CopyRowsLogicalCount = 100
+	copier1.CopyRowsCount = 90
+	copier2.CopyRowsLogicalCount = 100
+	copier2.CopyRowsCount = 90
+
+	copied, estimated, pct := copier1.getCopyStats()
+	assert.Equal(t, uint64(90), copied)
+	assert.Equal(t, uint64(1000), estimated)
+	assert.Equal(t, float64(9), pct)
+
+	copied, estimated, pct = copier2.getCopyStats()
+	assert.Equal(t, uint64(100), copied)
+	assert.Equal(t, uint64(10000), estimated)
+	assert.Equal(t, float64(1), pct) // 1%
+
+	copier1.rowsPerSecond = 10
+	copier2.rowsPerSecond = 10
+
+	assert.Equal(t, "1m31s", copier1.GetETA())
+	assert.Equal(t, "16m30s", copier2.GetETA())
+}
