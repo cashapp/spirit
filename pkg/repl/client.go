@@ -26,6 +26,7 @@ import (
 const (
 	binlogTrivialThreshold = 10000
 	DefaultBatchSize       = 10000
+	flushThreads           = 16
 )
 
 type Client struct {
@@ -61,6 +62,12 @@ type Client struct {
 
 	batchSize   int64
 	concurrency int
+
+	// The periodic flush lock is just used for ensuring only one periodic flush runs at a time,
+	// and when we disable it, no more periodic flushes will run. The actual flushing is protected
+	// by a lower level lock (sync.Mutex on Client)
+	periodicFlushLock    sync.Mutex
+	periodicFlushEnabled bool
 
 	logger loggers.Advanced
 }
@@ -303,7 +310,8 @@ func (c *Client) updatePosInMemory(pos uint32) {
 	}
 }
 
-func (c *Client) Flush(ctx context.Context) error {
+// flush is the internal version of Flush() and performs one flush loop.
+func (c *Client) flush(ctx context.Context) error {
 	c.Lock()
 	setToFlush := c.binlogChangeset
 	posOfFlush := *c.binlogPosInMemory        // copy the value, not the pointer
@@ -348,7 +356,7 @@ func (c *Client) Flush(ctx context.Context) error {
 	// because they come from a consistent view of a map,
 	// which is distinct keys.
 	g := new(errgroup.Group)
-	g.SetLimit(16)
+	g.SetLimit(flushThreads)
 	for _, stmt := range stmts {
 		s := stmt
 		g.Go(func() error {
@@ -391,11 +399,13 @@ func (c *Client) createReplaceStmt(replaceKeys []string) string {
 	return replaceStmt
 }
 
-func (c *Client) FlushUntilTrivial(ctx context.Context) error {
+// Flush empties the changeset in a loop until the amount of changes is considered "trivial".
+// The loop is required, because changes continue to be added while the flush is occurring.
+func (c *Client) Flush(ctx context.Context) error {
 	c.logger.Info("starting to flush changeset")
 	for {
 		// Repeat in a loop until the changeset length is trivial
-		if err := c.Flush(ctx); err != nil {
+		if err := c.flush(ctx); err != nil {
 			return err
 		}
 		// Wait for canal to catch up before determining if the changeset
@@ -414,7 +424,46 @@ func (c *Client) FlushUntilTrivial(ctx context.Context) error {
 	return nil
 }
 
+// StopPeriodicFlush disables the periodic flush, also guaranteeing
+// when it returns there is no current flush running
+func (c *Client) StopPeriodicFlush() {
+	c.periodicFlushLock.Lock()
+	defer c.periodicFlushLock.Unlock()
+	c.periodicFlushEnabled = false
+}
+
+// StartPeriodicFlush starts a goroutine that periodically flushes the binlog changeset.
+// This is used by the migrator to ensure the binlog position is advanced.
+func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration) {
+	c.periodicFlushEnabled = true
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			c.periodicFlushLock.Lock()
+			// At some point before cutover we want to disable th periodic flush.
+			// The migrator will do this by calling StopPeriodicFlush()
+			if !c.periodicFlushEnabled {
+				c.periodicFlushLock.Unlock()
+				return
+			}
+			startLoop := time.Now()
+			c.logger.Info("starting periodic flush of binary log")
+			// The periodic flush does not respect the throttler since we want to advance the binlog position
+			// we allow this to run, and then expect that if it is under load the throttler
+			// will kick in and slow down the copy-rows.
+			if err := c.flush(ctx); err != nil {
+				c.logger.Errorf("error flushing binary log: %v", err)
+			}
+			c.periodicFlushLock.Unlock()
+			c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
+		}
+	}()
+}
+
 // BlockWait blocks until the canal has caught up to the current binlog position.
+// There is a built-in func in canal to do this, but it calls FLUSH BINARY LOGS,
+// which requires additional permissions.
 func (c *Client) BlockWait(ctx context.Context) error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {

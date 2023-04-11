@@ -61,7 +61,7 @@ func TestReplClient(t *testing.T) {
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
 	assert.Equal(t, client.GetDeltaLen(), 1)
-	assert.NoError(t, client.FlushUntilTrivial(context.TODO()))
+	assert.NoError(t, client.Flush(context.TODO()))
 
 	// We should observe there is a row in t2.
 	var count int
@@ -138,7 +138,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.Equal(t, 441, client.GetDeltaLen()) // ??
 
 	// Final flush
-	assert.NoError(t, client.FlushUntilTrivial(context.TODO()))
+	assert.NoError(t, client.Flush(context.TODO()))
 
 	// We should observe there is a row in t2.
 	var count int

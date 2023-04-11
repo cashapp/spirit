@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
+
+	"github.com/siddontang/loggers"
 )
 
 type simplifiedKeyType int
@@ -39,6 +42,7 @@ type TableInfo struct {
 	PrimaryKeyIsAutoInc bool
 	minValue            interface{} // known minValue of pk[0] (using type of PK)
 	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
+	isClosed            bool        // if this tableInfo is closed.
 }
 
 func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
@@ -230,9 +234,32 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 	return err
 }
 
-// UpdateTableStatistics recalculates the min/max and row estimate.
-// It is exported so it can be used by the caller to continuously update the table stats.
-func (t *TableInfo) UpdateTableStatistics(ctx context.Context) error {
+// Close closes the tableInfo and stops the goroutine that updates the table statistics.
+func (t *TableInfo) Close() error {
+	t.isClosed = true
+	return nil
+}
+
+// AutoUpdateStatistics starts a goroutine that updates the table statistics every interval.
+// This will continue until Close() is called on the tableInfo.
+func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if t.isClosed {
+				return
+			}
+			if err := t.updateTableStatistics(ctx); err != nil {
+				logger.Errorf("error updating table statistics: %v", err)
+			}
+			logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
+		}
+	}()
+}
+
+// updateTableStatistics recalculates the min/max and row estimate.
+func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 	err := t.setMinMax(ctx)
 	if err != nil {
 		return err

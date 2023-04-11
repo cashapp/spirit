@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -108,9 +107,6 @@ type Runner struct {
 	optDisableTrivialChunker bool
 	optReplicaDSN            string
 	optReplicaMaxLag         time.Duration
-
-	// We want to block periodic flushes while we're doing a checksums etc
-	periodicFlushLock sync.Mutex
 
 	// Attached logger
 	logger loggers.Advanced
@@ -214,10 +210,8 @@ func (m *Runner) Run(ctx context.Context) error {
 		return err
 	}
 
-	go m.dumpStatus()                           // start periodically writing status
-	go m.dumpCheckpointContinuously(ctx)        // start periodically dumping the checkpoint.
-	go m.updateTableStatisticsContinuously(ctx) // update the min/max and estimated rows.
-	go m.periodicFlush(ctx)                     // advance the binary log position periodically.
+	go m.dumpStatus()                    // start periodically writing status
+	go m.dumpCheckpointContinuously(ctx) // start periodically dumping the checkpoint.
 
 	// Perform the main copy rows task. This is where the majority
 	// of migrations usually spend time.
@@ -274,14 +268,12 @@ func (m *Runner) Run(ctx context.Context) error {
 // could for example cause a stall during the cutover if the replClient
 // has too many pending updates.
 func (m *Runner) prepareForCutover(ctx context.Context) error {
-	// Recursively apply all pending events (FlushUntilTrivial)
 	m.setCurrentState(stateApplyChangeset)
-	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
-	if err := m.replClient.FlushUntilTrivial(ctx); err != nil {
-		m.periodicFlushLock.Unlock() // need to yield before returning.
+	// Disable the periodic flush and flush all pending events.
+	m.replClient.StopPeriodicFlush()
+	if err := m.replClient.Flush(ctx); err != nil {
 		return err
 	}
-	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
 
 	// Run ANALYZE TABLE to update the statistics on the new table.
 	// This is required so on cutover plans don't go sideways, which
@@ -422,6 +414,12 @@ func (m *Runner) setup(ctx context.Context) error {
 	// If this is NOT nil then it will use this optimization when determining
 	// if it can ignore a KEY.
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+
+	// Start routines in table and replication packages to
+	// Continuously update the min/max and estimated rows
+	// and to flush the binary log position periodically.
+	m.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, m.logger)
+	m.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
 	return nil
 }
 
@@ -532,6 +530,9 @@ func (m *Runner) createCheckpointTable(ctx context.Context) error {
 
 func (m *Runner) Close() error {
 	m.setCurrentState(stateClose)
+	if m.table != nil {
+		m.table.Close()
+	}
 	if m.newTable == nil {
 		return nil
 	}
@@ -671,14 +672,7 @@ func (m *Runner) checksum(ctx context.Context) error {
 	// of applying the binlog deltas.
 
 	m.setCurrentState(statePostChecksum)
-	m.periodicFlushLock.Lock() // Wait for the periodic flush to finish.
-	if err := m.replClient.FlushUntilTrivial(ctx); err != nil {
-		m.periodicFlushLock.Unlock() // need to yield before returning.
-		return err
-	}
-	m.periodicFlushLock.Unlock() // It will not start again because the current state is now ApplyChangeset.
-
-	return nil
+	return m.replClient.Flush(ctx)
 }
 
 func (m *Runner) getCurrentState() migrationState {
@@ -724,48 +718,6 @@ func (m *Runner) dumpCheckpointContinuously(ctx context.Context) {
 		if err := m.dumpCheckpoint(ctx); err != nil {
 			m.logger.Errorf("error writing checkpoint: %v", err)
 		}
-	}
-}
-
-func (m *Runner) periodicFlush(ctx context.Context) {
-	ticker := time.NewTicker(binlogPerodicFlushInterval)
-	defer ticker.Stop()
-	for range ticker.C {
-		// We only want to continuously flush during copy-rows.
-		// During checkpoint we only lock the source table, so if we
-		// are in a periodic flush we can't be writing data to the new table.
-		// If we do, then we'll need to lock it as well so that the read-view is consistent.
-		m.periodicFlushLock.Lock()
-		if m.getCurrentState() > stateCopyRows {
-			m.periodicFlushLock.Unlock()
-			return
-		}
-		startLoop := time.Now()
-		m.logger.Info("starting periodic flush of binary log")
-		// The periodic flush does not respect the throttler. It is only single-threaded
-		// by design (chunked into 10K rows). Since we want to advance the binlog position
-		// we allow this to run, and then expect that if it is under load the throttler
-		// will kick in and slow down the copy-rows.
-		if err := m.replClient.Flush(ctx); err != nil {
-			m.logger.Errorf("error flushing binary log: %v", err)
-		}
-		m.periodicFlushLock.Unlock()
-		m.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
-	}
-}
-
-func (m *Runner) updateTableStatisticsContinuously(ctx context.Context) {
-	ticker := time.NewTicker(tableStatUpdateInterval)
-	defer ticker.Stop()
-	for range ticker.C {
-		// We need to update statistics for copy-rows and checksum
-		if m.getCurrentState() >= stateCutOver {
-			return
-		}
-		if err := m.table.UpdateTableStatistics(ctx); err != nil {
-			m.logger.Errorf("error updating table statistics: %v", err)
-		}
-		m.logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", m.table.EstimatedRows, m.table.MaxValue())
 	}
 }
 
