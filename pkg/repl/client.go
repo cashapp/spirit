@@ -432,33 +432,31 @@ func (c *Client) StopPeriodicFlush() {
 	c.periodicFlushEnabled = false
 }
 
-// StartPeriodicFlush starts a goroutine that periodically flushes the binlog changeset.
+// StartPeriodicFlush starts a loop that periodically flushes the binlog changeset.
 // This is used by the migrator to ensure the binlog position is advanced.
 func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration) {
 	c.periodicFlushEnabled = true
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			c.periodicFlushLock.Lock()
-			// At some point before cutover we want to disable th periodic flush.
-			// The migrator will do this by calling StopPeriodicFlush()
-			if !c.periodicFlushEnabled {
-				c.periodicFlushLock.Unlock()
-				return
-			}
-			startLoop := time.Now()
-			c.logger.Info("starting periodic flush of binary log")
-			// The periodic flush does not respect the throttler since we want to advance the binlog position
-			// we allow this to run, and then expect that if it is under load the throttler
-			// will kick in and slow down the copy-rows.
-			if err := c.flush(ctx); err != nil {
-				c.logger.Errorf("error flushing binary log: %v", err)
-			}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		c.periodicFlushLock.Lock()
+		// At some point before cutover we want to disable th periodic flush.
+		// The migrator will do this by calling StopPeriodicFlush()
+		if !c.periodicFlushEnabled {
 			c.periodicFlushLock.Unlock()
-			c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
+			return
 		}
-	}()
+		startLoop := time.Now()
+		c.logger.Info("starting periodic flush of binary log")
+		// The periodic flush does not respect the throttler since we want to advance the binlog position
+		// we allow this to run, and then expect that if it is under load the throttler
+		// will kick in and slow down the copy-rows.
+		if err := c.flush(ctx); err != nil {
+			c.logger.Errorf("error flushing binary log: %v", err)
+		}
+		c.periodicFlushLock.Unlock()
+		c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
+	}
 }
 
 // BlockWait blocks until the canal has caught up to the current binlog position.

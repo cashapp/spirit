@@ -243,22 +243,20 @@ func (t *TableInfo) Close() error {
 	return nil
 }
 
-// AutoUpdateStatistics starts a goroutine that updates the table statistics every interval.
+// AutoUpdateStatistics runs a loop that updates the table statistics every interval.
 // This will continue until Close() is called on the tableInfo.
 func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for range ticker.C {
-			if t.isClosed {
-				return
-			}
-			if err := t.updateTableStatistics(ctx); err != nil {
-				logger.Errorf("error updating table statistics: %v", err)
-			}
-			logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if t.isClosed {
+			return
 		}
-	}()
+		if err := t.updateTableStatistics(ctx); err != nil {
+			logger.Errorf("error updating table statistics: %v", err)
+		}
+		logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
+	}
 }
 
 // statisticsNeedUpdating returns true if the statistics are considered order than a threshold.

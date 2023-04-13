@@ -418,8 +418,8 @@ func (m *Runner) setup(ctx context.Context) error {
 	// Start routines in table and replication packages to
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
-	m.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, m.logger)
-	m.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
+	go m.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, m.logger)
+	go m.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
 	return nil
 }
 
