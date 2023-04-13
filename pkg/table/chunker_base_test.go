@@ -2,6 +2,7 @@ package table
 
 import (
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,7 @@ func TestBaseChunker(t *testing.T) {
 
 func TestBaseChunkerIntSigned(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
+	t1.statisticsLastUpdated = time.Now()
 	t1.EstimatedRows = 100 // target trivial chunker.
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "bigint"

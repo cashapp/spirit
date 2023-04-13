@@ -21,7 +21,8 @@ const (
 	unsignedType
 	binaryType
 
-	trivialChunkerThreshold = 1000
+	trivialChunkerThreshold      = 1000
+	lastChunkStatisticsThreshold = 10 * time.Second
 )
 
 var (
@@ -32,17 +33,19 @@ var (
 
 type TableInfo struct {
 	sync.Mutex
-	db                  *sql.DB
-	EstimatedRows       uint64
-	SchemaName          string
-	TableName           string
-	PrimaryKey          []string
-	Columns             []string
-	primaryKeyType      string // the MySQL type.
-	PrimaryKeyIsAutoInc bool
-	minValue            interface{} // known minValue of pk[0] (using type of PK)
-	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
-	isClosed            bool        // if this tableInfo is closed.
+	db                    *sql.DB
+	EstimatedRows         uint64
+	SchemaName            string
+	TableName             string
+	PrimaryKey            []string
+	Columns               []string
+	primaryKeyType        string // the MySQL type.
+	PrimaryKeyIsAutoInc   bool
+	minValue              interface{} // known minValue of pk[0] (using type of PK)
+	maxValue              interface{} // known maxValue of pk[0] (using type of PK)
+	isClosed              bool        // if this tableInfo is closed.
+	statisticsLastUpdated time.Time
+	statisticsLock        sync.Mutex
 }
 
 func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
@@ -258,13 +261,27 @@ func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Dura
 	}()
 }
 
+// statisticsNeedUpdating returns true if the statistics are considered order than a threshold.
+// this is useful for the chunker to synchronously check as it approaches the end of the table.
+func (t *TableInfo) statisticsNeedUpdating() bool {
+	threshold := time.Now().Add(-lastChunkStatisticsThreshold)
+	return t.statisticsLastUpdated.Before(threshold)
+}
+
 // updateTableStatistics recalculates the min/max and row estimate.
 func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
+	t.statisticsLock.Lock()
+	defer t.statisticsLock.Unlock()
 	err := t.setMinMax(ctx)
 	if err != nil {
 		return err
 	}
-	return t.setRowEstimate(ctx)
+	err = t.setRowEstimate(ctx)
+	if err != nil {
+		return err
+	}
+	t.statisticsLastUpdated = time.Now()
+	return nil
 }
 
 // MaxValue as a string

@@ -1,6 +1,9 @@
 package table
 
-import "math"
+import (
+	"context"
+	"math"
+)
 
 type chunkerBinary struct {
 	*chunkerBase
@@ -39,6 +42,18 @@ func (t *chunkerBinary) Next() (*Chunk, error) {
 			UpperBound: &Boundary{hexString(t.chunkPtr.(uint64)), false},
 		}, nil
 	}
+
+	// Before we return a final open bounded chunk, we check if the statistics
+	// need updating, in which case we synchronously refresh them.
+	// This helps reduce the risk of a very large unbounded
+	// chunk from a table that is actively growing.
+	if t.chunkPtr.(uint64) >= t.Ti.maxValue.(uint64) && t.Ti.statisticsNeedUpdating() {
+		t.logger.Info("approaching the end of the table, synchronously updating statistics")
+		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+			return nil, err
+		}
+	}
+
 	// Final chunk
 	if t.chunkPtr.(uint64) >= math.MaxInt64 {
 		minVal := hexString(t.chunkPtr.(uint64))

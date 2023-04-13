@@ -2,6 +2,7 @@ package table
 
 import (
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -9,6 +10,7 @@ import (
 
 func TestBinaryChunker(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
+	t1.statisticsLastUpdated = time.Now()
 	t1.EstimatedRows = 100000
 	t1.PrimaryKey = []string{"id"}
 	t1.primaryKeyType = "varbinary(100)"
