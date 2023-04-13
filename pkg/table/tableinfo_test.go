@@ -25,6 +25,7 @@ func TestChunkerBasic(t *testing.T) {
 		PrimaryKeyIsAutoInc: true,
 		Columns:             []string{"id", "name"},
 	}
+	t1.statisticsLastUpdated = time.Now()
 	chunker, err := NewChunker(t1, 100, false, logrus.New())
 	assert.NoError(t, err)
 	chunker.SetDynamicChunking(false)

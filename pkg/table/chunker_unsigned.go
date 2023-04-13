@@ -1,6 +1,9 @@
 package table
 
-import "math"
+import (
+	"context"
+	"math"
+)
 
 type chunkerUnsigned struct {
 	*chunkerBase
@@ -31,7 +34,18 @@ func (t *chunkerUnsigned) Next() (*Chunk, error) {
 		}, nil
 	}
 
-	// If there is a maximum value and the chunkPtr exceeds it, we apply
+	// Before we return a final open bounded chunk, we check if the statistics
+	// need updating, in which case we synchronously refresh them.
+	// This helps reduce the risk of a very large unbounded
+	// chunk from a table that is actively growing.
+	if t.chunkPtr.(uint64) >= t.Ti.maxValue.(uint64) && t.Ti.statisticsNeedUpdating() {
+		t.logger.Info("approaching the end of the table, synchronously updating statistics")
+		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+			return nil, err
+		}
+	}
+
+	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
 	// the maximum value optimization which is to return an open bounded
 	// chunk.
 	if t.Ti.maxValue != nil && t.chunkPtr.(uint64) > t.Ti.maxValue.(uint64) {

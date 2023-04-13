@@ -1,6 +1,9 @@
 package table
 
-import "math"
+import (
+	"context"
+	"math"
+)
 
 type chunkerSigned struct {
 	*chunkerBase
@@ -33,7 +36,18 @@ func (t *chunkerSigned) Next() (*Chunk, error) {
 		}, nil
 	}
 
-	// If the chunkPtr equals or exceeds the maximum value,
+	// Before we return a final open bounded chunk, we check if the statistics
+	// need updating, in which case we synchronously refresh them.
+	// This helps reduce the risk of a very large unbounded
+	// chunk from a table that is actively growing.
+	if t.chunkPtr.(int64) >= t.Ti.maxValue.(int64) && t.Ti.statisticsNeedUpdating() {
+		t.logger.Info("approaching the end of the table, synchronously updating statistics")
+		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+			return nil, err
+		}
+	}
+
+	// *Only now* if the chunkPtr equals or exceeds the maximum value,
 	// we return a final open bounded chunk.
 	if t.chunkPtr.(int64) >= t.Ti.maxValue.(int64) {
 		minVal := t.chunkPtr

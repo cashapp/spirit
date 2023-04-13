@@ -997,7 +997,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 
 		// Now that copy rows is done, we flush the changeset until trivial.
 		// and perform the optional checksum.
-		assert.NoError(t, m.replClient.FlushUntilTrivial(context.TODO()))
+		assert.NoError(t, m.replClient.Flush(context.TODO()))
 		m.setCurrentState(stateApplyChangeset)
 		assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 		m.setCurrentState(stateChecksum)

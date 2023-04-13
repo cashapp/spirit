@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
+
+	"github.com/siddontang/loggers"
 )
 
 type simplifiedKeyType int
@@ -18,7 +21,8 @@ const (
 	unsignedType
 	binaryType
 
-	trivialChunkerThreshold = 1000
+	trivialChunkerThreshold      = 1000
+	lastChunkStatisticsThreshold = 10 * time.Second
 )
 
 var (
@@ -29,16 +33,19 @@ var (
 
 type TableInfo struct {
 	sync.Mutex
-	db                  *sql.DB
-	EstimatedRows       uint64
-	SchemaName          string
-	TableName           string
-	PrimaryKey          []string
-	Columns             []string
-	primaryKeyType      string // the MySQL type.
-	PrimaryKeyIsAutoInc bool
-	minValue            interface{} // known minValue of pk[0] (using type of PK)
-	maxValue            interface{} // known maxValue of pk[0] (using type of PK)
+	db                    *sql.DB
+	EstimatedRows         uint64
+	SchemaName            string
+	TableName             string
+	PrimaryKey            []string
+	Columns               []string
+	primaryKeyType        string // the MySQL type.
+	PrimaryKeyIsAutoInc   bool
+	minValue              interface{} // known minValue of pk[0] (using type of PK)
+	maxValue              interface{} // known maxValue of pk[0] (using type of PK)
+	isClosed              bool        // if this tableInfo is closed.
+	statisticsLastUpdated time.Time
+	statisticsLock        sync.Mutex
 }
 
 func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
@@ -230,14 +237,49 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 	return err
 }
 
-// UpdateTableStatistics recalculates the min/max and row estimate.
-// It is exported so it can be used by the caller to continuously update the table stats.
-func (t *TableInfo) UpdateTableStatistics(ctx context.Context) error {
+// Close closes the tableInfo and stops the goroutine that updates the table statistics.
+func (t *TableInfo) Close() error {
+	t.isClosed = true
+	return nil
+}
+
+// AutoUpdateStatistics runs a loop that updates the table statistics every interval.
+// This will continue until Close() is called on the tableInfo.
+func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for range ticker.C {
+		if t.isClosed {
+			return
+		}
+		if err := t.updateTableStatistics(ctx); err != nil {
+			logger.Errorf("error updating table statistics: %v", err)
+		}
+		logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
+	}
+}
+
+// statisticsNeedUpdating returns true if the statistics are considered order than a threshold.
+// this is useful for the chunker to synchronously check as it approaches the end of the table.
+func (t *TableInfo) statisticsNeedUpdating() bool {
+	threshold := time.Now().Add(-lastChunkStatisticsThreshold)
+	return t.statisticsLastUpdated.Before(threshold)
+}
+
+// updateTableStatistics recalculates the min/max and row estimate.
+func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
+	t.statisticsLock.Lock()
+	defer t.statisticsLock.Unlock()
 	err := t.setMinMax(ctx)
 	if err != nil {
 		return err
 	}
-	return t.setRowEstimate(ctx)
+	err = t.setRowEstimate(ctx)
+	if err != nil {
+		return err
+	}
+	t.statisticsLastUpdated = time.Now()
+	return nil
 }
 
 // MaxValue as a string
