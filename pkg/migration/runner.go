@@ -99,14 +99,13 @@ type Runner struct {
 
 	// Configurable Options that might be passed in
 	// defaults will be set in NewRunner()
-	optConcurrency           int
-	optChecksumConcurrency   int
-	optTargetChunkTime       time.Duration
-	optAttemptInplaceDDL     bool
-	optChecksum              bool
-	optDisableTrivialChunker bool
-	optReplicaDSN            string
-	optReplicaMaxLag         time.Duration
+	optConcurrency         int
+	optChecksumConcurrency int
+	optTargetChunkTime     time.Duration
+	optAttemptInplaceDDL   bool
+	optChecksum            bool
+	optReplicaDSN          string
+	optReplicaMaxLag       time.Duration
 
 	// Attached logger
 	logger loggers.Advanced
@@ -114,21 +113,20 @@ type Runner struct {
 
 func NewRunner(migration *Migration) (*Runner, error) {
 	m := &Runner{
-		host:                     migration.Host,
-		username:                 migration.Username,
-		password:                 migration.Password,
-		schemaName:               migration.Database,
-		tableName:                migration.Table,
-		alterStatement:           migration.Alter,
-		optConcurrency:           migration.Concurrency,
-		optChecksumConcurrency:   migration.ChecksumConcurrency,
-		optTargetChunkTime:       migration.TargetChunkTime,
-		optAttemptInplaceDDL:     migration.AttemptInplaceDDL,
-		optChecksum:              migration.Checksum,
-		optDisableTrivialChunker: migration.DisableTrivialChunker,
-		optReplicaDSN:            migration.ReplicaDSN,
-		optReplicaMaxLag:         migration.ReplicaMaxLag,
-		logger:                   logrus.New(),
+		host:                   migration.Host,
+		username:               migration.Username,
+		password:               migration.Password,
+		schemaName:             migration.Database,
+		tableName:              migration.Table,
+		alterStatement:         migration.Alter,
+		optConcurrency:         migration.Concurrency,
+		optChecksumConcurrency: migration.ChecksumConcurrency,
+		optTargetChunkTime:     migration.TargetChunkTime,
+		optAttemptInplaceDDL:   migration.AttemptInplaceDDL,
+		optChecksum:            migration.Checksum,
+		optReplicaDSN:          migration.ReplicaDSN,
+		optReplicaMaxLag:       migration.ReplicaMaxLag,
+		logger:                 logrus.New(),
 	}
 	if m.optTargetChunkTime == 0 {
 		m.optTargetChunkTime = 100 * time.Millisecond
@@ -364,12 +362,11 @@ func (m *Runner) setup(ctx context.Context) error {
 			return err
 		}
 		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:           m.optConcurrency,
-			TargetChunkTime:       m.optTargetChunkTime,
-			FinalChecksum:         m.optChecksum,
-			DisableTrivialChunker: m.optDisableTrivialChunker,
-			Throttler:             &throttler.Noop{},
-			Logger:                m.logger,
+			Concurrency:     m.optConcurrency,
+			TargetChunkTime: m.optTargetChunkTime,
+			FinalChecksum:   m.optChecksum,
+			Throttler:       &throttler.Noop{},
+			Logger:          m.logger,
 		})
 		if err != nil {
 			return err
@@ -607,12 +604,11 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// have the checksum enabled to apply all changes safely.
 	m.optChecksum = true
 	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.newTable, &row.CopierConfig{
-		Concurrency:           m.optConcurrency,
-		TargetChunkTime:       m.optTargetChunkTime,
-		FinalChecksum:         m.optChecksum,
-		DisableTrivialChunker: m.optDisableTrivialChunker,
-		Throttler:             &throttler.Noop{},
-		Logger:                m.logger,
+		Concurrency:     m.optConcurrency,
+		TargetChunkTime: m.optTargetChunkTime,
+		FinalChecksum:   m.optChecksum,
+		Throttler:       &throttler.Noop{},
+		Logger:          m.logger,
 	}, lowWatermark, rowsCopied, rowsCopiedLogical)
 	if err != nil {
 		return err
@@ -652,10 +648,9 @@ func (m *Runner) checksum(ctx context.Context) error {
 	m.setCurrentState(stateChecksum)
 	var err error
 	m.checker, err = checksum.NewChecker(m.db, m.table, m.newTable, m.replClient, &checksum.CheckerConfig{
-		Concurrency:           m.optChecksumConcurrency,
-		TargetChunkTime:       m.optTargetChunkTime,
-		DisableTrivialChunker: m.optDisableTrivialChunker,
-		Logger:                m.logger,
+		Concurrency:     m.optChecksumConcurrency,
+		TargetChunkTime: m.optTargetChunkTime,
+		Logger:          m.logger,
 	})
 	if err != nil {
 		return err

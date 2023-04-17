@@ -431,14 +431,13 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:                  cfg.Addr,
-		Username:              cfg.User,
-		Password:              cfg.Passwd,
-		Database:              cfg.DBName,
-		Concurrency:           16,
-		Table:                 "lossychange2",
-		Alter:                 "CHANGE COLUMN id id INT NOT NULL auto_increment", //nolint: dupword
-		DisableTrivialChunker: true,
+		Host:        cfg.Addr,
+		Username:    cfg.User,
+		Password:    cfg.Passwd,
+		Database:    cfg.DBName,
+		Concurrency: 16,
+		Table:       "lossychange2",
+		Alter:       "CHANGE COLUMN id id INT NOT NULL auto_increment", //nolint: dupword
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -480,8 +479,8 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
-	assert.NoError(t, err) // works because there are no violations.
-	assert.Equal(t, uint64(1), m.copier.CopyChunksCount)
+	assert.NoError(t, err)                               // works because there are no violations.
+	assert.Equal(t, uint64(3), m.copier.CopyChunksCount) // always 3 chunks now
 	assert.NoError(t, m.Close())
 }
 
@@ -572,7 +571,6 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 }
 
 // Test a non-integer primary key.
-// IN future this needs to be supported!
 
 func TestChangeNonIntPK(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS nonintpk`)
@@ -683,13 +681,16 @@ func TestCheckpoint(t *testing.T) {
 	chunk3, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 
-	// There is no watermark yet.
+	// Assert there is no watermark yet, because we've not finished
+	// copying any of the chunks.
 	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
 	assert.Error(t, m.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
+	// Let's complete them in the order of 2, 1, 3. When 2 phones home first
+	// it should be queued. Then when 1 phones home it should apply and de-queue 2.
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk2))
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk1))
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk3))
@@ -729,7 +730,6 @@ func TestCheckpoint(t *testing.T) {
 	// It's ideally not typical but you can still dump checkpoint from
 	// a restored checkpoint state. We won't have advanced anywhere from
 	// the last checkpoint because on restore, the LowerBound is taken.
-
 	watermark, err = m.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
@@ -889,14 +889,13 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
 
 		m, err := NewRunner(&Migration{
-			Host:                  cfg.Addr,
-			Username:              cfg.User,
-			Password:              cfg.Passwd,
-			Database:              cfg.DBName,
-			Concurrency:           16,
-			Table:                 "e2et1",
-			Alter:                 "ENGINE=InnoDB",
-			DisableTrivialChunker: true,
+			Host:        cfg.Addr,
+			Username:    cfg.User,
+			Password:    cfg.Passwd,
+			Database:    cfg.DBName,
+			Concurrency: 16,
+			Table:       "e2et1",
+			Alter:       "ENGINE=InnoDB",
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "initial", m.getCurrentState().String())
@@ -925,12 +924,11 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			BatchSize:   10000,
 		})
 		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:           m.optConcurrency,
-			TargetChunkTime:       m.optTargetChunkTime,
-			FinalChecksum:         m.optChecksum,
-			DisableTrivialChunker: m.optDisableTrivialChunker,
-			Throttler:             &throttler.Noop{},
-			Logger:                m.logger,
+			Concurrency:     m.optConcurrency,
+			TargetChunkTime: m.optTargetChunkTime,
+			FinalChecksum:   m.optChecksum,
+			Throttler:       &throttler.Noop{},
+			Logger:          m.logger,
 		})
 		assert.NoError(t, err)
 		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
@@ -966,13 +964,14 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		sleep() // plenty
 		assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
-		// second chunk.
+		// second chunk is between min and max value.
 		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 		// Now insert some data.
-		// This should be picked up by the binlog subscription.
+		// This should be picked up by the binlog subscription
+		// because it is within chunk size range of the second chunk.
 		runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
 		assert.False(t, m.copier.KeyAboveHighWatermark(5))
 		sleep() // wait for binlog
@@ -983,17 +982,18 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		sleep() // wait for binlog
 		assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
-		// third (and last) chunk.
+		// third (and last) chunk is open ended,
+		// so anything after it will be picked up by the binlog.
 		chunk, err = m.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 		// Some data is inserted later, even though the last chunk is done.
-		// We still care to pick it up.
+		// We still care to pick it up because it could be inserted during checkpoint.
 		runSQL(t, `insert into e2et1 (id1, id2) values (6, 1)`)
 		// the pointer should be at maxint64 for safety. this ensures
 		// that any keyAboveHighWatermark checks return false
-		assert.False(t, m.copier.KeyAboveHighWatermark(uint64(math.MaxUint64)))
+		assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
 
 		// Now that copy rows is done, we flush the changeset until trivial.
 		// and perform the optional checksum.

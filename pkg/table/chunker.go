@@ -40,16 +40,13 @@ type Chunker interface {
 	SetDynamicChunking(bool)
 }
 
-func NewChunker(t *TableInfo, chunkerTarget time.Duration, disableTrivialChunker bool, logger loggers.Advanced) (Chunker, error) {
-	if t.EstimatedRows < trivialChunkerThreshold && !disableTrivialChunker {
-		// If the row count is low we attach the trivial chunker,
-		// which will return everything as one chunk.
-		return &chunkerTrivial{Ti: t, logger: logger}, nil
-	}
+func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced) (Chunker, error) {
 	if chunkerTarget == 0 {
 		chunkerTarget = 100 * time.Millisecond
 	}
-
+	if err := t.isCompatibleWithChunker(); err != nil {
+		return nil, err
+	}
 	return &chunkerUniversal{
 		Ti:            t,
 		chunkSize:     uint64(1000),

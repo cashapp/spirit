@@ -3,7 +3,6 @@ package table
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -15,7 +14,7 @@ type chunkerUniversal struct {
 	sync.Mutex
 	Ti             *TableInfo
 	chunkSize      uint64
-	chunkPtr       Datum
+	chunkPtr       datum
 	finalChunkSent bool
 	isOpen         bool
 
@@ -74,7 +73,7 @@ func (t *chunkerUniversal) Next() (*Chunk, error) {
 	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
 	// the maximum value optimization which is to return an open bounded
 	// chunk.
-	if !t.Ti.maxValue.IsNil() && t.chunkPtr.GreaterThan(t.Ti.maxValue) {
+	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) {
 		t.finalChunkSent = true
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
@@ -131,6 +130,7 @@ func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
 	// We can restore from chunk.UpperBound, but because it is a < operator,
 	// There might be an annoying off by 1 error. So let's just restore
 	// from the chunk.LowerBound.
+	t.watermark = chunk
 	t.chunkPtr = chunk.LowerBound.Value
 	return nil
 }
@@ -186,7 +186,6 @@ func (t *chunkerUniversal) GetLowWatermark() (string, error) {
 	t.Lock()
 	defer t.Unlock()
 
-	fmt.Printf("####watermark: %v\n", t.watermark)
 	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
 		return "", errors.New("watermark not yet ready")
 	}
@@ -199,7 +198,7 @@ func (t *chunkerUniversal) GetLowWatermark() (string, error) {
 // will be repeated by the first chunk that is applied post restore.
 // This is called under a mutex.
 func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
-	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
+	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
 		return false // restored checkpoints always have both.
 	}
 	return chunk.LowerBound.Value == t.watermark.LowerBound.Value
@@ -217,36 +216,25 @@ func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
 //   - If any queued chunks align, they are popped off the queue and the watermark is bumped.
 //   - This process repeats until there is no more alignment from the queue *or* the queue is empty.
 func (t *chunkerUniversal) bumpWatermark(chunk *Chunk) {
-	// Special handling for the first chunk since we need it to have boundaries
-	// for other chunks to merge to.
-	if t.watermark == nil {
-		if chunk.LowerBound != nil {
-			// Not the first chunk, append it and move on!
-			t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
-			return
-		}
-		// Else, we know this is the first chunk
+	// Check if this is the first chunk or it's the special restored chunk.
+	// If so, set the watermark.
+	if (t.watermark == nil && chunk.LowerBound == nil) || t.isSpecialRestoredChunk(chunk) {
 		t.watermark = chunk
-	} else {
-		// We already have a watermark, we just need to test if we need to replace it.
-		// Or if we should add it to the queue.
-		if chunk.LowerBound == nil {
-			// This is the first chunk we are seeing (possibly again?) even though we
-			// already have a watermark. This is not expected to happen. It could mean
-			// that the table has been re-opened (the API now tries to prevent this).
-			panic("unexpected first chunk after watermark set")
-		}
-		if !t.isSpecialRestoredChunk(chunk) && t.watermark.UpperBound.Value != chunk.LowerBound.Value {
-			t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
-			return
-		}
-		// t.watermark.UpperBound.Value == chunk.LowerBound.Value
-		// Replace the current watermark with the chunk.
-		t.watermark = chunk
+		goto applyQueuedChunks
+	}
+	// We haven't set the first chunk yet, or it's not aligned with the
+	// previous watermark. Queue it up, and move on.
+	if t.watermark == nil || (t.watermark.UpperBound.Value != chunk.LowerBound.Value) {
+		t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
+		return
 	}
 
-	// If we haven't returned early, it means there could be queued chunks.
-	// So we should process them.
+	// The remaining case is:
+	// t.watermark.UpperBound.Value == chunk.LowerBound.Value
+	// Replace the current watermark with the chunk.
+	t.watermark = chunk
+
+applyQueuedChunks:
 
 	for {
 		// Check the queue for any chunks that align with the new watermark.
@@ -300,19 +288,22 @@ func (t *chunkerUniversal) chunkToIncrementSize() uint64 {
 	// already called under a mutex.
 	var increment = t.chunkSize
 
-	if t.Ti.PrimaryKeyIsAutoInc {
-		// There is a case when there are large "gaps" in the table because
-		// the difference between min<->max is larger than the estimated rows.
-		// Estimated rows is often wrong, and it could just be a large chunk deleted,
-		// which could get us in trouble with some large chunks. So for now we should
-		// just return the chunk size when auto_increment.
-		return increment
-	}
-
 	// Logical range is MaxValue-MinValue. If it matches close to estimated rows,
 	// then the increment will be the same as the chunk size. If it's higher or lower,
 	// then the increment will be smaller or larger.
 	logicalRange := t.logicalRange()
+
+	if t.Ti.PrimaryKeyIsAutoInc {
+		// There is a case when there are large "gaps" in the table because
+		// the difference between min<->max is larger than the estimated rows.
+		// Estimated rows is often wrong, and it could just be a large chunk deleted,
+		// which could get us in trouble with some large chunks. So for now if the estimatedRows
+		// is greater than 1K we don't expand the range. We have no idea if all these
+		// rows will show up together.
+		if t.Ti.EstimatedRows > trivialChunkerThreshold {
+			return increment
+		}
+	}
 	divideBy := float64(t.Ti.EstimatedRows) / float64(logicalRange)
 	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
 }
@@ -362,9 +353,11 @@ func (t *chunkerUniversal) KeyAboveHighWatermark(key interface{}) bool {
 	t.Lock()
 	defer t.Unlock()
 	if t.chunkPtr.IsNil() {
-		return true // every key is above!
+		return true // every key is above because we haven't started copying.
 	}
-
-	keyDatum := NewDatumConvertTp(key, t.Ti.pkDatumTp)
+	if t.finalChunkSent {
+		return false // we're done, so everything is below.
+	}
+	keyDatum := newDatum(key, t.chunkPtr.tp)
 	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
 }

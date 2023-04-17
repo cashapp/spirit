@@ -17,7 +17,7 @@ type Chunk struct {
 
 // Boundary is used by chunk for lower or upper boundary
 type Boundary struct {
-	Value     Datum
+	Value     datum
 	Inclusive bool
 }
 
@@ -86,11 +86,11 @@ func NewChunkFromJSON(jsonStr string, tp string) (*Chunk, error) {
 	if err != nil {
 		return nil, err
 	}
-	lowerVal, err := NewDatumFromMySQL(fmt.Sprint(chunk.LowerBound.Value), tp)
+	lowerVal, err := newDatumFromMySQL(fmt.Sprint(chunk.LowerBound.Value), tp)
 	if err != nil {
 		return nil, err
 	}
-	upperVal, err := NewDatumFromMySQL(fmt.Sprint(chunk.UpperBound.Value), tp)
+	upperVal, err := newDatumFromMySQL(fmt.Sprint(chunk.UpperBound.Value), tp)
 	if err != nil {
 		return nil, err
 	}

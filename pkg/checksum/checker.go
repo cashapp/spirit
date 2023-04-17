@@ -38,18 +38,16 @@ type Checker struct {
 }
 
 type CheckerConfig struct {
-	Concurrency           int
-	TargetChunkTime       time.Duration
-	DisableTrivialChunker bool
-	Logger                loggers.Advanced
+	Concurrency     int
+	TargetChunkTime time.Duration
+	Logger          loggers.Advanced
 }
 
 func NewCheckerDefaultConfig() *CheckerConfig {
 	return &CheckerConfig{
-		Concurrency:           4,
-		TargetChunkTime:       1000 * time.Millisecond,
-		DisableTrivialChunker: false,
-		Logger:                logrus.New(),
+		Concurrency:     4,
+		TargetChunkTime: 1000 * time.Millisecond,
+		Logger:          logrus.New(),
 	}
 }
 
@@ -61,7 +59,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
-	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
+	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.Logger)
 	if err != nil {
 		return nil, err
 	}

@@ -33,10 +33,10 @@ type TableInfo struct {
 	PrimaryKey            []string
 	Columns               []string
 	pkMySQLTp             string  // the MySQL type.
-	pkDatumTp             DatumTp // the datum type.
+	pkDatumTp             datumTp // the datum type.
 	PrimaryKeyIsAutoInc   bool
-	minValue              Datum // known minValue of pk[0] (using type of PK)
-	maxValue              Datum // known maxValue of pk[0] (using type of PK)
+	minValue              datum // known minValue of pk[0] (using type of PK)
+	maxValue              datum // known maxValue of pk[0] (using type of PK)
 	isClosed              bool  // if this tableInfo is closed.
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
@@ -193,23 +193,20 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 	if t.pkDatumTp == binaryType {
 		return nil // we don't min/max binary types for now.
 	}
-	query := fmt.Sprintf("SELECT IFNULL(min(%s),'NaN'), IFNULL(max(%s),'NaN') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
+	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
 	var min, max string
 	err := t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 	if err != nil {
 		return err
 	}
-	if min != "NaN" {
-		t.minValue, err = NewDatumFromMySQL(min, t.pkMySQLTp)
-		if err != nil {
-			return err
-		}
+
+	t.minValue, err = newDatumFromMySQL(min, t.pkMySQLTp)
+	if err != nil {
+		return err
 	}
-	if max != "NaN" {
-		t.maxValue, err = NewDatumFromMySQL(max, t.pkMySQLTp)
-		if err != nil {
-			return err
-		}
+	t.maxValue, err = newDatumFromMySQL(max, t.pkMySQLTp)
+	if err != nil {
+		return err
 	}
 	return nil
 }

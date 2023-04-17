@@ -1,68 +1,29 @@
 package table
 
 import (
-	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
-type DatumTp int
+type datumTp int
 
 const (
-	unknownType DatumTp = iota
+	unknownType datumTp = iota
 	signedType
 	unsignedType
 	binaryType
 )
 
-// Datum could be a binary string, uint64 or int64.
-type Datum struct {
-	Val interface{}
-	Tp  DatumTp // signed, unsigned, binary
+// datum could be a binary string, uint64 or int64.
+type datum struct {
+	val interface{}
+	tp  datumTp // signed, unsigned, binary
 }
 
-func DONOTUSEsimplifyType(desiredType DatumTp, val interface{}) (interface{}, error) {
-	// the Val always comes in as a string because when using an interface in reading, it's never typed correctly.
-	if val == nil || reflect.TypeOf(val) == nil {
-		return nil, nil
-	}
-	impliedType := reflect.TypeOf(val).Kind()
-	switch desiredType {
-	case signedType:
-		if impliedType == reflect.Float64 {
-			return int64(val.(float64)), nil
-		}
-		return reflect.ValueOf(val).Int(), nil
-	case unsignedType:
-		if impliedType == reflect.Float64 {
-			return uint64(val.(float64)), nil
-		}
-		return reflect.ValueOf(val).Uint(), nil
-	case binaryType:
-		if strings.HasPrefix(val.(string), "0x") {
-			return hexStringToUint64(val.(string))
-		}
-		return nil, errors.New("unsure how to convert a binary string to min/max")
-	default:
-		return nil, ErrUnsupportedPKType
-	}
-}
-
-func hexStringToUint64(s string) (uint64, error) {
-	// It will be in the form 0xACDC01
-	if !strings.HasPrefix(s, "0x") {
-		return 0, fmt.Errorf("invalid hex string: %s", s)
-	}
-	s = strings.TrimPrefix(s, "0x")
-	// base 16 for hexadecimal
-	return strconv.ParseUint(s, 16, 64)
-}
-
-func mySQLTypeToDatumTp(mysqlTp string) DatumTp {
+func mySQLTypeToDatumTp(mysqlTp string) datumTp {
 	switch removeWidth(mysqlTp) {
 	case "int", "bigint", "smallint", "tinyint":
 		return signedType
@@ -80,30 +41,44 @@ func removeWidth(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func NewDatum(val interface{}, tp DatumTp) Datum {
-	return Datum{
-		Val: val,
-		Tp:  tp,
-	}
-}
-
-func NewDatumConvertTp(val interface{}, tp DatumTp) Datum {
+func newDatum(val interface{}, tp datumTp) datum {
 	var err error
 	if tp == signedType {
-		val, err = strconv.ParseInt(fmt.Sprint(val), 10, 64)
-	} else {
-		val, err = strconv.ParseUint(fmt.Sprint(val), 10, 64)
+		// We expect the value to be an int64, but it could be an int.
+		// Anything else we convert it
+		switch v := val.(type) {
+		case int64:
+			// do nothing
+		case int:
+			val = int64(v)
+		default:
+			val, err = strconv.ParseInt(fmt.Sprint(val), 10, 64)
+			if err != nil {
+				panic("could not convert datum to int64")
+			}
+		}
+	} else if tp == unsignedType || tp == binaryType {
+		// We expect uint64, but it could be uint.
+		// We convert anything else.
+		switch v := val.(type) {
+		case uint64:
+			// do nothing
+		case uint:
+			val = uint64(v)
+		default:
+			val, err = strconv.ParseUint(fmt.Sprint(val), 10, 64)
+			if err != nil {
+				panic("could not convert datum to uint64")
+			}
+		}
 	}
-	if err != nil {
-		panic(err)
-	}
-	return Datum{
-		Val: val,
-		Tp:  tp,
+	return datum{
+		val: val,
+		tp:  tp,
 	}
 }
 
-func datumValFromString(val string, tp DatumTp) (interface{}, error) {
+func datumValFromString(val string, tp datumTp) (interface{}, error) {
 	if tp == signedType {
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
@@ -114,90 +89,100 @@ func datumValFromString(val string, tp DatumTp) (interface{}, error) {
 	return strconv.ParseUint(val, 10, 64)
 }
 
-func NewDatumFromMySQL(val string, mysqlTp string) (Datum, error) {
+func newDatumFromMySQL(val string, mysqlTp string) (datum, error) {
 	// Figure out the matching simplified type (signed, unsigned, binary)
 	// We also have to simplify the value to the type.
 	tp := mySQLTypeToDatumTp(mysqlTp)
 	sVal, err := datumValFromString(val, tp)
 	if err != nil {
-		return Datum{}, err
+		return datum{}, err
 	}
-	return Datum{
-		Val: sVal,
-		Tp:  tp,
+	return datum{
+		val: sVal,
+		tp:  tp,
 	}, nil
 }
 
-func NewNilDatum(tp DatumTp) Datum {
-	return Datum{
-		Val: nil,
-		Tp:  tp,
+func NewNilDatum(tp datumTp) datum {
+	return datum{
+		val: nil,
+		tp:  tp,
 	}
 }
 
-func (d Datum) MaxValue() Datum {
-	if d.Tp == signedType {
-		return Datum{
-			Val: int64(math.MaxInt64),
-			Tp:  signedType,
+func (d datum) MaxValue() datum {
+	if d.tp == signedType {
+		return datum{
+			val: int64(math.MaxInt64),
+			tp:  signedType,
 		}
 	}
-	return Datum{
-		Val: uint64(math.MaxUint64),
-		Tp:  d.Tp,
+	return datum{
+		val: uint64(math.MaxUint64),
+		tp:  d.tp,
 	}
 }
 
-func (d Datum) MinValue() Datum {
-	if d.Tp == signedType {
-		return Datum{
-			Val: int64(math.MinInt64),
-			Tp:  signedType,
+func (d datum) MinValue() datum {
+	if d.tp == signedType {
+		return datum{
+			val: int64(math.MinInt64),
+			tp:  signedType,
 		}
 	}
-	return Datum{
-		Val: uint64(0),
-		Tp:  d.Tp,
+	return datum{
+		val: uint64(0),
+		tp:  d.tp,
 	}
 }
 
-func (d Datum) Add(addVal uint64) Datum {
+func (d datum) Add(addVal uint64) datum {
 	ret := d
-	if d.Tp == signedType {
-		ret.Val = d.Val.(int64) + int64(addVal)
+	if d.tp == signedType {
+		returnVal := d.val.(int64) + int64(addVal)
+		if returnVal < d.val.(int64) {
+			returnVal = int64(math.MaxInt64) // overflow
+		}
+		ret.val = returnVal
 		return ret
 	}
-	ret.Val = d.Val.(uint64) + addVal
+	returnVal := d.val.(uint64) + addVal
+	if returnVal < d.val.(uint64) {
+		returnVal = uint64(math.MaxUint64) // overflow
+	}
+	ret.val = returnVal
 	return ret
-	// TODO: make sure to handle overflow gracefully.
 }
 
 // Return the diff between 2 datums as a uint64.
-func (d Datum) Range(d2 Datum) uint64 {
-	if d.Tp == signedType {
-		return uint64(d.Val.(int64) - d2.Val.(int64))
+func (d datum) Range(d2 datum) uint64 {
+	if d.tp == signedType {
+		return uint64(d.val.(int64) - d2.val.(int64))
 	}
-	return d.Val.(uint64) - d2.Val.(uint64)
+	return d.val.(uint64) - d2.val.(uint64)
 }
 
-func (d Datum) String() string {
-	return fmt.Sprintf("%v", d.Val)
-}
-
-func (d Datum) IsNil() bool {
-	return d.Val == nil
-}
-
-func (d Datum) GreaterThanOrEqual(d2 Datum) bool {
-	if d.Tp == signedType {
-		return d.Val.(int64) >= d2.Val.(int64)
+func (d datum) String() string {
+	if d.tp == binaryType {
+		return fmt.Sprintf("0x%X", d.val)
 	}
-	return d.Val.(uint64) >= d2.Val.(uint64)
+	return fmt.Sprintf("%v", d.val)
 }
 
-func (d Datum) GreaterThan(d2 Datum) bool {
-	if d.Tp == signedType {
-		return d.Val.(int64) > d2.Val.(int64)
+func (d datum) IsNil() bool {
+	return d.val == nil
+}
+
+func (d datum) GreaterThanOrEqual(d2 datum) bool {
+	if d.tp == signedType {
+		return d.val.(int64) >= d2.val.(int64)
 	}
-	return d.Val.(uint64) > d2.Val.(uint64)
+	return d.val.(uint64) >= d2.val.(uint64)
+}
+
+func (d datum) GreaterThan(d2 datum) bool {
+	if d.tp == signedType {
+		return d.val.(int64) > d2.val.(int64)
+	}
+	return d.val.(uint64) > d2.val.(uint64)
 }

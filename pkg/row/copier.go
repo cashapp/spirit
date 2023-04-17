@@ -51,23 +51,21 @@ type Copier struct {
 }
 
 type CopierConfig struct {
-	Concurrency           int
-	TargetChunkTime       time.Duration
-	FinalChecksum         bool
-	DisableTrivialChunker bool
-	Throttler             throttler.Throttler
-	Logger                loggers.Advanced
+	Concurrency     int
+	TargetChunkTime time.Duration
+	FinalChecksum   bool
+	Throttler       throttler.Throttler
+	Logger          loggers.Advanced
 }
 
 // NewCopierDefaultConfig returns a default config for the copier.
 func NewCopierDefaultConfig() *CopierConfig {
 	return &CopierConfig{
-		Concurrency:           4,
-		TargetChunkTime:       1000 * time.Millisecond,
-		FinalChecksum:         true,
-		DisableTrivialChunker: false,
-		Throttler:             &throttler.Noop{},
-		Logger:                logrus.New(),
+		Concurrency:     4,
+		TargetChunkTime: 1000 * time.Millisecond,
+		FinalChecksum:   true,
+		Throttler:       &throttler.Noop{},
+		Logger:          logrus.New(),
 	}
 }
 
@@ -76,7 +74,7 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
-	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.DisableTrivialChunker, config.Logger)
+	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.Logger)
 	if err != nil {
 		return nil, err
 	}
