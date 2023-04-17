@@ -1,6 +1,7 @@
 package table
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -16,7 +17,7 @@ type Chunk struct {
 
 // Boundary is used by chunk for lower or upper boundary
 type Boundary struct {
-	Value     interface{}
+	Value     Datum
 	Inclusive bool
 }
 
@@ -52,4 +53,57 @@ func (c *Chunk) String() string {
 		conds = append(conds, "1=1")
 	}
 	return strings.Join(conds, " AND ")
+}
+
+func (c *Chunk) JSON() string {
+	return fmt.Sprintf(`{"Key":"%s","ChunkSize":%d,"LowerBound":%s,"UpperBound":%s}`,
+		c.Key,
+		c.ChunkSize,
+		c.LowerBound.JSON(),
+		c.UpperBound.JSON(),
+	)
+}
+
+func (b *Boundary) JSON() string {
+	return fmt.Sprintf(`{"Value":%s,"Inclusive":%t}`, b.Value, b.Inclusive)
+}
+
+type JSONChunk struct {
+	Key        string
+	ChunkSize  uint64
+	LowerBound JSONBoundary
+	UpperBound JSONBoundary
+}
+
+type JSONBoundary struct {
+	Value     interface{}
+	Inclusive bool
+}
+
+func NewChunkFromJSON(jsonStr string, tp string) (*Chunk, error) {
+	var chunk JSONChunk
+	err := json.Unmarshal([]byte(jsonStr), &chunk)
+	if err != nil {
+		return nil, err
+	}
+	lowerVal, err := NewDatumFromMySQL(fmt.Sprint(chunk.LowerBound.Value), tp)
+	if err != nil {
+		return nil, err
+	}
+	upperVal, err := NewDatumFromMySQL(fmt.Sprint(chunk.UpperBound.Value), tp)
+	if err != nil {
+		return nil, err
+	}
+	return &Chunk{
+		Key:       chunk.Key,
+		ChunkSize: chunk.ChunkSize,
+		LowerBound: &Boundary{
+			Value:     lowerVal,
+			Inclusive: chunk.LowerBound.Inclusive,
+		},
+		UpperBound: &Boundary{
+			Value:     upperVal,
+			Inclusive: chunk.UpperBound.Inclusive,
+		},
+	}, nil
 }

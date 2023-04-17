@@ -1,23 +1,21 @@
 package table
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"sync"
 	"time"
 
 	"github.com/siddontang/loggers"
 )
 
-// This is the trivial chunker which other chunkers may extend
-type chunkerBase struct {
+type chunkerUniversal struct {
 	sync.Mutex
 	Ti             *TableInfo
 	chunkSize      uint64
-	chunkPtr       interface{}
+	chunkPtr       Datum
 	finalChunkSent bool
 	isOpen         bool
 
@@ -37,22 +35,85 @@ type chunkerBase struct {
 	logger loggers.Advanced
 }
 
+var _ Chunker = &chunkerUniversal{}
+
+func (t *chunkerUniversal) Next() (*Chunk, error) {
+	t.Lock()
+	defer t.Unlock()
+	if t.IsRead() {
+		return nil, ErrTableIsRead
+	}
+	if !t.isOpen {
+		return nil, ErrTableNotOpen
+	}
+	key := t.Ti.PrimaryKey[0]
+	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
+
+	// If there is a minimum value, we attempt to apply
+	// the minimum value optimization.
+	if t.chunkPtr.IsNil() {
+		t.chunkPtr = t.Ti.minValue
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        key,
+			UpperBound: &Boundary{t.chunkPtr, false},
+		}, nil
+	}
+
+	// Before we return a final open bounded chunk, we check if the statistics
+	// need updating, in which case we synchronously refresh them.
+	// This helps reduce the risk of a very large unbounded
+	// chunk from a table that is actively growing.
+	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) && t.Ti.statisticsNeedUpdating() {
+		t.logger.Info("approaching the end of the table, synchronously updating statistics")
+		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+			return nil, err
+		}
+	}
+
+	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
+	// the maximum value optimization which is to return an open bounded
+	// chunk.
+	if !t.Ti.maxValue.IsNil() && t.chunkPtr.GreaterThan(t.Ti.maxValue) {
+		t.finalChunkSent = true
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        key,
+			LowerBound: &Boundary{t.chunkPtr, true},
+		}, nil
+	}
+
+	// This is the typical case. We return a chunk with a lower bound
+	// of the current chunkPtr and an upper bound of the chunkPtr + chunkSize,
+	// but not exceeding math.MaxInt64.
+
+	minVal := t.chunkPtr
+	maxVal := t.chunkPtr.Add(incrementSize)
+	t.chunkPtr = maxVal
+	return &Chunk{
+		ChunkSize:  t.chunkSize,
+		Key:        key,
+		LowerBound: &Boundary{minVal, true},
+		UpperBound: &Boundary{maxVal, false},
+	}, nil
+}
+
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
 // to resume from a specific point.
-func (t *chunkerBase) Open() (err error) {
+func (t *chunkerUniversal) Open() (err error) {
 	t.Lock()
 	defer t.Unlock()
 
 	return t.open()
 }
 
-func (t *chunkerBase) SetDynamicChunking(newValue bool) {
+func (t *chunkerUniversal) SetDynamicChunking(newValue bool) {
 	t.Lock()
 	defer t.Unlock()
 	t.DisableDynamicChunker = !newValue
 }
 
-func (t *chunkerBase) OpenAtWatermark(cp string) error {
+func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
 	t.Lock()
 	defer t.Unlock()
 
@@ -63,56 +124,25 @@ func (t *chunkerBase) OpenAtWatermark(cp string) error {
 		return err
 	}
 
-	var chunk Chunk
-	err := json.Unmarshal([]byte(cp), &chunk)
+	chunk, err := NewChunkFromJSON(cp, t.Ti.pkMySQLTp)
 	if err != nil {
 		return err
 	}
-
-	t.watermark = &chunk
-
 	// We can restore from chunk.UpperBound, but because it is a < operator,
 	// There might be an annoying off by 1 error. So let's just restore
 	// from the chunk.LowerBound.
-	tp := mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType)
-	// The chunk.LowerBound.Value is an interface{} so upon deserialization
-	// from JSON it will be a float64. We need to convert it to tp
-	t.chunkPtr, err = simplifyType(tp, chunk.LowerBound.Value)
-	return err
-}
-
-func (t *chunkerBase) Close() error {
+	t.chunkPtr = chunk.LowerBound.Value
 	return nil
 }
 
-func (t *chunkerBase) Next() (*Chunk, error) {
-	t.Lock()
-	defer t.Unlock()
-	if t.IsRead() {
-		return nil, ErrTableIsRead
-	}
-	if !t.isOpen {
-		return nil, ErrTableNotOpen
-	}
-	switch mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType) {
-	case signedType:
-		t.chunkPtr = int64(math.MaxInt64)
-	case unsignedType, binaryType:
-		t.chunkPtr = uint64(math.MaxUint64)
-	case unknownType:
-		return nil, fmt.Errorf("unknown primary key type: %s", t.Ti.primaryKeyType) // should be unreachable because Open() already checks this.
-	}
-	t.finalChunkSent = true
-	return &Chunk{
-		ChunkSize: t.chunkSize,
-		Key:       t.Ti.PrimaryKey[0],
-	}, nil
+func (t *chunkerUniversal) Close() error {
+	return nil
 }
 
 // ChunkerFeedback is a way for consumers of chunks to give feedback on how long
 // processing the chunk took. It is incorporated into the calculation of future
 // chunk sizes.
-func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
+func (t *chunkerUniversal) Feedback(chunk *Chunk, d time.Duration) {
 	t.Lock()
 	defer t.Unlock()
 	t.bumpWatermark(chunk)
@@ -152,38 +182,27 @@ func (t *chunkerBase) Feedback(chunk *Chunk, d time.Duration) {
 // which (due to parallelism) could be significantly behind the high watermark.
 // The value is discovered via ChunkerFeedback(), and when retrieved from this func
 // can be used to write a checkpoint for restoration.
-func (t *chunkerBase) GetLowWatermark() (string, error) {
+func (t *chunkerUniversal) GetLowWatermark() (string, error) {
 	t.Lock()
 	defer t.Unlock()
 
+	fmt.Printf("####watermark: %v\n", t.watermark)
 	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
 		return "", errors.New("watermark not yet ready")
 	}
 
-	// Convert the watermark to JSON.
-	b, err := json.Marshal(t.watermark)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
+	return t.watermark.JSON(), nil
 }
 
 // isSpecialRestoredChunk is used to test for the first chunk after restore-from-checkpoint.
 // The restored chunk is a really special beast because the lowerbound
 // will be repeated by the first chunk that is applied post restore.
-// But the types might not match because JSON encoding/restoring will use float64.
 // This is called under a mutex.
-func (t *chunkerBase) isSpecialRestoredChunk(chunk *Chunk) bool {
+func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
 	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
 		return false // restored checkpoints always have both.
 	}
-	tp := mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType)
-	val1, err1 := simplifyType(tp, chunk.LowerBound.Value)
-	val2, err2 := simplifyType(tp, t.watermark.LowerBound.Value)
-	if err1 != nil || err2 != nil {
-		return false
-	}
-	return val1 == val2
+	return chunk.LowerBound.Value == t.watermark.LowerBound.Value
 }
 
 // bumpWatermark updates the minimum value that is known to be safely copied,
@@ -197,7 +216,7 @@ func (t *chunkerBase) isSpecialRestoredChunk(chunk *Chunk) bool {
 //     each of the queued chunks is checked to see if it aligns with the new watermark.
 //   - If any queued chunks align, they are popped off the queue and the watermark is bumped.
 //   - This process repeats until there is no more alignment from the queue *or* the queue is empty.
-func (t *chunkerBase) bumpWatermark(chunk *Chunk) {
+func (t *chunkerUniversal) bumpWatermark(chunk *Chunk) {
 	// Special handling for the first chunk since we need it to have boundaries
 	// for other chunks to merge to.
 	if t.watermark == nil {
@@ -248,8 +267,8 @@ func (t *chunkerBase) bumpWatermark(chunk *Chunk) {
 	}
 }
 
-func (t *chunkerBase) open() (err error) {
-	tp := mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType)
+func (t *chunkerUniversal) open() (err error) {
+	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp)
 	if tp == unknownType {
 		return ErrUnsupportedPKType
 	}
@@ -259,57 +278,25 @@ func (t *chunkerBase) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkPtr = nil
+	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp)
 	t.finalChunkSent = false
-	// Ensure min/max are already simplified so Next() operators
-	// can use them with just type assertions.
-	if tp == binaryType {
-		// We don't apply min/max optimization on binary yet.
-		// instead we rely on the chunker expanding the range
-		// in chunkToIncrementSize().
-		t.Ti.maxValue = uint64(math.MaxUint64)
-		t.Ti.minValue = uint64(0)
-	} else {
-		t.Ti.minValue, err = simplifyType(tp, t.Ti.minValue)
-		if err != nil {
-			return err
-		}
-		t.Ti.maxValue, err = simplifyType(tp, t.Ti.maxValue)
-		if err != nil {
-			return err
-		}
-	}
 
 	// Make sure min/max value are always specified
 	// To simplify the code in NextChunk funcs.
-	if t.Ti.minValue == nil {
-		switch tp {
-		case signedType:
-			t.Ti.minValue = int64(math.MinInt64)
-		case unsignedType, binaryType:
-			t.Ti.minValue = uint64(0)
-		default:
-			return ErrUnsupportedPKType
-		}
+	if t.Ti.minValue.IsNil() {
+		t.Ti.minValue = t.chunkPtr.MinValue()
 	}
-	if t.Ti.maxValue == nil {
-		switch tp {
-		case signedType:
-			t.Ti.maxValue = int64(math.MaxInt64)
-		case unsignedType, binaryType:
-			t.Ti.maxValue = uint64(math.MaxUint64)
-		default:
-			return ErrUnsupportedPKType
-		}
+	if t.Ti.maxValue.IsNil() {
+		t.Ti.maxValue = t.chunkPtr.MaxValue()
 	}
 	return nil
 }
 
-func (t *chunkerBase) IsRead() bool {
+func (t *chunkerUniversal) IsRead() bool {
 	return t.finalChunkSent
 }
 
-func (t *chunkerBase) chunkToIncrementSize() uint64 {
+func (t *chunkerUniversal) chunkToIncrementSize() uint64 {
 	// already called under a mutex.
 	var increment = t.chunkSize
 
@@ -330,25 +317,22 @@ func (t *chunkerBase) chunkToIncrementSize() uint64 {
 	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
 }
 
-func (t *chunkerBase) logicalRange() uint64 {
-	if mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType) == signedType {
-		return uint64(t.Ti.maxValue.(int64) - t.Ti.minValue.(int64))
-	}
-	if mySQLTypeToSimplifiedKeyType(t.Ti.primaryKeyType) == unsignedType {
-		return t.Ti.maxValue.(uint64) - t.Ti.minValue.(uint64)
+func (t *chunkerUniversal) logicalRange() uint64 {
+	if !t.Ti.maxValue.IsNil() && !t.Ti.minValue.IsNil() {
+		return t.Ti.maxValue.Range(t.Ti.minValue)
 	}
 	// For binary types, we can't really do anything useful yet:
 	return math.MaxUint64
 }
 
-func (t *chunkerBase) updateChunkerTarget(newTarget uint64) {
+func (t *chunkerUniversal) updateChunkerTarget(newTarget uint64) {
 	// Already called under a mutex.
 	newTarget = t.boundaryCheckTargetChunkSize(newTarget)
 	t.chunkSize = newTarget
 	t.chunkTimingInfo = []time.Duration{}
 }
 
-func (t *chunkerBase) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
+func (t *chunkerUniversal) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 	newTargetRows := float64(newTarget)
 	referenceSize := float64(StartingChunkSize)
 	if newTargetRows < (referenceSize / MaxDynamicScaleFactor) {
@@ -366,7 +350,7 @@ func (t *chunkerBase) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 	return uint64(newTargetRows)
 }
 
-func (t *chunkerBase) calculateNewTargetChunkSize() uint64 {
+func (t *chunkerUniversal) calculateNewTargetChunkSize() uint64 {
 	// We do all our math as float64 of time in ns
 	p90 := float64(lazyFindP90(t.chunkTimingInfo))
 	targetTime := float64(t.ChunkerTarget)
@@ -374,31 +358,13 @@ func (t *chunkerBase) calculateNewTargetChunkSize() uint64 {
 	return uint64(newTargetRows)
 }
 
-func (t *chunkerBase) KeyAboveHighWatermark(key interface{}) bool {
+func (t *chunkerUniversal) KeyAboveHighWatermark(key interface{}) bool {
 	t.Lock()
 	defer t.Unlock()
-	if t.chunkPtr == nil {
+	if t.chunkPtr.IsNil() {
 		return true // every key is above!
 	}
 
-	keyType := reflect.TypeOf(key)
-	chunkPtrType := reflect.TypeOf(t.chunkPtr)
-
-	if keyType.ConvertibleTo(chunkPtrType) {
-		// Convert key to the same type as chunkPtr
-		// Although they should be the same already.
-		keyValue := reflect.ValueOf(key).Convert(chunkPtrType)
-		chunkPtrValue := reflect.ValueOf(t.chunkPtr)
-
-		// Use >= since in the chunker the upper bound is usually non-inclusive.
-		switch chunkPtrType.Kind() {
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			return keyValue.Int() >= chunkPtrValue.Int()
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return keyValue.Uint() >= chunkPtrValue.Uint()
-		default:
-			return false
-		}
-	}
-	return false
+	keyDatum := NewDatumConvertTp(key, t.Ti.pkDatumTp)
+	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
 }

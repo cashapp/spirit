@@ -723,7 +723,7 @@ func TestCheckpoint(t *testing.T) {
 
 	chunk, err := m.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, int64(1001), chunk.LowerBound.Value)
+	assert.Equal(t, "1001", chunk.LowerBound.Value.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from

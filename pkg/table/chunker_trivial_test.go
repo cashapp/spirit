@@ -12,7 +12,7 @@ func TestBaseChunker(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 100 // target trivial chunker.
 	t1.PrimaryKey = []string{"id"}
-	t1.primaryKeyType = "varbinary(100)"
+	t1.pkMySQLTp = "varbinary(100)"
 	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
@@ -32,7 +32,7 @@ func TestBaseChunkerIntSigned(t *testing.T) {
 	t1.statisticsLastUpdated = time.Now()
 	t1.EstimatedRows = 100 // target trivial chunker.
 	t1.PrimaryKey = []string{"id"}
-	t1.primaryKeyType = "bigint"
+	t1.pkMySQLTp = "bigint"
 	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, false, logrus.New())
