@@ -20,6 +20,7 @@ const (
 	ScopePostSetup   ScopeFlag = 1 << 1
 	ScopeCutover     ScopeFlag = 1 << 2
 	ScopePostCutover ScopeFlag = 1 << 3
+	ScopeTesting     ScopeFlag = 1 << 4
 )
 
 type Resources struct {
