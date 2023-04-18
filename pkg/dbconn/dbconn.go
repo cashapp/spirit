@@ -16,8 +16,8 @@ const (
 	maxRetries            = 5
 	errLockWaitTimeout    = 1205
 	errDeadlock           = 1213
-	innodbLockWaitTimeout = 1 // usually fine, since it's a lock on a row.
-	mdlLockWaitTimeout    = 3 // safer to make slightly longer.
+	innodbLockWaitTimeout = 3 // usually fine, since it's a lock on a row.
+	mdlLockWaitTimeout    = 5 // safer to make slightly longer.
 )
 
 func standardizeTrx(ctx context.Context, trx *sql.Tx) error {
