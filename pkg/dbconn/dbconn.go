@@ -20,7 +20,7 @@ const (
 	mdlLockWaitTimeout    = 5 // safer to make slightly longer.
 )
 
-func standardizeTrx(ctx context.Context, trx *sql.Tx) error {
+func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
 	_, err := trx.ExecContext(ctx, "SET time_zone='+00:00'")
 	if err != nil {
 		return err
@@ -40,11 +40,11 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout)
+	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout+retryNumber)
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", mdlLockWaitTimeout)
+	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", mdlLockWaitTimeout+retryNumber)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ RETRYLOOP:
 			continue RETRYLOOP // retry
 		}
 		// Standardize it.
-		if err = standardizeTrx(ctx, trx); err != nil {
+		if err = standardizeTrx(ctx, trx, i); err != nil {
 			utils.ErrInErr(trx.Rollback()) // Rollback
 			backoff(i)
 			continue RETRYLOOP // retry
@@ -154,7 +154,7 @@ func DBExec(ctx context.Context, db *sql.DB, query string) error {
 	if err != nil {
 		return err
 	}
-	if err := standardizeTrx(ctx, trx); err != nil {
+	if err := standardizeTrx(ctx, trx, 0); err != nil {
 		return err
 	}
 	_, err = trx.ExecContext(ctx, query)
