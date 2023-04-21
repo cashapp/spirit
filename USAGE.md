@@ -119,6 +119,13 @@ Used in combination with [replica-max-lag](#replica-max-lag). This is the host w
 
 Used in combination with [replica-dsn](#replica-dsn). This is the maximum lag that the replica is allowed to have before Spirit will throttle the copy phase to ensure that the replica does not fall too far behind. Spirit **does not support read-replicas** and throttling is only intended to ensure that replicas do not fall so far behind that disaster recovery will be affected. If you require a high fidelity for replicas, you should consider using `gh-ost` instead of Spirit.
 
-It is recommended that you use Spirit in combination with either parallel replication (which gets much better in MySQL 8.0) or non-binary log based replicas such as Aurora. If you are using the default single threaded replication and specifying a `replica-dsn` + `replica-max-lag`, you should expect to constantly be throttled.
+It is recommended that you use Spirit in combination with either parallel replication (which gets much better in MySQL 8.0) or non-binary log based replicas such as Aurora. If you are **using the default single threaded replication** and specifying a `replica-dsn` + `replica-max-lag`, you should expect to **constantly be throttled**.
+
+The replication throttler only affects the copy-rows operation, and does not apply to changes which arrive via the replication client. This is intentional, as if replication changes can not be applied fast enough the migration will never be able to complete. On a busy system (with single-threaded or insufficiently configured parallel replication) it is possible that the changes from the replication applier may be sufficiently high that they cause the copier process to perpetually be throttled. In this case, you may have to do something more drastic for the migration to complete. In approximate order of preference, you may consider:
+
+- Adjusting the configuration of your replicas to increase the parallel replication threads
+- Temporarily disabling durability on the replica (i.e. `SET GLOBAL sync_binlog=0` and `SET GLOBAL innodb_flush_log_at_trx_commit=0`)
+- Increasing the `replica-max-lag` or disabling replica lag checking temporarily
+
 
 
