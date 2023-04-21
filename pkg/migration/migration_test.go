@@ -39,7 +39,7 @@ func TestE2ENullAlter(t *testing.T) {
 	migration.Username = cfg.User
 	migration.Password = cfg.Passwd
 	migration.Database = cfg.DBName
-	migration.Concurrency = 16
+	migration.Threads = 16
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
@@ -68,7 +68,7 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	migration.Username = cfg.User
 	migration.Password = cfg.Passwd
 	migration.Database = cfg.DBName
-	migration.Concurrency = 16
+	migration.Threads = 16
 	migration.Checksum = true
 	migration.Table = "replicatest"
 	migration.Alter = "ENGINE=InnoDB"

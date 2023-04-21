@@ -14,6 +14,8 @@ The goal of spirit is to apply schema changes much faster than gh-ost. This make
 
 If this is the case, `gh-ost` remains a fine choice.
 
+See [USAGE](usage.md) for more information on how to use spirit.
+
 ## Optimizations
 
 The following are some of the optimizations that make spirit faster than gh-ost:

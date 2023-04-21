@@ -29,13 +29,13 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "nonbinarycompatt1",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "nonbinarycompatt1",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                       // everything is specified.
 	assert.Error(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
@@ -54,13 +54,13 @@ func TestVarbinary(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "varbinaryt1",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "varbinaryt1",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
 	assert.NoError(t, m.Run(context.Background())) // varbinary is compatible.
@@ -81,13 +81,13 @@ func TestDataFromBadSqlMode(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "badsqlt1",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "badsqlt1",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
 	assert.NoError(t, m.Run(context.Background())) // pk is compatible.
@@ -107,13 +107,13 @@ func TestChangeDatatypeNoData(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "cdatatypemytable",
-		Alter:       "CHANGE b b INT", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "cdatatypemytable",
+		Alter:    "CHANGE b b INT", //nolint: dupword
 	})
 	assert.NoError(t, err)                         // everything is specified correctly.
 	assert.NoError(t, m.Run(context.Background())) // no data so no truncation is possible.
@@ -134,13 +134,13 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "cdatalossmytable",
-		Alter:       "CHANGE b b INT", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "cdatalossmytable",
+		Alter:    "CHANGE b b INT", //nolint: dupword
 	})
 	assert.NoError(t, err)                       // everything is specified correctly.
 	assert.Error(t, m.Run(context.Background())) // value 'b' can no convert cleanly to int.
@@ -159,13 +159,13 @@ func TestOnline(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "testonline",
-		Alter:       "CHANGE COLUMN b b int(11) NOT NULL", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "testonline",
+		Alter:    "CHANGE COLUMN b b int(11) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, m.Run(context.TODO()))
@@ -182,13 +182,13 @@ func TestOnline(t *testing.T) {
 	)`
 	runSQL(t, table)
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "testonline2",
-		Alter:       "ADD c int(11) NOT NULL",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "testonline2",
+		Alter:    "ADD c int(11) NOT NULL",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -213,7 +213,7 @@ func TestOnline(t *testing.T) {
 		Username:          cfg.User,
 		Password:          cfg.Passwd,
 		Database:          cfg.DBName,
-		Concurrency:       16,
+		Threads:           16,
 		Table:             "testonline3",
 		Alter:             "ADD INDEX(b)",
 		AttemptInplaceDDL: true,
@@ -238,13 +238,13 @@ func TestTableLength(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "thisisareallylongtablenamethisisareallylongtablename60charac",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "thisisareallylongtablenamethisisareallylongtablename60charac",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -255,13 +255,13 @@ func TestTableLength(t *testing.T) {
 	// There is another condition where the error will be in dropping the _old table first
 	// if the character limit is exceeded in that query.
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "thisisareallylongtablenamethisisareallylongtablename64characters",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "thisisareallylongtablenamethisisareallylongtablename64characters",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -323,13 +323,13 @@ func TestBadAlter(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "bot1",
-		Alter:       "badalter",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bot1",
+		Alter:    "badalter",
 	})
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
@@ -339,13 +339,13 @@ func TestBadAlter(t *testing.T) {
 
 	// Renames are not supported.
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "bot1",
-		Alter:       "RENAME COLUMN name TO name2, ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bot1",
+		Alter:    "RENAME COLUMN name TO name2, ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
@@ -356,13 +356,13 @@ func TestBadAlter(t *testing.T) {
 	// This is a different type of rename,
 	// which is coming via a change
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "bot1",
-		Alter:       "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bot1",
+		Alter:    "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
@@ -372,13 +372,13 @@ func TestBadAlter(t *testing.T) {
 
 	// But this is supported (no rename)
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "bot1",
-		Alter:       "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bot1",
+		Alter:    "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
 	})
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
@@ -389,13 +389,13 @@ func TestBadAlter(t *testing.T) {
 	// The REPLACE statement likely relies on the same PRIMARY KEY on the new table,
 	// so things get a lot more complicated if the primary key changes.
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "bot2",
-		Alter:       "DROP PRIMARY KEY",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bot2",
+		Alter:    "DROP PRIMARY KEY",
 	})
 	assert.NoError(t, err) // does not parse alter yet.
 	err = m.Run(context.Background())
@@ -435,7 +435,7 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 		Username:              cfg.User,
 		Password:              cfg.Passwd,
 		Database:              cfg.DBName,
-		Concurrency:           16,
+		Threads:               16,
 		Table:                 "lossychange2",
 		Alter:                 "CHANGE COLUMN id id INT NOT NULL auto_increment", //nolint: dupword
 		DisableTrivialChunker: true,
@@ -469,14 +469,14 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "lossychange3",
-		Alter:       "CHANGE COLUMN b b varchar(200) NOT NULL", //nolint: dupword
-		Checksum:    false,
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "lossychange3",
+		Alter:    "CHANGE COLUMN b b varchar(200) NOT NULL", //nolint: dupword
+		Checksum: false,
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -506,13 +506,13 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "lossychange4",
-		Alter:       "CHANGE COLUMN b b varchar(255) NOT NULL", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "lossychange4",
+		Alter:    "CHANGE COLUMN b b varchar(255) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -542,13 +542,13 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "uniqmytable",
-		Alter:       "ADD UNIQUE INDEX b (b)",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "uniqmytable",
+		Alter:    "ADD UNIQUE INDEX b (b)",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -557,13 +557,13 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 
 	runSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "uniqmytable",
-		Alter:       "ADD UNIQUE INDEX b (b)",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "uniqmytable",
+		Alter:    "ADD UNIQUE INDEX b (b)",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -586,13 +586,13 @@ func TestChangeNonIntPK(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "nonintpk",
-		Alter:       "CHANGE COLUMN b b VARCHAR(255) NOT NULL", //nolint: dupword
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "nonintpk",
+		Alter:    "CHANGE COLUMN b b VARCHAR(255) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
@@ -618,13 +618,13 @@ func TestCheckpoint(t *testing.T) {
 
 	preSetup := func() *Runner {
 		m, err := NewRunner(&Migration{
-			Host:        cfg.Addr,
-			Username:    cfg.User,
-			Password:    cfg.Passwd,
-			Database:    cfg.DBName,
-			Concurrency: 16,
-			Table:       "cpt1",
-			Alter:       "ENGINE=InnoDB",
+			Host:     cfg.Addr,
+			Username: cfg.User,
+			Password: cfg.Passwd,
+			Database: cfg.DBName,
+			Threads:  16,
+			Table:    "cpt1",
+			Alter:    "ENGINE=InnoDB",
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "initial", m.getCurrentState().String())
@@ -767,13 +767,13 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 
 	preSetup := func(alter string) *Runner {
 		m, err := NewRunner(&Migration{
-			Host:        cfg.Addr,
-			Username:    cfg.User,
-			Password:    cfg.Passwd,
-			Database:    cfg.DBName,
-			Concurrency: 16,
-			Table:       "cpt1difft1",
-			Alter:       alter,
+			Host:     cfg.Addr,
+			Username: cfg.User,
+			Password: cfg.Passwd,
+			Database: cfg.DBName,
+			Threads:  16,
+			Table:    "cpt1difft1",
+			Alter:    alter,
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "initial", m.getCurrentState().String())
@@ -893,7 +893,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			Username:              cfg.User,
 			Password:              cfg.Passwd,
 			Database:              cfg.DBName,
-			Concurrency:           16,
+			Threads:               16,
 			Table:                 "e2et1",
 			Alter:                 "ENGINE=InnoDB",
 			DisableTrivialChunker: true,
@@ -925,7 +925,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			BatchSize:   10000,
 		})
 		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:           m.optConcurrency,
+			Concurrency:           m.optThreads,
 			TargetChunkTime:       m.optTargetChunkTime,
 			FinalChecksum:         m.optChecksum,
 			DisableTrivialChunker: m.optDisableTrivialChunker,
@@ -1020,13 +1020,13 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "remainingtbl",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "remainingtbl",
+		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)                         // everything is specified.
 	assert.NoError(t, m.Run(context.Background())) // it's an accepted type.
@@ -1059,13 +1059,13 @@ func TestDropColumn(t *testing.T) {
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "dropcol",
-		Alter:       "DROP COLUMN b, ENGINE=InnoDB", // need both to ensure it is not instant!
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "dropcol",
+		Alter:    "DROP COLUMN b, ENGINE=InnoDB", // need both to ensure it is not instant!
 	})
 	assert.NoError(t, err)
 	assert.NoError(t, m.Run(context.Background()))
