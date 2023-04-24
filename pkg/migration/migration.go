@@ -7,7 +7,7 @@ import (
 )
 
 type Migration struct {
-	Host              string        `name:"host" help:"Hostname" optional:"" default:"127.0.0.1:8030"`
+	Host              string        `name:"host" help:"Hostname" optional:"" default:"127.0.0.1:3306"`
 	Username          string        `name:"username" help:"User" optional:"" default:"msandbox"`
 	Password          string        `name:"password" help:"Password" optional:"" default:"msandbox"`
 	Database          string        `name:"database" help:"Database" optional:"" default:"test"`
