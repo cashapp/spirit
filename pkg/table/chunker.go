@@ -40,37 +40,17 @@ type Chunker interface {
 	SetDynamicChunking(bool)
 }
 
-var _ Chunker = &chunkerBase{}
-
-func NewChunker(t *TableInfo, chunkerTarget time.Duration, disableTrivialChunker bool, logger loggers.Advanced) (Chunker, error) {
-	if t.EstimatedRows < trivialChunkerThreshold && !disableTrivialChunker {
-		// If the row count is low we attach the trivial chunker,
-		// which will return everything as one chunk.
-		return &chunkerBase{Ti: t, logger: logger}, nil
-	}
+func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced) (Chunker, error) {
 	if chunkerTarget == 0 {
 		chunkerTarget = 100 * time.Millisecond
 	}
-	chunkerBase := &chunkerBase{
+	if err := t.isCompatibleWithChunker(); err != nil {
+		return nil, err
+	}
+	return &chunkerUniversal{
 		Ti:            t,
-		chunkSize:     uint64(1000),  // later this might become configurable.
-		ChunkerTarget: chunkerTarget, // this is the main chunker target.
+		chunkSize:     uint64(1000),
+		ChunkerTarget: chunkerTarget,
 		logger:        logger,
-	}
-	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
-	case signedType:
-		return &chunkerSigned{
-			chunkerBase: chunkerBase,
-		}, nil
-	case unsignedType:
-		return &chunkerUnsigned{
-			chunkerBase: chunkerBase,
-		}, nil
-	case binaryType:
-		return &chunkerBinary{
-			chunkerBase: chunkerBase,
-		}, nil
-	default:
-		return nil, ErrUnsupportedPKType
-	}
+	}, nil
 }

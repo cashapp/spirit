@@ -13,14 +13,7 @@ import (
 	"github.com/siddontang/loggers"
 )
 
-type simplifiedKeyType int
-
 const (
-	unknownType simplifiedKeyType = iota
-	signedType
-	unsignedType
-	binaryType
-
 	trivialChunkerThreshold      = 1000
 	lastChunkStatisticsThreshold = 10 * time.Second
 )
@@ -39,11 +32,12 @@ type TableInfo struct {
 	TableName             string
 	PrimaryKey            []string
 	Columns               []string
-	primaryKeyType        string // the MySQL type.
+	pkMySQLTp             string  // the MySQL type.
+	pkDatumTp             datumTp // the datum type.
 	PrimaryKeyIsAutoInc   bool
-	minValue              interface{} // known minValue of pk[0] (using type of PK)
-	maxValue              interface{} // known maxValue of pk[0] (using type of PK)
-	isClosed              bool        // if this tableInfo is closed.
+	minValue              datum // known minValue of pk[0] (using type of PK)
+	maxValue              datum // known maxValue of pk[0] (using type of PK)
+	isClosed              bool  // if this tableInfo is closed.
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
 }
@@ -63,7 +57,7 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 // won't work correctly! Collations also affect chunking behavior in possibly
 // unsafe ways!
 func (t *TableInfo) isCompatibleWithChunker() error {
-	if mySQLTypeToSimplifiedKeyType(t.primaryKeyType) == unknownType {
+	if mySQLTypeToDatumTp(t.pkMySQLTp) == unknownType {
 		return ErrUnsupportedPKType
 	}
 	return nil
@@ -168,11 +162,12 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 	// Get primary key type and auto_inc info.
 	query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
 	var extra string
-	err = t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.primaryKeyType, &extra)
+	err = t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, t.PrimaryKey[0]).Scan(&t.pkMySQLTp, &extra)
 	if err != nil {
 		return err
 	}
-	t.primaryKeyType = removeWidth(t.primaryKeyType)
+	t.pkMySQLTp = removeWidth(t.pkMySQLTp)
+	t.pkDatumTp = mySQLTypeToDatumTp(t.pkMySQLTp)
 	t.PrimaryKeyIsAutoInc = (extra == "auto_increment")
 	return nil
 }
@@ -185,7 +180,7 @@ func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error
 		if err != nil {
 			return err
 		}
-		if mySQLTypeToSimplifiedKeyType(colType) == unknownType {
+		if mySQLTypeToDatumTp(colType) == unknownType {
 			return fmt.Errorf("primary key contains %s which is not memory comparable", colType)
 		}
 	}
@@ -195,46 +190,25 @@ func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error
 // setMinMax is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
 func (t *TableInfo) setMinMax(ctx context.Context) error {
-	// We can't scan into interface{} because the types will be wonky.
-	// See: https://github.com/go-sql-driver/mysql/issues/366
-	// This is a workaround which is a bit ugly, but type preserving.
-	query := fmt.Sprintf("SELECT min(%s), max(%s) FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
-	var err error
-	switch mySQLTypeToSimplifiedKeyType(t.primaryKeyType) {
-	case signedType:
-		var min, max sql.NullInt64
-		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err != nil {
-			return err
-		}
-		// If min/max valid it means there are rows in the table.
-		if min.Valid && max.Valid {
-			t.minValue, t.maxValue = min.Int64, max.Int64
-		}
-	case unsignedType:
-		query = fmt.Sprintf("SELECT IFNULL(min(%s),0), IFNULL(max(%s),0) FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
-		var min, max uint64 // there is no sql.NullUint64
-		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err != nil {
-			return err
-		}
-		if max > 0 { // check for a maxVal, minval=0 could be valid.
-			t.minValue, t.maxValue = min, max
-		}
-	case binaryType:
-		var min, max sql.NullString
-		err = t.db.QueryRowContext(ctx, query).Scan(&min, &max)
-		if err != nil {
-			return err
-		}
-		// If min/max valid it means there are rows in the table.
-		if min.Valid && max.Valid {
-			t.minValue, t.maxValue = min.String, max.String
-		}
-	default:
-		return ErrUnsupportedPKType
+	if t.pkDatumTp == binaryType {
+		return nil // we don't min/max binary types for now.
 	}
-	return err
+	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
+	var min, max string
+	err := t.db.QueryRowContext(ctx, query).Scan(&min, &max)
+	if err != nil {
+		return err
+	}
+
+	t.minValue, err = newDatumFromMySQL(min, t.pkMySQLTp)
+	if err != nil {
+		return err
+	}
+	t.maxValue, err = newDatumFromMySQL(max, t.pkMySQLTp)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Close closes the tableInfo and stops the goroutine that updates the table statistics.

@@ -19,10 +19,6 @@ type Migration struct {
 	Checksum          bool          `name:"checksum" help:"Checksum new table before final cut-over" optional:"" default:"true"`
 	ReplicaDSN        string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
 	ReplicaMaxLag     time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
-
-	// This will be removed soon in another PR: https://github.com/squareup/spirit/pull/94
-	// Keeping it here to minimize the conflicts.
-	DisableTrivialChunker bool `name:"disable-trivial-chunker" help:"Disable the trivial chunker" optional:"" default:"false"`
 }
 
 func (m *Migration) Run() error {

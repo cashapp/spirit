@@ -10,11 +10,11 @@ func TestChunk2String(t *testing.T) {
 	chunk := &Chunk{
 		Key: "id",
 		LowerBound: &Boundary{
-			Value:     100,
+			Value:     newDatum(100, signedType),
 			Inclusive: true,
 		},
 		UpperBound: &Boundary{
-			Value:     200,
+			Value:     newDatum(200, signedType),
 			Inclusive: false,
 		},
 	}
@@ -22,7 +22,7 @@ func TestChunk2String(t *testing.T) {
 	chunk = &Chunk{
 		Key: "id",
 		LowerBound: &Boundary{
-			Value:     100,
+			Value:     newDatum(100, signedType),
 			Inclusive: false,
 		},
 	}
@@ -30,7 +30,7 @@ func TestChunk2String(t *testing.T) {
 	chunk = &Chunk{
 		Key: "id",
 		UpperBound: &Boundary{
-			Value:     200,
+			Value:     newDatum(200, signedType),
 			Inclusive: true,
 		},
 	}

@@ -113,7 +113,7 @@ RETRYLOOP:
 					continue // ignore duplicate key warnings
 				} else {
 					utils.ErrInErr(trx.Rollback())
-					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s", message)
+					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
 				}
 			}
 			// As long as it is a statement that supports affected rows (err == nil)
