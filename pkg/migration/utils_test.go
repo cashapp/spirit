@@ -21,13 +21,13 @@ func TestIsCompatible(t *testing.T) {
 	)`
 	runSQL(t, tbl)
 	assert.True(t, IsCompatible(context.TODO(), &Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "compat1",
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "compat1",
+		Alter:    "ENGINE=InnoDB",
 	}))
 
 	runSQL(t, `DROP TABLE IF EXISTS incompat1`)
@@ -41,13 +41,13 @@ func TestIsCompatible(t *testing.T) {
 	runSQL(t, tbl)
 
 	assert.False(t, IsCompatible(context.TODO(), &Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "incompat1", // no PK
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "incompat1", // no PK
+		Alter:    "ENGINE=InnoDB",
 	}))
 
 	runSQL(t, `DROP TABLE IF EXISTS incompat2`)
@@ -62,13 +62,13 @@ func TestIsCompatible(t *testing.T) {
 	runSQL(t, tbl)
 
 	assert.False(t, IsCompatible(context.TODO(), &Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "incompat2", // VARCHAR PK
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "incompat2", // VARCHAR PK
+		Alter:    "ENGINE=InnoDB",
 	}))
 
 	runSQL(t, `DROP TABLE IF EXISTS incompat3`)
@@ -81,12 +81,12 @@ func TestIsCompatible(t *testing.T) {
 	runSQL(t, tbl)
 
 	assert.False(t, IsCompatible(context.TODO(), &Migration{
-		Host:        cfg.Addr,
-		Username:    cfg.User,
-		Password:    cfg.Passwd,
-		Database:    cfg.DBName,
-		Concurrency: 16,
-		Table:       "incompat3", // varchar in key.
-		Alter:       "ENGINE=InnoDB",
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "incompat3", // varchar in key.
+		Alter:    "ENGINE=InnoDB",
 	}))
 }

@@ -99,13 +99,12 @@ type Runner struct {
 
 	// Configurable Options that might be passed in
 	// defaults will be set in NewRunner()
-	optConcurrency         int
-	optChecksumConcurrency int
-	optTargetChunkTime     time.Duration
-	optAttemptInplaceDDL   bool
-	optChecksum            bool
-	optReplicaDSN          string
-	optReplicaMaxLag       time.Duration
+	optThreads           int
+	optTargetChunkTime   time.Duration
+	optAttemptInplaceDDL bool
+	optChecksum          bool
+	optReplicaDSN        string
+	optReplicaMaxLag     time.Duration
 
 	// Attached logger
 	logger loggers.Advanced
@@ -113,29 +112,28 @@ type Runner struct {
 
 func NewRunner(migration *Migration) (*Runner, error) {
 	m := &Runner{
-		host:                   migration.Host,
-		username:               migration.Username,
-		password:               migration.Password,
-		schemaName:             migration.Database,
-		tableName:              migration.Table,
-		alterStatement:         migration.Alter,
-		optConcurrency:         migration.Concurrency,
-		optChecksumConcurrency: migration.ChecksumConcurrency,
-		optTargetChunkTime:     migration.TargetChunkTime,
-		optAttemptInplaceDDL:   migration.AttemptInplaceDDL,
-		optChecksum:            migration.Checksum,
-		optReplicaDSN:          migration.ReplicaDSN,
-		optReplicaMaxLag:       migration.ReplicaMaxLag,
-		logger:                 logrus.New(),
+		host:                 migration.Host,
+		username:             migration.Username,
+		password:             migration.Password,
+		schemaName:           migration.Database,
+		tableName:            migration.Table,
+		alterStatement:       migration.Alter,
+		optThreads:           migration.Threads,
+		optTargetChunkTime:   migration.TargetChunkTime,
+		optAttemptInplaceDDL: migration.AttemptInplaceDDL,
+		optChecksum:          migration.Checksum,
+		optReplicaDSN:        migration.ReplicaDSN,
+		optReplicaMaxLag:     migration.ReplicaMaxLag,
+		logger:               logrus.New(),
 	}
 	if m.optTargetChunkTime == 0 {
 		m.optTargetChunkTime = 100 * time.Millisecond
 	}
-	if m.optConcurrency == 0 {
-		m.optConcurrency = 4
+	if m.optThreads == 0 {
+		m.optThreads = 4
 	}
-	if m.optChecksumConcurrency == 0 {
-		m.optChecksumConcurrency = m.optConcurrency
+	if m.optReplicaMaxLag == 0 {
+		m.optReplicaMaxLag = 120 * time.Second
 	}
 	if m.host == "" {
 		return nil, errors.New("host is required")
@@ -162,7 +160,7 @@ func (m *Runner) SetLogger(logger loggers.Advanced) {
 func (m *Runner) Run(ctx context.Context) error {
 	m.startTime = time.Now()
 	m.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
-		m.optConcurrency, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
+		m.optThreads, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
 	)
 
 	// Create a database connection
@@ -301,10 +299,13 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 // runChecks wraps around check.RunChecks and adds the context of this migration
 func (m *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 	return check.RunChecks(ctx, check.Resources{
-		DB:      m.db,
-		Replica: m.replica,
-		Table:   m.table,
-		Alter:   m.alterStatement,
+		DB:              m.db,
+		Replica:         m.replica,
+		Table:           m.table,
+		Alter:           m.alterStatement,
+		TargetChunkTime: m.optTargetChunkTime,
+		Threads:         m.optThreads,
+		ReplicaMaxLag:   m.optReplicaMaxLag,
 	}, m.logger, scope)
 }
 
@@ -362,7 +363,7 @@ func (m *Runner) setup(ctx context.Context) error {
 			return err
 		}
 		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:     m.optConcurrency,
+			Concurrency:     m.optThreads,
 			TargetChunkTime: m.optTargetChunkTime,
 			FinalChecksum:   m.optChecksum,
 			Throttler:       &throttler.Noop{},
@@ -373,7 +374,7 @@ func (m *Runner) setup(ctx context.Context) error {
 		}
 		m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 			Logger:      m.logger,
-			Concurrency: m.optConcurrency,
+			Concurrency: m.optThreads,
 			BatchSize:   repl.DefaultBatchSize,
 		})
 		// Start the binary log feed now
@@ -604,7 +605,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// have the checksum enabled to apply all changes safely.
 	m.optChecksum = true
 	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.newTable, &row.CopierConfig{
-		Concurrency:     m.optConcurrency,
+		Concurrency:     m.optThreads,
 		TargetChunkTime: m.optTargetChunkTime,
 		FinalChecksum:   m.optChecksum,
 		Throttler:       &throttler.Noop{},
@@ -618,7 +619,7 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Create a binlog subscriber
 	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
 		Logger:      m.logger,
-		Concurrency: m.optConcurrency,
+		Concurrency: m.optThreads,
 		BatchSize:   repl.DefaultBatchSize,
 	})
 	m.replClient.SetPos(&mysql.Position{
@@ -648,7 +649,7 @@ func (m *Runner) checksum(ctx context.Context) error {
 	m.setCurrentState(stateChecksum)
 	var err error
 	m.checker, err = checksum.NewChecker(m.db, m.table, m.newTable, m.replClient, &checksum.CheckerConfig{
-		Concurrency:     m.optChecksumConcurrency,
+		Concurrency:     m.optThreads,
 		TargetChunkTime: m.optTargetChunkTime,
 		Logger:          m.logger,
 	})

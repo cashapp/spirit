@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"sync"
+	"time"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
@@ -20,13 +21,17 @@ const (
 	ScopePostSetup   ScopeFlag = 1 << 1
 	ScopeCutover     ScopeFlag = 1 << 2
 	ScopePostCutover ScopeFlag = 1 << 3
+	ScopeTesting     ScopeFlag = 1 << 4
 )
 
 type Resources struct {
-	DB      *sql.DB
-	Replica *sql.DB
-	Table   *table.TableInfo
-	Alter   string
+	DB              *sql.DB
+	Replica         *sql.DB
+	Table           *table.TableInfo
+	Alter           string
+	TargetChunkTime time.Duration
+	Threads         int
+	ReplicaMaxLag   time.Duration
 }
 
 type check struct {
