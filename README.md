@@ -14,15 +14,17 @@ The goal of spirit is to apply schema changes much faster than gh-ost. This make
 
 If this is the case, `gh-ost` remains a fine choice.
 
+See [USAGE](usage.md) for more information on how to use spirit.
+
 ## Optimizations
 
 The following are some of the optimizations that make spirit faster than gh-ost:
 
 ### Dynamic Chunking
 
-Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes a target chunk time (such as 2s). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
+Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes a target chunk time (such as 500ms). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
 
-2s is quite "high" for traditional MySQL environments, but remember _spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
+500ms is quite "high" for traditional MySQL environments, but remember _spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
 
 ### Ignore Key Above Watermark
 

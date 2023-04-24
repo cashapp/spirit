@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"sync"
+	"time"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
@@ -24,10 +25,13 @@ const (
 )
 
 type Resources struct {
-	DB      *sql.DB
-	Replica *sql.DB
-	Table   *table.TableInfo
-	Alter   string
+	DB              *sql.DB
+	Replica         *sql.DB
+	Table           *table.TableInfo
+	Alter           string
+	TargetChunkTime time.Duration
+	Threads         int
+	ReplicaMaxLag   time.Duration
 }
 
 type check struct {
