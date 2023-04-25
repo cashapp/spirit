@@ -298,7 +298,7 @@ func TestDynamicChunking(t *testing.T) {
 		chunk, err = chunker.Next()
 		chunker.Feedback(chunk, 50*time.Microsecond) // very short.
 		assert.NoError(t, err)
-		assert.Equal(t, uint64(20), chunk.ChunkSize) // no change.
+		assert.Equal(t, uint64(10), chunk.ChunkSize) // no change.
 	}
 	// On the 11th piece of feedback *with this chunk size*
 	// it finally changes. But no greater than 50% increase at a time.
@@ -318,7 +318,7 @@ func TestDynamicChunking(t *testing.T) {
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
 
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":45,\"LowerBound\":{\"Value\":1076,\"Inclusive\":true},\"UpperBound\":{\"Value\":1121,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":22,\"LowerBound\":{\"Value\":584,\"Inclusive\":true},\"UpperBound\":{\"Value\":606,\"Inclusive\":false}}", watermark)
 
 	// Start everything over again as t2.
 	t2 := newTableInfo4Test("test", "t1")
@@ -340,7 +340,7 @@ func TestDynamicChunking(t *testing.T) {
 	// we would have to worry about off-by-1 errors.
 	chunk, err = chunker2.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, "1076", chunk.LowerBound.Value.String())
+	assert.Equal(t, "584", chunk.LowerBound.Value.String())
 }
 
 // These tests require a DB connection.

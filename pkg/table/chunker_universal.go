@@ -139,7 +139,7 @@ func (t *chunkerUniversal) Close() error {
 	return nil
 }
 
-// ChunkerFeedback is a way for consumers of chunks to give feedback on how long
+// Feedback is a way for consumers of chunks to give feedback on how long
 // processing the chunk took. It is incorporated into the calculation of future
 // chunk sizes.
 func (t *chunkerUniversal) Feedback(chunk *Chunk, d time.Duration) {
@@ -268,6 +268,7 @@ func (t *chunkerUniversal) open() (err error) {
 	t.isOpen = true
 	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp)
 	t.finalChunkSent = false
+	t.chunkSize = StartingChunkSize
 
 	// Make sure min/max value are always specified
 	// To simplify the code in NextChunk funcs.
@@ -326,6 +327,8 @@ func (t *chunkerUniversal) updateChunkerTarget(newTarget uint64) {
 func (t *chunkerUniversal) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 	newTargetRows := float64(newTarget)
 
+	// we only scale up 50% at a time in case the data from previous chunks had "gaps" leading to quicker than expected time.
+	// this is for safety. If the chunks are really taking less time than our target, it will gradually increase chunk size
 	if newTargetRows > float64(t.chunkSize)*MaxDynamicStepFactor {
 		newTargetRows = float64(t.chunkSize) * MaxDynamicStepFactor
 	}
