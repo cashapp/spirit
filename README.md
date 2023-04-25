@@ -30,7 +30,7 @@ Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes 
 
 As spirit is copying rows, it keeps track of the highest key-value that either has been copied, or could be in the process of being copied. This is called the "high watermark". As rows are discovered from the binary log, they can be discarded if the key is above the high watermark. This is because once the copier reaches this point, it is guaranteed it will copy the latest version of the row.
 
-In practice, this optimization works really well when your table has a `auto_increment` `PRIMARY KEY` and most of the inserts or modifications are at the end of the table.
+In practice, this optimization works really well when your table has an `auto_increment` `PRIMARY KEY` and most of the inserts or modifications are at the end of the table.
 
 **Note:** Spirit does not support `VARCHAR` primary keys, so it does not need to worry about collation issues when comparing if a key is above another key.
 
@@ -56,7 +56,7 @@ Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying t
 
 ## Performance
 
-Our internal goal for Spirit is to be able to migrate a 10TiB table in under 5 days. We are able to achieve this in most-cases, but it depends a lot on:
+Our internal goal for Spirit is to be able to migrate a 10TiB table in under 5 days. We believe we are able to achieve this in most-cases, but it depends on:
 - The version of MySQL used (5.7 is much worse due `innodb_autoinc_lock_mode=1` being the default).
 - How many secondary indexes the table has.
 - How many active changes are being made to the table.
@@ -70,7 +70,7 @@ For proof that it is possible, here is the final output from a migration on a 10
 time="2023-04-21T07:08:24Z" level=info msg="apply complete: instant-ddl=false inplace-ddl=false total-chunks=926661 copy-rows-time=59h27m9.285730804s checksum-time=6h11m2.244079686s total-time=65h38m12.790047338s"
 ```
 
-This table does [include some secondary indexes](https://github.com/square/finch/blob/65fef3da97cfb24892ef283bc93ab8f09c4fb732/test/workload/xfer/schema.sql#L39-L62), but the table was idle and no replication throttler was used. The configuration used`threads=8` and `target-chunk-time=2s`, which is on the higher end of normal. We attempted to run a comparison with gh-ost (w/a 10K chunk-size), but canceled it after 10 days.
+This table does [include some secondary indexes](https://github.com/square/finch/blob/65fef3da97cfb24892ef283bc93ab8f09c4fb732/test/workload/xfer/schema.sql#L39-L62), but the table was idle and no replication throttler was used. The configuration used `threads=8` and `target-chunk-time=2s`, which is on the higher end of normal. We attempted to run a comparison with gh-ost (w/a 10K chunk-size), but canceled it after 10 days.
 
 For a non-idle table, the performance delta is even greater. Consider the following microbench performed on a m1 mac with 10 cores and MySQL 8.0.31 using defaults:
 
