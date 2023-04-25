@@ -626,95 +626,95 @@ func TestCheckpoint(t *testing.T) {
 		})
 		assert.NoError(t, err)
 		assert.Equal(t, "initial", m.getCurrentState().String())
-		// Usually we would call m.Run() but we want to step through
+		// Usually we would call r.Run() but we want to step through
 		// the migration process manually.
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
 		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
 		return m
 	}
 
-	m := preSetup()
-	// migrationRunner.Run usually calls m.Setup() here.
+	r := preSetup()
+	// migrationRunner.Run usually calls r.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
 	// Because this is the first run, it can't.
 
-	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
+	assert.Error(t, r.resumeFromCheckpoint(context.TODO()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createNewTable(context.TODO()))
-	assert.NoError(t, m.alterNewTable(context.TODO()))
-	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	assert.NoError(t, r.createNewTable(context.TODO()))
+	assert.NoError(t, r.alterNewTable(context.TODO()))
+	assert.NoError(t, r.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
+	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = m.replClient.Run()
+	err = r.replClient.Run()
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
-	// Instead of calling m.copyRows() we will step through it manually.
+	// Instead of calling r.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
-	m.setCurrentState(stateCopyRows)
-	assert.Equal(t, "copyRows", m.getCurrentState().String())
+	r.copier.StartTime = time.Now()
+	r.setCurrentState(stateCopyRows)
+	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
 	// because we are not calling copier.Run() we need to manually open.
-	assert.NoError(t, m.copier.Open4Test())
+	assert.NoError(t, r.copier.Open4Test())
 
 	// first chunk.
-	chunk1, err := m.copier.Next4Test()
+	chunk1, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk2, err := m.copier.Next4Test()
+	chunk2, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 
-	chunk3, err := m.copier.Next4Test()
+	chunk3, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 
 	// Assert there is no watermark yet, because we've not finished
 	// copying any of the chunks.
-	_, err = m.copier.GetLowWatermark()
+	_, err = r.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
-	assert.Error(t, m.dumpCheckpoint(context.TODO()))
+	assert.Error(t, r.dumpCheckpoint(context.TODO()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
 	// Let's complete them in the order of 2, 1, 3. When 2 phones home first
 	// it should be queued. Then when 1 phones home it should apply and de-queue 2.
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk2))
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk1))
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk3))
+	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk2))
+	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk1))
+	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk3))
 
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
 
-	watermark, err := m.copier.GetLowWatermark()
+	watermark, err := r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
-	// Close the db connection since m is to be destroyed.
-	assert.NoError(t, m.db.Close())
+	// Close the db connection since r is to be destroyed.
+	assert.NoError(t, r.db.Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
-	m = preSetup()
-	assert.NoError(t, m.resumeFromCheckpoint(context.TODO()))
+	r = preSetup()
+	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
 
 	// Start the binary log feed just before copy rows starts.
-	err = m.replClient.Run()
+	err = r.replClient.Run()
 	assert.NoError(t, err)
 
 	// This opens the table at the checkpoint (table.OpenAtWatermark())
@@ -722,31 +722,31 @@ func TestCheckpoint(t *testing.T) {
 	// the watermark to this point so new watermarks "align" correctly.
 	// So lets now call NextChunk to verify.
 
-	chunk, err := m.copier.Next4Test()
+	chunk, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, "1001", chunk.LowerBound.Value.String())
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from
 	// a restored checkpoint state. We won't have advanced anywhere from
 	// the last checkpoint because on restore, the LowerBound is taken.
-	watermark, err = m.copier.GetLowWatermark()
+	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
 	// Let's confirm we do advance the watermark.
 	for i := 0; i < 10; i++ {
-		chunk, err = m.copier.Next4Test()
+		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+		assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
 	}
 
-	watermark, err = m.copier.GetLowWatermark()
+	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":11001,\"Inclusive\":true},\"UpperBound\":{\"Value\":12001,\"Inclusive\":false}}", watermark)
-	assert.NoError(t, m.db.Close())
+	assert.NoError(t, r.db.Close())
 }
 
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
@@ -782,7 +782,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
 		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -801,7 +801,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -906,7 +906,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, err)
 		defer m.db.Close()
 		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -918,15 +918,15 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 		assert.NoError(t, m.alterNewTable(context.TODO()))
 		assert.NoError(t, m.createCheckpointTable(context.TODO()))
 		logger := logrus.New()
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
+		m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 			Logger:      logger,
 			Concurrency: 4,
 			BatchSize:   10000,
 		})
 		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:     m.optThreads,
-			TargetChunkTime: m.optTargetChunkTime,
-			FinalChecksum:   m.optChecksum,
+			Concurrency:     m.migration.Threads,
+			TargetChunkTime: m.migration.TargetChunkTime,
+			FinalChecksum:   m.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          m.logger,
 		})
