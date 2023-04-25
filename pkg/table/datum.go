@@ -154,7 +154,7 @@ func (d datum) Add(addVal uint64) datum {
 	return ret
 }
 
-// Return the diff between 2 datums as a uint64.
+// Range returns the diff between 2 datums as an uint64.
 func (d datum) Range(d2 datum) uint64 {
 	if d.tp == signedType {
 		return uint64(d.val.(int64) - d2.val.(int64))
