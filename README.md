@@ -57,7 +57,7 @@ Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying t
 ## Performance
 
 Our internal goal for Spirit is to be able to migrate a 10TiB table in under 5 days. We believe we are able to achieve this in most-cases, but it depends on:
-- The version of MySQL used (5.7 is much worse due `innodb_autoinc_lock_mode=1` being the default).
+- The version of MySQL used (5.7 is much worse due to `innodb_autoinc_lock_mode=1` being the default).
 - How many secondary indexes the table has.
 - How many active changes are being made to the table.
 - The `threads` and `target-chunk-time` that is used.
