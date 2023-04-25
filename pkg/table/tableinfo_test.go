@@ -278,11 +278,11 @@ func TestDynamicChunking(t *testing.T) {
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(100), chunk.ChunkSize) // immediate change from before
-	chunker.Feedback(chunk, time.Second)          // way too long again, it will reduce to 20
+	chunker.Feedback(chunk, time.Second)          // way too long again, it will reduce to 10
 
 	newChunk, err := chunker.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(20), newChunk.ChunkSize) // immediate change from before
+	assert.Equal(t, uint64(10), newChunk.ChunkSize) // immediate change from before
 	// Feedback is only taken if the chunk.ChunkSize matches the current size.
 	// so lets give bad feedback and see no change.
 	newChunk.ChunkSize = 1234
@@ -290,7 +290,7 @@ func TestDynamicChunking(t *testing.T) {
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(20), chunk.ChunkSize) // no change
+	assert.Equal(t, uint64(10), chunk.ChunkSize) // no change
 	chunker.Feedback(chunk, 50*time.Microsecond) //must give feedback to advance watermark.
 
 	// Feedback to increase the chunk size is more gradual.
@@ -300,11 +300,11 @@ func TestDynamicChunking(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, uint64(20), chunk.ChunkSize) // no change.
 	}
-	// On the 11st piece of feedback *with this chunk size*
+	// On the 11th piece of feedback *with this chunk size*
 	// it finally changes. But no greater than 50% increase at a time.
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(30), chunk.ChunkSize)
+	assert.Equal(t, uint64(15), chunk.ChunkSize)
 	chunker.Feedback(chunk, 50*time.Microsecond)
 
 	// Advance the watermark a little bit.

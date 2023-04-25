@@ -325,16 +325,15 @@ func (t *chunkerUniversal) updateChunkerTarget(newTarget uint64) {
 
 func (t *chunkerUniversal) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 	newTargetRows := float64(newTarget)
-	referenceSize := float64(StartingChunkSize)
-	if newTargetRows < (referenceSize / MaxDynamicScaleFactor) {
-		newTargetRows = referenceSize / MaxDynamicScaleFactor
-	}
-	if newTargetRows > (referenceSize * MaxDynamicScaleFactor) {
-		newTargetRows = referenceSize * MaxDynamicScaleFactor
-	}
+
 	if newTargetRows > float64(t.chunkSize)*MaxDynamicStepFactor {
 		newTargetRows = float64(t.chunkSize) * MaxDynamicStepFactor
 	}
+
+	if newTargetRows > MaxDynamicRowSize {
+		newTargetRows = MaxDynamicRowSize
+	}
+
 	if newTargetRows < MinDynamicRowSize {
 		newTargetRows = MinDynamicRowSize
 	}
