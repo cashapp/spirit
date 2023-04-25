@@ -25,7 +25,11 @@ func replicaPrivilegeCheck(ctx context.Context, r Resources, logger loggers.Adva
 	if version == "8" {
 		lagQuery = throttler.MySQL8LagQuery
 	}
-	var output string
-	err := r.Replica.QueryRowContext(ctx, lagQuery).Scan(&output) //nolint: execinquery
+	rows, err := r.Replica.Query(lagQuery) //nolint: execinquery
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	_, err = scanToMap(rows)
 	return err
 }
