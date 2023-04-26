@@ -22,12 +22,12 @@ func IsCompatible(ctx context.Context, migration *Migration) bool {
 	}
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
+	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	if err := m.table.SetInfo(ctx); err != nil {
 		return false
 	}
 	// Check that we can get a chunker.
-	if _, err := table.NewChunker(m.table, m.optTargetChunkTime, m.logger); err != nil {
+	if _, err := table.NewChunker(m.table, m.migration.TargetChunkTime, m.logger); err != nil {
 		return false
 	}
 	return true
