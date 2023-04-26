@@ -132,11 +132,10 @@ func TestRetryableTrx(t *testing.T) {
 		_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")
 		assert.NoError(t, err)
 		wg.Done()
-		time.Sleep(4 * time.Second)
-		err = trx.Rollback()
-		assert.NoError(t, err)
 	}()
 	wg.Wait()
-	_, err = RetryableTransaction(context.Background(), db, false, "UPDATE test.dbexec SET colb=123 WHERE id = 2")
+	_, err = RetryableTransaction(context.Background(), db, false, "UPDATE test.dbexec SET colb=123 WHERE id = 2") // this will fail, since it times out and exhausts retries.
 	assert.Error(t, err)
+	err = trx.Rollback() // now we can rollback.
+	assert.NoError(t, err)
 }
