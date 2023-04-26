@@ -13,9 +13,12 @@ import (
 )
 
 const (
+	errLockWaitTimeout = 1205
+	errDeadlock        = 1213
+)
+
+var (
 	maxRetries            = 5
-	errLockWaitTimeout    = 1205
-	errDeadlock           = 1213
 	innodbLockWaitTimeout = 3 // usually fine, since it's a lock on a row.
 	mdlLockWaitTimeout    = 5 // safer to make slightly longer.
 )
