@@ -30,6 +30,7 @@ type TableInfo struct {
 	EstimatedRows         uint64
 	SchemaName            string
 	TableName             string
+	QuotedName            string
 	PrimaryKey            []string
 	Columns               []string
 	pkMySQLTp             string  // the MySQL type.
@@ -47,6 +48,7 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 		db:         db,
 		SchemaName: schema,
 		TableName:  table,
+		QuotedName: fmt.Sprintf("`%s`.`%s`", schema, table),
 	}
 }
 
@@ -63,9 +65,9 @@ func (t *TableInfo) isCompatibleWithChunker() error {
 	return nil
 }
 
-func (t *TableInfo) QuotedName() string {
-	return fmt.Sprintf("`%s`.`%s`", t.SchemaName, t.TableName)
-}
+//func (t *TableInfo) QuotedName() string {
+//	return fmt.Sprintf("`%s`.`%s`", t.SchemaName, t.TableName)
+//}
 
 // ExtractPrimaryKeyFromRowImage helps extract the PRIMARY KEY from a row image.
 // It uses our knowledge of the ordinal position of columns to find the
@@ -106,7 +108,7 @@ func (t *TableInfo) SetInfo(ctx context.Context) error {
 // setRowEstimate is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
 func (t *TableInfo) setRowEstimate(ctx context.Context) error {
-	_, err := t.db.ExecContext(ctx, "ANALYZE TABLE "+t.QuotedName())
+	_, err := t.db.ExecContext(ctx, "ANALYZE TABLE "+t.QuotedName)
 	if err != nil {
 		return err
 	}
@@ -193,7 +195,7 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 	if t.pkDatumTp == binaryType {
 		return nil // we don't min/max binary types for now.
 	}
-	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName())
+	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName)
 	var min, max string
 	err := t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 	if err != nil {

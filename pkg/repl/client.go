@@ -376,7 +376,7 @@ func (c *Client) createDeleteStmt(deleteKeys []string) string {
 	var deleteStmt string
 	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
-			c.newTable.QuotedName(),
+			c.newTable.QuotedName,
 			strings.Join(c.newTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(deleteKeys),
 		)
@@ -388,10 +388,10 @@ func (c *Client) createReplaceStmt(replaceKeys []string) string {
 	var replaceStmt string
 	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
-			c.newTable.QuotedName(),
+			c.newTable.QuotedName,
 			utils.IntersectColumns(c.table, c.newTable, false),
 			utils.IntersectColumns(c.table, c.newTable, false),
-			c.table.QuotedName(),
+			c.table.QuotedName,
 			strings.Join(c.newTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(replaceKeys),
 		)

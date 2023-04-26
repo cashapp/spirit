@@ -82,12 +82,12 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		utils.IntersectColumns(c.table, c.newTable, true),
-		c.table.QuotedName(),
+		c.table.QuotedName,
 		chunk.String(),
 	)
 	target := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		utils.IntersectColumns(c.table, c.newTable, true),
-		c.newTable.QuotedName(),
+		c.newTable.QuotedName,
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
