@@ -129,7 +129,7 @@ func TestRetryableTrx(t *testing.T) {
 	assert.NoError(t, err)
 	wg.Add(1)
 	go func() {
-		_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 1 FOR UPDATE")
+		_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")
 		assert.NoError(t, err)
 		wg.Done()
 		time.Sleep(4 * time.Second)
@@ -137,6 +137,6 @@ func TestRetryableTrx(t *testing.T) {
 		assert.NoError(t, err)
 	}()
 	wg.Wait()
-	_, err = RetryableTransaction(context.Background(), db, false, "UPDATE test.dbexec SET colb=123 WHERE id = 1")
+	_, err = RetryableTransaction(context.Background(), db, false, "UPDATE test.dbexec SET colb=123 WHERE id = 2")
 	assert.Error(t, err)
 }
