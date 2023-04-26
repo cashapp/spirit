@@ -43,7 +43,7 @@ func TestMySQL57Throttler(t *testing.T) {
 	db, err := sql.Open("mysql", replicaDSN)
 	assert.NoError(t, err)
 
-	//	he MySQL 5.7 throttler should work with MySQL 8.0
+	// the MySQL 5.7 throttler should work with MySQL 8.0
 	// So we can always test this.
 	loopInterval = 50 * time.Millisecond
 	throttler := &MySQL57Replica{
@@ -60,7 +60,7 @@ func TestMySQL57Throttler(t *testing.T) {
 
 	// BlockWait until it catches up, but it should expire
 	// because the 1s loop is set to 1ns
-	blockWaitWaitLoop = 1 * time.Nanosecond
+	blockWaitInterval = 1 * time.Nanosecond
 	throttler.BlockWait() // prints to log, but allows some progress.
 
 	// Wait >50ms and the loop should update the lag
