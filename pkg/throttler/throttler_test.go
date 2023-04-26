@@ -22,7 +22,7 @@ func TestThrottlerInterface(t *testing.T) {
 
 	//	NewReplicationThrottler will attach either MySQL 8.0 or MySQL 5.7 throttler
 	loopInterval = 1 * time.Millisecond
-	throttler, err := NewReplicationThrottler(db, time.Duration(5*time.Second), logrus.New())
+	throttler, err := NewReplicationThrottler(db, 5*time.Second, logrus.New())
 	assert.NoError(t, err)
 	assert.NoError(t, throttler.Open())
 
@@ -49,7 +49,7 @@ func TestMySQL57Throttler(t *testing.T) {
 	throttler := &MySQL57Replica{
 		Repl: Repl{
 			replica:      db,
-			lagTolerance: time.Duration(5 * time.Second),
+			lagTolerance: 5 * time.Second,
 			logger:       logrus.New(),
 		},
 	}
@@ -75,12 +75,12 @@ func TestMySQL57Throttler(t *testing.T) {
 func TestNoopThrottler(t *testing.T) {
 	throttler := &Noop{}
 	assert.NoError(t, throttler.Open())
-	throttler.currentLag = time.Duration(1 * time.Second)
-	throttler.lagTolerance = time.Duration(2 * time.Second)
+	throttler.currentLag = 1 * time.Second
+	throttler.lagTolerance = 2 * time.Second
 	assert.False(t, throttler.IsThrottled())
 	assert.NoError(t, throttler.UpdateLag())
 	throttler.BlockWait()
-	throttler.lagTolerance = time.Duration(100 * time.Millisecond)
+	throttler.lagTolerance = 100 * time.Millisecond
 	assert.True(t, throttler.IsThrottled())
 	assert.NoError(t, throttler.Close())
 }
