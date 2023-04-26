@@ -94,3 +94,6 @@ Writing a new data migration tool is scary, since bugs have real consequences (d
 1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable. We believe we've managed to mitigate the other risks up until cut-over with the introduction of a checksum feature, which is enabled by default.
 2. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
 3. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
+
+## Development
+See [DEVELOPMENT.md](DEVELOPMENT.md).
