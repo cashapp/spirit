@@ -41,7 +41,7 @@ const (
 	statusInterval          = 10 * time.Second
 	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
-	// I expect we will change this to 1hr-24hr in future.
+	// I expect we will change this to 1hr-24hr in the future.
 	binlogPerodicFlushInterval = 30 * time.Second
 )
 
@@ -70,13 +70,7 @@ func (s migrationState) String() string {
 }
 
 type Runner struct {
-	host           string
-	username       string
-	password       string
-	tableName      string
-	schemaName     string
-	alterStatement string
-
+	migration       *Migration
 	db              *sql.DB
 	replica         *sql.DB
 	table           *table.TableInfo
@@ -97,147 +91,127 @@ type Runner struct {
 	usedInstantDDL bool
 	usedInplaceDDL bool
 
-	// Configurable Options that might be passed in
-	// defaults will be set in NewRunner()
-	optThreads           int
-	optTargetChunkTime   time.Duration
-	optAttemptInplaceDDL bool
-	optChecksum          bool
-	optReplicaDSN        string
-	optReplicaMaxLag     time.Duration
-
 	// Attached logger
 	logger loggers.Advanced
 }
 
-func NewRunner(migration *Migration) (*Runner, error) {
-	m := &Runner{
-		host:                 migration.Host,
-		username:             migration.Username,
-		password:             migration.Password,
-		schemaName:           migration.Database,
-		tableName:            migration.Table,
-		alterStatement:       migration.Alter,
-		optThreads:           migration.Threads,
-		optTargetChunkTime:   migration.TargetChunkTime,
-		optAttemptInplaceDDL: migration.AttemptInplaceDDL,
-		optChecksum:          migration.Checksum,
-		optReplicaDSN:        migration.ReplicaDSN,
-		optReplicaMaxLag:     migration.ReplicaMaxLag,
-		logger:               logrus.New(),
+func NewRunner(m *Migration) (*Runner, error) {
+	r := &Runner{
+		migration: m,
+		logger:    logrus.New(),
 	}
-	if m.optTargetChunkTime == 0 {
-		m.optTargetChunkTime = 100 * time.Millisecond
+	if r.migration.TargetChunkTime == 0 {
+		r.migration.TargetChunkTime = 100 * time.Millisecond
 	}
-	if m.optThreads == 0 {
-		m.optThreads = 4
+	if r.migration.Threads == 0 {
+		r.migration.Threads = 4
 	}
-	if m.optReplicaMaxLag == 0 {
-		m.optReplicaMaxLag = 120 * time.Second
+	if r.migration.ReplicaMaxLag == 0 {
+		r.migration.ReplicaMaxLag = 120 * time.Second
 	}
-	if m.host == "" {
+	if r.migration.Host == "" {
 		return nil, errors.New("host is required")
 	}
-	if !strings.Contains(m.host, ":") {
-		m.host = fmt.Sprintf("%s:%d", m.host, 3306)
+	if !strings.Contains(r.migration.Host, ":") {
+		r.migration.Host = fmt.Sprintf("%s:%d", r.migration.Host, 3306)
 	}
-	if m.schemaName == "" {
+	if r.migration.Database == "" {
 		return nil, errors.New("schema name is required")
 	}
-	if m.tableName == "" {
+	if r.migration.Table == "" {
 		return nil, errors.New("table name is required")
 	}
-	if m.alterStatement == "" {
+	if r.migration.Alter == "" {
 		return nil, errors.New("alter statement is required")
 	}
-	return m, nil
+	return r, nil
 }
 
-func (m *Runner) SetLogger(logger loggers.Advanced) {
-	m.logger = logger
+func (r *Runner) SetLogger(logger loggers.Advanced) {
+	r.logger = logger
 }
 
-func (m *Runner) Run(ctx context.Context) error {
-	m.startTime = time.Now()
-	m.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
-		m.optThreads, m.optTargetChunkTime, m.schemaName, m.tableName, m.alterStatement,
+func (r *Runner) Run(ctx context.Context) error {
+	r.startTime = time.Now()
+	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
+		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.migration.Table, r.migration.Alter,
 	)
 
 	// Create a database connection
-	// It will be closed in m.Close()
+	// It will be closed in r.Close()
 	var err error
-	m.db, err = sql.Open("mysql", m.dsn())
+	r.db, err = sql.Open("mysql", r.dsn())
 	if err != nil {
 		return err
 	}
-	if err := m.db.Ping(); err != nil {
+	if err := r.db.Ping(); err != nil {
 		return err
 	}
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.db, m.schemaName, m.tableName)
-	if err := m.table.SetInfo(ctx); err != nil {
+	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
 	// when it is compatible. If it returns no error, that means it
 	// has been successful and the DDL is complete.
-	err = m.attemptMySQLDDL(ctx)
+	err = r.attemptMySQLDDL(ctx)
 	if err == nil {
-		m.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v", m.usedInstantDDL, m.usedInplaceDDL)
+		r.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v", r.usedInstantDDL, r.usedInplaceDDL)
 		return nil // success!
 	}
 
 	// Perform preflight basic checks.
-	if err := m.runChecks(ctx, check.ScopePreflight); err != nil {
+	if err := r.runChecks(ctx, check.ScopePreflight); err != nil {
 		return err
 	}
 
 	// Perform setup steps, including resuming from a checkpoint (if available)
 	// and creating the new and checkpoint tables.
 	// The replication client is also created here.
-	if err := m.setup(ctx); err != nil {
+	if err := r.setup(ctx); err != nil {
 		return err
 	}
 
 	// Run post-setup checks
-	if err := m.runChecks(ctx, check.ScopePostSetup); err != nil {
+	if err := r.runChecks(ctx, check.ScopePostSetup); err != nil {
 		return err
 	}
 
-	go m.dumpStatus()                    // start periodically writing status
-	go m.dumpCheckpointContinuously(ctx) // start periodically dumping the checkpoint.
+	go r.dumpStatus()                    // start periodically writing status
+	go r.dumpCheckpointContinuously(ctx) // start periodically dumping the checkpoint.
 
 	// Perform the main copy rows task. This is where the majority
 	// of migrations usually spend time.
-	m.setCurrentState(stateCopyRows)
-	if err := m.copier.Run(ctx); err != nil {
+	r.setCurrentState(stateCopyRows)
+	if err := r.copier.Run(ctx); err != nil {
 		return err
 	}
-	m.logger.Info("copy rows complete")
+	r.logger.Info("copy rows complete")
 
 	// Perform steps to prepare for final cutover.
 	// This includes computing an optional checksum,
 	// catching up on replClient apply, running ANALYZE TABLE so
-	// that the statistics will be up to date on cutover.
-	if err := m.prepareForCutover(ctx); err != nil {
+	// that the statistics will be up-to-date on cutover.
+	if err := r.prepareForCutover(ctx); err != nil {
 		return err
 	}
 	// Run any checks that need to be done pre-cutover.
-	if err := m.runChecks(ctx, check.ScopeCutover); err != nil {
+	if err := r.runChecks(ctx, check.ScopeCutover); err != nil {
 		return err
 	}
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
-	m.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(m.db, m.table, m.newTable, m.replClient, m.logger)
+	r.setCurrentState(stateCutOver)
+	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.logger)
 	if err != nil {
 		return err
 	}
 	// Drop the _old table if it exists. This ensures
 	// that the rename will succeed (although there is a brief race)
-	if err := m.dropOldTable(ctx); err != nil {
+	if err := r.dropOldTable(ctx); err != nil {
 		return err
 	}
 	if err := cutover.Run(ctx); err != nil {
@@ -245,16 +219,16 @@ func (m *Runner) Run(ctx context.Context) error {
 	}
 
 	checksumTime := time.Duration(0)
-	if m.checker != nil {
-		checksumTime = m.checker.ExecTime
+	if r.checker != nil {
+		checksumTime = r.checker.ExecTime
 	}
-	m.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v total-chunks=%v copy-rows-time=%s checksum-time=%s total-time=%s",
-		m.usedInstantDDL,
-		m.usedInplaceDDL,
-		m.copier.CopyChunksCount,
-		m.copier.ExecTime,
+	r.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v total-chunks=%v copy-rows-time=%s checksum-time=%s total-time=%s",
+		r.usedInstantDDL,
+		r.usedInplaceDDL,
+		r.copier.CopyChunksCount,
+		r.copier.ExecTime,
 		checksumTime,
-		time.Since(m.startTime),
+		time.Since(r.startTime),
 	)
 	return nil
 }
@@ -263,11 +237,11 @@ func (m *Runner) Run(ctx context.Context) error {
 // most of these steps are technically optional, but skipping them
 // could for example cause a stall during the cutover if the replClient
 // has too many pending updates.
-func (m *Runner) prepareForCutover(ctx context.Context) error {
-	m.setCurrentState(stateApplyChangeset)
+func (r *Runner) prepareForCutover(ctx context.Context) error {
+	r.setCurrentState(stateApplyChangeset)
 	// Disable the periodic flush and flush all pending events.
-	m.replClient.StopPeriodicFlush()
-	if err := m.replClient.Flush(ctx); err != nil {
+	r.replClient.StopPeriodicFlush()
+	if err := r.replClient.Flush(ctx); err != nil {
 		return err
 	}
 
@@ -275,10 +249,10 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 	// This is required so on cutover plans don't go sideways, which
 	// is at elevated risk because the batch loading can cause statistics
 	// to be out of date.
-	m.setCurrentState(stateAnalyzeTable)
-	stmt := fmt.Sprintf("ANALYZE TABLE %s", m.newTable.QuotedName())
-	m.logger.Infof("Running: %s", stmt)
-	if err := dbconn.DBExec(ctx, m.db, stmt); err != nil {
+	r.setCurrentState(stateAnalyzeTable)
+	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName())
+	r.logger.Infof("Running: %s", stmt)
+	if err := dbconn.DBExec(ctx, r.db, stmt); err != nil {
 		return err
 	}
 
@@ -288,8 +262,8 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 	// a resume-from-checkpoint operation, the checksum is NOT optional.
 	// This is because adding a unique index can not be differentiated from a
 	// duplicate key error caused by retrying partial work.
-	if m.optChecksum {
-		if err := m.checksum(ctx); err != nil {
+	if r.migration.Checksum {
+		if err := r.checksum(ctx); err != nil {
 			return err
 		}
 	}
@@ -297,16 +271,16 @@ func (m *Runner) prepareForCutover(ctx context.Context) error {
 }
 
 // runChecks wraps around check.RunChecks and adds the context of this migration
-func (m *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
+func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 	return check.RunChecks(ctx, check.Resources{
-		DB:              m.db,
-		Replica:         m.replica,
-		Table:           m.table,
-		Alter:           m.alterStatement,
-		TargetChunkTime: m.optTargetChunkTime,
-		Threads:         m.optThreads,
-		ReplicaMaxLag:   m.optReplicaMaxLag,
-	}, m.logger, scope)
+		DB:              r.db,
+		Replica:         r.replica,
+		Table:           r.table,
+		Alter:           r.migration.Alter,
+		TargetChunkTime: r.migration.TargetChunkTime,
+		Threads:         r.migration.Threads,
+		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
+	}, r.logger, scope)
 }
 
 // attemptMySQLDDL "attempts" to use DDL directly on MySQL with an assertion
@@ -316,19 +290,19 @@ func (m *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 // operation, because keeping track of which operations are "INSTANT"
 // is incredibly difficult. It will depend on MySQL minor version,
 // and could possibly be specific to the table.
-func (m *Runner) attemptMySQLDDL(ctx context.Context) error {
-	err := m.attemptInstantDDL(ctx)
+func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
+	err := r.attemptInstantDDL(ctx)
 	if err == nil {
-		m.usedInstantDDL = true // success
+		r.usedInstantDDL = true // success
 		return nil
 	}
 	// Inplace DDL is feature gated because it blocks replicas.
 	// It's only safe to do in aurora GLOBAL because replicas do not
 	// use the binlog.
-	if m.optAttemptInplaceDDL {
-		err = m.attemptInplaceDDL(ctx)
+	if r.migration.AttemptInplaceDDL {
+		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
-			m.usedInplaceDDL = true // success
+			r.usedInplaceDDL = true // success
 			return nil
 		}
 	}
@@ -338,136 +312,136 @@ func (m *Runner) attemptMySQLDDL(ctx context.Context) error {
 	return err
 }
 
-func (m *Runner) dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", m.username, m.password, m.host, m.schemaName)
+func (r *Runner) dsn() string {
+	return fmt.Sprintf("%s:%s@tcp(%s)/%s", r.migration.Username, r.migration.Password, r.migration.Host, r.migration.Database)
 }
 
-func (m *Runner) setup(ctx context.Context) error {
+func (r *Runner) setup(ctx context.Context) error {
 	// Drop the old table. It shouldn't exist, but it could.
-	if err := m.dropOldTable(ctx); err != nil {
+	if err := r.dropOldTable(ctx); err != nil {
 		return err
 	}
 
 	// First attempt to resume from a checkpoint.
 	// It's OK if it fails, it just means it's a fresh migration.
-	if err := m.resumeFromCheckpoint(ctx); err != nil {
+	if err := r.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
-		m.logger.Infof("could not resume from checkpoint: reason=%s", err)
-		if err := m.createNewTable(ctx); err != nil {
+		r.logger.Infof("could not resume from checkpoint: reason=%s", err)
+		if err := r.createNewTable(ctx); err != nil {
 			return err
 		}
-		if err := m.alterNewTable(ctx); err != nil {
+		if err := r.alterNewTable(ctx); err != nil {
 			return err
 		}
-		if err := m.createCheckpointTable(ctx); err != nil {
+		if err := r.createCheckpointTable(ctx); err != nil {
 			return err
 		}
-		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:     m.optThreads,
-			TargetChunkTime: m.optTargetChunkTime,
-			FinalChecksum:   m.optChecksum,
+		r.copier, err = row.NewCopier(r.db, r.table, r.newTable, &row.CopierConfig{
+			Concurrency:     r.migration.Threads,
+			TargetChunkTime: r.migration.TargetChunkTime,
+			FinalChecksum:   r.migration.Checksum,
 			Throttler:       &throttler.Noop{},
-			Logger:          m.logger,
+			Logger:          r.logger,
 		})
 		if err != nil {
 			return err
 		}
-		m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
-			Logger:      m.logger,
-			Concurrency: m.optThreads,
+		r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+			Logger:      r.logger,
+			Concurrency: r.migration.Threads,
 			BatchSize:   repl.DefaultBatchSize,
 		})
 		// Start the binary log feed now
-		if err := m.replClient.Run(); err != nil {
+		if err := r.replClient.Run(); err != nil {
 			return err
 		}
 	}
 
 	// If the replica DSN was specified, attach a replication throttler.
-	// Otherwise it will default to the NOOP throttler.
+	// Otherwise, it will default to the NOOP throttler.
 	var err error
-	if m.optReplicaDSN != "" {
-		m.replica, err = sql.Open("mysql", m.optReplicaDSN)
+	if r.migration.ReplicaDSN != "" {
+		r.replica, err = sql.Open("mysql", r.migration.ReplicaDSN)
 		if err != nil {
 			return err
 		}
 		// An error here means the connection to the replica is not valid, or it can't be detected
-		// This is fatal because if a user specifies a replica throttler and it can't be used,
+		// This is fatal because if a user specifies a replica throttler, and it can't be used,
 		// we should not proceed.
-		m.throttler, err = throttler.NewReplicationThrottler(m.replica, m.optReplicaMaxLag, m.logger)
+		r.throttler, err = throttler.NewReplicationThrottler(r.replica, r.migration.ReplicaMaxLag, r.logger)
 		if err != nil {
-			m.logger.Warnf("could not create replication throttler: %v", err)
+			r.logger.Warnf("could not create replication throttler: %v", err)
 			return err
 		}
-		m.copier.SetThrottler(m.throttler)
-		if err := m.throttler.Open(); err != nil {
+		r.copier.SetThrottler(r.throttler)
+		if err := r.throttler.Open(); err != nil {
 			return err
 		}
 	}
 
 	// Make sure the definition of the table never changes.
 	// If it does, we could be in trouble.
-	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
+	r.replClient.TableChangeNotificationCallback = r.tableChangeNotification
 	// Make sure the replClient has a way to know where the copier is at.
 	// If this is NOT nil then it will use this optimization when determining
 	// if it can ignore a KEY.
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+	r.replClient.KeyAboveCopierCallback = r.copier.KeyAboveHighWatermark
 
 	// Start routines in table and replication packages to
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
-	go m.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, m.logger)
-	go m.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
+	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
+	go r.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
 	return nil
 }
 
-func (m *Runner) tableChangeNotification() {
+func (r *Runner) tableChangeNotification() {
 	// It's an async message, so we don't know the current state
 	// from which this "notification" was generated, but typically if our
 	// current state is now in cutover, we can ignore it.
-	if m.getCurrentState() >= stateCutOver {
+	if r.getCurrentState() >= stateCutOver {
 		return
 	}
-	m.setCurrentState(stateErrCleanup)
+	r.setCurrentState(stateErrCleanup)
 	// Write this to the logger, so it can be captured by the initiator.
-	m.logger.Error("table definition changed during migration")
+	r.logger.Error("table definition changed during migration")
 	// Invalidate the checkpoint, so we don't try to resume.
 	// If we don't do this, the migration will permanently be blocked from proceeding.
 	// Letting it start again is the better choice.
-	if err := m.dropCheckpoint(context.Background()); err != nil {
-		m.logger.Errorf("could not remove checkpoint. err: %v", err)
+	if err := r.dropCheckpoint(context.Background()); err != nil {
+		r.logger.Errorf("could not remove checkpoint. err: %v", err)
 	}
 	// We can't do anything about it, just panic
 	panic("table definition changed during migration")
 }
 
-func (m *Runner) dropCheckpoint(ctx context.Context) error {
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.checkpointTable.QuotedName())
-	_, err := m.db.ExecContext(ctx, query)
+func (r *Runner) dropCheckpoint(ctx context.Context) error {
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName())
+	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *Runner) createNewTable(ctx context.Context) error {
-	newName := fmt.Sprintf("_%s_new", m.table.TableName)
+func (r *Runner) createNewTable(ctx context.Context) error {
+	newName := fmt.Sprintf("_%s_new", r.table.TableName)
 	if len(newName) > 64 {
-		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", m.table.TableName)
+		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", r.table.TableName)
 	}
 	// drop both if we've decided to call this func.
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, newName)
-	_, err := m.db.ExecContext(ctx, query)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, newName)
+	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", m.table.SchemaName, newName, m.table.QuotedName())
-	_, err = m.db.ExecContext(ctx, query)
+	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName())
+	_, err = r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	m.newTable = table.NewTableInfo(m.db, m.schemaName, newName)
-	if err := m.newTable.SetInfo(ctx); err != nil {
+	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
 	return nil
@@ -475,124 +449,133 @@ func (m *Runner) createNewTable(ctx context.Context) error {
 
 // alterNewTable applies the ALTER to the new table.
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
-func (m *Runner) alterNewTable(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s", m.newTable.QuotedName(), m.alterStatement)
-	_, err := m.db.ExecContext(ctx, query)
+func (r *Runner) alterNewTable(ctx context.Context) error {
+	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName(), r.migration.Alter)
+	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	// Call GetInfo on the table again, since the columns
-	// might have changed and this will affect the row copier's intersect func.
-	return m.newTable.SetInfo(ctx)
+	// might have changed and this will affect the row copiers intersect func.
+	return r.newTable.SetInfo(ctx)
 }
 
-func (m *Runner) dropOldTable(ctx context.Context) error {
-	oldName := fmt.Sprintf("_%s_old", m.table.TableName)
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, oldName)
-	_, err := m.db.ExecContext(ctx, query)
+func (r *Runner) dropOldTable(ctx context.Context) error {
+	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, oldName)
+	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *Runner) attemptInstantDDL(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", m.table.QuotedName(), m.alterStatement)
-	_, err := m.db.ExecContext(ctx, query)
+func (r *Runner) attemptInstantDDL(ctx context.Context) error {
+	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName(), r.migration.Alter)
+	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *Runner) attemptInplaceDDL(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", m.table.QuotedName(), m.alterStatement)
-	_, err := m.db.ExecContext(ctx, query)
+func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
+	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName(), r.migration.Alter)
+	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
 
-func (m *Runner) createCheckpointTable(ctx context.Context) error {
-	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
+func (r *Runner) createCheckpointTable(ctx context.Context) error {
+	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 	// drop both if we've decided to call this func.
-	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", m.table.SchemaName, cpName)
-	_, err := m.db.ExecContext(ctx, query)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, cpName)
+	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
-		m.table.SchemaName, cpName)
-	_, err = m.db.ExecContext(ctx, query)
+		r.table.SchemaName, cpName)
+	_, err = r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
 	}
-	m.checkpointTable = table.NewTableInfo(m.db, m.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *Runner) Close() error {
-	m.setCurrentState(stateClose)
-	if m.table != nil {
-		m.table.Close()
+func (r *Runner) Close() error {
+	r.setCurrentState(stateClose)
+	if r.table != nil {
+		err := r.table.Close()
+		if err != nil {
+			return err
+		}
 	}
-	if m.newTable == nil {
+	if r.newTable == nil {
 		return nil
 	}
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", m.newTable.QuotedName())
-	_, err := m.db.Exec(query)
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName())
+	_, err := r.db.Exec(query)
 	if err != nil {
 		return err
 	}
 
-	if m.checkpointTable == nil {
+	if r.checkpointTable == nil {
 		return nil
 	}
 
-	query = fmt.Sprintf("DROP TABLE IF EXISTS %s", m.checkpointTable.QuotedName())
-	_, err = m.db.Exec(query)
+	query = fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName())
+	_, err = r.db.Exec(query)
 	if err != nil {
 		return err
 	}
-	if m.replClient != nil {
-		m.replClient.Close()
+	if r.replClient != nil {
+		r.replClient.Close()
 	}
-	if m.throttler != nil {
-		m.throttler.Close()
+	if r.throttler != nil {
+		err := r.throttler.Close()
+		if err != nil {
+			return err
+		}
 	}
-	if m.replica != nil {
-		m.replica.Close()
+	if r.replica != nil {
+		err := r.replica.Close()
+		if err != nil {
+			return err
+		}
 	}
-	return m.db.Close()
+	return r.db.Close()
 }
 
-func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
+func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Check that the new table exists and the checkpoint table
 	// has at least one row in it.
 
 	// The objects for these are not available until we confirm
 	// tables exist and we
-	newName := fmt.Sprintf("_%s_new", m.table.TableName)
-	cpName := fmt.Sprintf("_%s_chkpnt", m.table.TableName)
+	newName := fmt.Sprintf("_%s_new", r.table.TableName)
+	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 
 	// Make sure we can read from the new table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
-		m.schemaName, newName)
-	_, err := m.db.Exec(query)
+		r.migration.Database, newName)
+	_, err := r.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", newName)
 	}
 
 	query = fmt.Sprintf("SELECT low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
-		m.schemaName, cpName)
+		r.migration.Database, cpName)
 	var lowWatermark, binlogName, alterStatement string
 	var binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
-	err = m.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
+	err = r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
-	if m.alterStatement != alterStatement {
+	if r.migration.Alter != alterStatement {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
-	m.newTable = table.NewTableInfo(m.db, m.schemaName, newName)
-	if err := m.newTable.SetInfo(ctx); err != nil {
+	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
 
@@ -603,13 +586,13 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// to add. The only way we can reconcile this fact is to make sure that
 	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
 	// have the checksum enabled to apply all changes safely.
-	m.optChecksum = true
-	m.copier, err = row.NewCopierFromCheckpoint(m.db, m.table, m.newTable, &row.CopierConfig{
-		Concurrency:     m.optThreads,
-		TargetChunkTime: m.optTargetChunkTime,
-		FinalChecksum:   m.optChecksum,
+	r.migration.Checksum = true
+	r.copier, err = row.NewCopierFromCheckpoint(r.db, r.table, r.newTable, &row.CopierConfig{
+		Concurrency:     r.migration.Threads,
+		TargetChunkTime: r.migration.TargetChunkTime,
+		FinalChecksum:   r.migration.Checksum,
 		Throttler:       &throttler.Noop{},
-		Logger:          m.logger,
+		Logger:          r.logger,
 	}, lowWatermark, rowsCopied, rowsCopiedLogical)
 	if err != nil {
 		return err
@@ -617,17 +600,17 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	m.replClient = repl.NewClient(m.db, m.host, m.table, m.newTable, m.username, m.password, &repl.ClientConfig{
-		Logger:      m.logger,
-		Concurrency: m.optThreads,
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		Logger:      r.logger,
+		Concurrency: r.migration.Threads,
 		BatchSize:   repl.DefaultBatchSize,
 	})
-	m.replClient.SetPos(&mysql.Position{
+	r.replClient.SetPos(&mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),
 	})
 
-	m.checkpointTable = table.NewTableInfo(m.db, m.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -636,71 +619,71 @@ func (m *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
 	// and still be able to start from scratch.
 	// Start the binary log feed just before copy rows starts.
-	if err := m.replClient.Run(); err != nil {
-		m.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
+	if err := r.replClient.Run(); err != nil {
+		r.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
-	m.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlogName, binlogPos, rowsCopied)
+	r.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlogName, binlogPos, rowsCopied)
 	return nil
 }
 
 // checksum creates the checksum which opens the read view.
-func (m *Runner) checksum(ctx context.Context) error {
-	m.setCurrentState(stateChecksum)
+func (r *Runner) checksum(ctx context.Context) error {
+	r.setCurrentState(stateChecksum)
 	var err error
-	m.checker, err = checksum.NewChecker(m.db, m.table, m.newTable, m.replClient, &checksum.CheckerConfig{
-		Concurrency:     m.optThreads,
-		TargetChunkTime: m.optTargetChunkTime,
-		Logger:          m.logger,
+	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+		Concurrency:     r.migration.Threads,
+		TargetChunkTime: r.migration.TargetChunkTime,
+		Logger:          r.logger,
 	})
 	if err != nil {
 		return err
 	}
-	if err := m.checker.Run(ctx); err != nil {
+	if err := r.checker.Run(ctx); err != nil {
 		// Panic: this is really not expected to happen, and if it does
 		// we don't want cleanup to happen in Close() so we can inspect it.
 		panic(err)
 	}
-	m.logger.Info("checksum passed")
+	r.logger.Info("checksum passed")
 
 	// A long checksum extends the binlog deltas
 	// So if we've called this optional checksum, we need one more state
 	// of applying the binlog deltas.
 
-	m.setCurrentState(statePostChecksum)
-	return m.replClient.Flush(ctx)
+	r.setCurrentState(statePostChecksum)
+	return r.replClient.Flush(ctx)
 }
 
-func (m *Runner) getCurrentState() migrationState {
-	return migrationState(atomic.LoadInt32((*int32)(&m.currentState)))
+func (r *Runner) getCurrentState() migrationState {
+	return migrationState(atomic.LoadInt32((*int32)(&r.currentState)))
 }
 
-func (m *Runner) setCurrentState(s migrationState) {
-	atomic.StoreInt32((*int32)(&m.currentState), int32(s))
-	if s > stateCopyRows && m.replClient != nil {
-		m.replClient.SetKeyAboveWatermarkOptimization(false)
+func (r *Runner) setCurrentState(s migrationState) {
+	atomic.StoreInt32((*int32)(&r.currentState), int32(s))
+	if s > stateCopyRows && r.replClient != nil {
+		r.replClient.SetKeyAboveWatermarkOptimization(false)
 	}
 }
 
-func (m *Runner) dumpCheckpoint(ctx context.Context) error {
+func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	// Retrieve the binlog position first and under a mutex.
-	// Currently it never advances but it's possible it might in future
+	// Currently, it never advances, but it's possible it might in future
 	// and this race condition is missed.
-	binlog := m.replClient.GetBinlogApplyPosition()
-	lowWatermark, err := m.copier.GetLowWatermark()
+	binlog := r.replClient.GetBinlogApplyPosition()
+	lowWatermark, err := r.copier.GetLowWatermark()
 	if err != nil {
 		return err // it might not be ready, we can try again.
 	}
-	copyRows := atomic.LoadUint64(&m.copier.CopyRowsCount)
-	logicalCopyRows := atomic.LoadUint64(&m.copier.CopyRowsLogicalCount)
-	m.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
+	copyRows := atomic.LoadUint64(&r.copier.CopyRowsCount)
+	logicalCopyRows := atomic.LoadUint64(&r.copier.CopyRowsLogicalCount)
+	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
-		m.checkpointTable.QuotedName())
-	_, err = m.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, m.alterStatement)
+		r.checkpointTable.QuotedName())
+	_, err = r.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
 	return err
 }
 
-func (m *Runner) dumpCheckpointContinuously(ctx context.Context) {
+func (r *Runner) dumpCheckpointContinuously(ctx context.Context) {
 	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -708,20 +691,20 @@ func (m *Runner) dumpCheckpointContinuously(ctx context.Context) {
 		// Ideally in future we can continue further than this,
 		// but unfortunately this currently results in a
 		// "watermark not ready" error.
-		if m.getCurrentState() > stateCopyRows {
+		if r.getCurrentState() > stateCopyRows {
 			return
 		}
-		if err := m.dumpCheckpoint(ctx); err != nil {
-			m.logger.Errorf("error writing checkpoint: %v", err)
+		if err := r.dumpCheckpoint(ctx); err != nil {
+			r.logger.Errorf("error writing checkpoint: %v", err)
 		}
 	}
 }
 
-func (m *Runner) dumpStatus() {
+func (r *Runner) dumpStatus() {
 	ticker := time.NewTicker(statusInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		state := m.getCurrentState()
+		state := r.getCurrentState()
 		if state > stateCutOver {
 			return
 		}
@@ -729,33 +712,33 @@ func (m *Runner) dumpStatus() {
 		switch state {
 		case stateCopyRows:
 			// Status for copy rows
-			m.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
-				m.getCurrentState().String(),
-				m.copier.GetProgress(),
-				m.replClient.GetDeltaLen(),
-				time.Since(m.startTime),
-				time.Since(m.copier.StartTime),
-				m.copier.GetETA(),
-				m.copier.Throttler.IsThrottled(),
+			r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
+				r.getCurrentState().String(),
+				r.copier.GetProgress(),
+				r.replClient.GetDeltaLen(),
+				time.Since(r.startTime),
+				time.Since(r.copier.StartTime),
+				r.copier.GetETA(),
+				r.copier.Throttler.IsThrottled(),
 			)
 		case stateApplyChangeset, statePostChecksum:
-			// We've finished copying rows and we are now trying to reduce the number of binlog deltas before
+			// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
 			// proceeding to the checksum and then the final cutover.
-			m.logger.Infof("migration status: state=%s binlog-deltas=%v time-total=%v",
-				m.getCurrentState().String(),
-				m.replClient.GetDeltaLen(),
-				time.Since(m.startTime).String(),
+			r.logger.Infof("migration status: state=%s binlog-deltas=%v time-total=%v",
+				r.getCurrentState().String(),
+				r.replClient.GetDeltaLen(),
+				time.Since(r.startTime).String(),
 			)
 		case stateChecksum:
 			// This could take a while if it's a large table. We just have to show approximate progress.
 			// This is a little bit harder for checksum because it doesn't have returned rows
 			// so we just show a "recent value" over the "maximum value".
-			m.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-total=%s checksum-time=%s",
-				m.getCurrentState().String(),
-				m.checker.RecentValue(), m.table.MaxValue(),
-				m.replClient.GetDeltaLen(),
-				time.Since(m.startTime),
-				time.Since(m.checker.StartTime),
+			r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-total=%s checksum-time=%s",
+				r.getCurrentState().String(),
+				r.checker.RecentValue(), r.table.MaxValue(),
+				r.replClient.GetDeltaLen(),
+				time.Since(r.startTime),
+				time.Since(r.checker.StartTime),
 			)
 		default:
 			// For the linter:
