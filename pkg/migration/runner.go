@@ -97,7 +97,7 @@ type Runner struct {
 
 func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
-		migration: migration,
+		migration: m,
 		logger:    logrus.New(),
 	}
 	if r.migration.TargetChunkTime == 0 {
