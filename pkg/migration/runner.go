@@ -95,7 +95,7 @@ type Runner struct {
 	logger loggers.Advanced
 }
 
-func NewRunner(migration *Migration) (*Runner, error) {
+func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
 		migration: migration,
 		logger:    logrus.New(),
