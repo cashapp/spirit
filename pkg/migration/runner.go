@@ -250,7 +250,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	// is at elevated risk because the batch loading can cause statistics
 	// to be out of date.
 	r.setCurrentState(stateAnalyzeTable)
-	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName())
+	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", stmt)
 	if err := dbconn.DBExec(ctx, r.db, stmt); err != nil {
 		return err
@@ -416,7 +416,7 @@ func (r *Runner) tableChangeNotification() {
 }
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName())
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
 	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
@@ -435,7 +435,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName())
+	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName)
 	_, err = r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
@@ -450,7 +450,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // alterNewTable applies the ALTER to the new table.
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (r *Runner) alterNewTable(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName(), r.migration.Alter)
+	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName, r.migration.Alter)
 	_, err := r.db.ExecContext(ctx, query)
 	if err != nil {
 		return err
@@ -468,13 +468,13 @@ func (r *Runner) dropOldTable(ctx context.Context) error {
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName(), r.migration.Alter)
+	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName, r.migration.Alter)
 	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
-	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName(), r.migration.Alter)
+	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName, r.migration.Alter)
 	_, err := r.db.ExecContext(ctx, query)
 	return err
 }
@@ -511,7 +511,7 @@ func (r *Runner) Close() error {
 	if r.newTable == nil {
 		return nil
 	}
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName())
+	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
 	_, err := r.db.Exec(query)
 	if err != nil {
 		return err
@@ -521,7 +521,7 @@ func (r *Runner) Close() error {
 		return nil
 	}
 
-	query = fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName())
+	query = fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
 	_, err = r.db.Exec(query)
 	if err != nil {
 		return err
@@ -678,7 +678,7 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	logicalCopyRows := atomic.LoadUint64(&r.copier.CopyRowsLogicalCount)
 	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
-		r.checkpointTable.QuotedName())
+		r.checkpointTable.QuotedName)
 	_, err = r.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
 	return err
 }
