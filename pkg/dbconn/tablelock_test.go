@@ -22,7 +22,7 @@ func TestTableLock(t *testing.T) {
 	err = DBExec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
-	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock"}
+	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
 	lock1, err := NewTableLock(context.Background(), db, tbl, logrus.New())
 	assert.NoError(t, err)
