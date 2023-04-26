@@ -8,6 +8,8 @@ import (
 	"github.com/siddontang/loggers"
 )
 
+var blockWaitInterval = 1 * time.Second
+
 type Repl struct {
 	replica        *sql.DB
 	lagTolerance   time.Duration
@@ -26,7 +28,7 @@ func (l *Repl) BlockWait() {
 		if atomic.LoadInt64(&l.currentLagInMs) < l.lagTolerance.Milliseconds() {
 			return
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(blockWaitInterval)
 	}
 	l.logger.Warnf("lag monitor timed out. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagTolerance)
 }
