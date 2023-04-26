@@ -98,8 +98,8 @@ func (c *CutOver) cutover(ctx context.Context) error {
 		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
 		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
-			c.table.QuotedName(), oldQuotedName,
-			c.newTable.QuotedName(), c.table.QuotedName())
+			c.table.QuotedName, oldQuotedName,
+			c.newTable.QuotedName, c.table.QuotedName)
 		return dbconn.DBExec(ctx, c.db, query)
 	})
 	// We can now unlock the table to allow the rename to go through.

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
@@ -54,6 +55,7 @@ func TestReplClient(t *testing.T) {
 		BatchSize:   10000,
 	})
 	assert.NoError(t, client.Run())
+	defer client.Close()
 
 	// Insert into t1.
 	runSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
@@ -90,15 +92,12 @@ func TestReplClientComplex(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "replcomplext2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
-	})
+
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
 	assert.NoError(t, client.Run())
+	defer client.Close()
 
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -201,8 +200,8 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
 	pos.Pos = 4
-	err = client.Run()
-	assert.NoError(t, err)
+	assert.NoError(t, client.Run())
+	client.Close()
 }
 
 func TestReplClientOpts(t *testing.T) {
@@ -234,6 +233,7 @@ func TestReplClientOpts(t *testing.T) {
 		BatchSize:   10000,
 	})
 	assert.NoError(t, client.Run())
+	defer client.Close()
 
 	// Disable key above watermark.
 	client.SetKeyAboveWatermarkOptimization(false)
@@ -244,8 +244,12 @@ func TestReplClientOpts(t *testing.T) {
 	runSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 49961)
-	// Flush
-	assert.NoError(t, client.Flush(context.TODO()))
+	// Flush. We could use client.Flush() but for testing purposes lets use
+	// PeriodicFlush()
+	go client.StartPeriodicFlush(context.TODO(), 1*time.Second)
+	time.Sleep(2 * time.Second)
+	client.StopPeriodicFlush()
+
 	assert.Equal(t, client.GetDeltaLen(), 0)
 
 	// The binlog position should have changed.
