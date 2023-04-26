@@ -19,6 +19,7 @@ func TestChunkerBasic(t *testing.T) {
 		EstimatedRows:       1000000, // avoid trivial chunker.
 		SchemaName:          "test",
 		TableName:           "t1",
+		QuotedName:          "`test`.`t1`",
 		PrimaryKey:          []string{"id"},
 		pkMySQLTp:           "int",
 		PrimaryKeyIsAutoInc: true,
@@ -35,7 +36,7 @@ func TestChunkerBasic(t *testing.T) {
 	t1.pkMySQLTp = "bigint"
 	assert.NoError(t, t1.isCompatibleWithChunker())
 
-	assert.Equal(t, "`test`.`t1`", t1.QuotedName())
+	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
 
 	assert.NoError(t, chunker.Open())
 	_, err = chunker.Next()
