@@ -77,7 +77,10 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 
 func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
 	startTime := time.Now()
-	trx := trxPool.Get()
+	trx, err := trxPool.Get()
+	if err != nil {
+		return err
+	}
 	defer trxPool.Put(trx)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
@@ -91,7 +94,7 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
-	err := trx.QueryRow(source).Scan(&sourceChecksum)
+	err = trx.QueryRow(source).Scan(&sourceChecksum)
 	if err != nil {
 		return err
 	}

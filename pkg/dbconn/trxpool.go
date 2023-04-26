@@ -3,6 +3,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 )
 
@@ -37,12 +38,15 @@ func NewTrxPool(ctx context.Context, db *sql.DB, count int) (*TrxPool, error) {
 }
 
 // Get gets a transaction from the pool.
-func (p *TrxPool) Get() *sql.Tx {
+func (p *TrxPool) Get() (*sql.Tx, error) {
 	p.Lock()
 	defer p.Unlock()
+	if len(p.trxs) == 0 {
+		return nil, errors.New("no transactions in pool")
+	}
 	trx := p.trxs[0]
 	p.trxs = p.trxs[1:]
-	return trx
+	return trx, nil
 }
 
 // Put puts a transaction back in the pool.
