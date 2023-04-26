@@ -65,10 +65,6 @@ func (t *TableInfo) isCompatibleWithChunker() error {
 	return nil
 }
 
-//func (t *TableInfo) QuotedName() string {
-//	return fmt.Sprintf("`%s`.`%s`", t.SchemaName, t.TableName)
-//}
-
 // ExtractPrimaryKeyFromRowImage helps extract the PRIMARY KEY from a row image.
 // It uses our knowledge of the ordinal position of columns to find the
 // position of primary key columns (there might be more than one).
@@ -85,7 +81,6 @@ func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{}
 }
 
 // SetInfo reads from MySQL metadata (usually infoschema) and sets the values in TableInfo.
-
 func (t *TableInfo) SetInfo(ctx context.Context) error {
 	if err := t.setRowEstimate(ctx); err != nil {
 		return err
