@@ -1,6 +1,11 @@
 package throttler
 
-type Noop struct{}
+import "time"
+
+type Noop struct {
+	currentLag   time.Duration // used for testing
+	lagTolerance time.Duration // used for testing
+}
 
 var _ Throttler = &Noop{}
 
@@ -13,7 +18,7 @@ func (t *Noop) Close() error {
 }
 
 func (t *Noop) IsThrottled() bool {
-	return false
+	return t.currentLag > t.lagTolerance
 }
 
 func (t *Noop) BlockWait() {

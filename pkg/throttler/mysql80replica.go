@@ -29,7 +29,7 @@ func (l *MySQL80Replica) Open() error {
 		return err
 	}
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(loopInterval)
 		defer ticker.Stop()
 		for range ticker.C {
 			if l.isClosed {

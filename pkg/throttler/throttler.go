@@ -8,6 +8,10 @@ import (
 	"github.com/siddontang/loggers"
 )
 
+var (
+	loopInterval = 5 * time.Second
+)
+
 type Throttler interface {
 	Open() error
 	Close() error
