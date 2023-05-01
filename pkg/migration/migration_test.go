@@ -96,8 +96,8 @@ func TestBadDatabaseCredentials(t *testing.T) {
 	migration.Alter = "ENGINE=InnoDB"
 
 	err = migration.Run()
-	assert.Error(t, err) // bad database credentials
-	assert.ErrorContains(t, err, "lookup missinghostname: no such host")
+	assert.Error(t, err)                                   // bad database credentials
+	assert.ErrorContains(t, err, "lookup missinghostname") // could be no host or temporary resolution failure.
 }
 
 func TestE2ENullAlter1Row(t *testing.T) {
