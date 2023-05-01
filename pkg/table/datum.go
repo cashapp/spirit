@@ -179,10 +179,3 @@ func (d datum) GreaterThanOrEqual(d2 datum) bool {
 	}
 	return d.val.(uint64) >= d2.val.(uint64)
 }
-
-func (d datum) GreaterThan(d2 datum) bool {
-	if d.tp == signedType {
-		return d.val.(int64) > d2.val.(int64)
-	}
-	return d.val.(uint64) > d2.val.(uint64)
-}

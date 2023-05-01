@@ -102,7 +102,7 @@ func NewRunner(m *Migration) (*Runner, error) {
 		logger:    logrus.New(),
 	}
 	if r.migration.TargetChunkTime == 0 {
-		r.migration.TargetChunkTime = 100 * time.Millisecond
+		r.migration.TargetChunkTime = table.ChunkerDefaultTarget
 	}
 	if r.migration.Threads == 0 {
 		r.migration.Threads = 4

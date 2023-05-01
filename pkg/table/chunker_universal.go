@@ -123,7 +123,7 @@ func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
 		return err
 	}
 
-	chunk, err := NewChunkFromJSON(cp, t.Ti.pkMySQLTp)
+	chunk, err := NewChunkFromJSON(cp, t.Ti.pkMySQLTp[0])
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ applyQueuedChunks:
 }
 
 func (t *chunkerUniversal) open() (err error) {
-	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp)
+	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp[0])
 	if tp == unknownType {
 		return ErrUnsupportedPKType
 	}
@@ -266,7 +266,7 @@ func (t *chunkerUniversal) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp)
+	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp[0])
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 
