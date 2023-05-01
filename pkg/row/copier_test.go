@@ -299,6 +299,8 @@ func TestETA(t *testing.T) {
 	// Ask for the ETA, it should be "TBD" because the perSecond estimate is not set yet.
 	assert.Equal(t, "TBD", copier1.GetETA())
 	assert.Equal(t, "TBD", copier2.GetETA())
+	assert.Equal(t, "0/1000 0.00%", copier1.GetProgress())
+	assert.Equal(t, "0/10000 0.00%", copier2.GetProgress())
 
 	// Imply we copied 90 rows (in a chunk of 100)
 	copier1.CopyRowsLogicalCount = 100
@@ -321,4 +323,33 @@ func TestETA(t *testing.T) {
 
 	assert.Equal(t, "1m31s", copier1.GetETA())
 	assert.Equal(t, "16m30s", copier2.GetETA())
+	assert.Equal(t, "90/1000 9.00%", copier1.GetProgress())
+	assert.Equal(t, "100/10000 1.00%", copier2.GetProgress())
+}
+
+func TestCopierFromCheckpoint(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS copierchkpt1, _copierchkpt1_new")
+	runSQL(t, "CREATE TABLE copierchkpt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _copierchkpt1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "INSERT INTO copierchkpt1 VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8), (7, 8, 9), (8, 9, 10), (9, 10, 11), (10, 11, 12)")
+	runSQL(t, "INSERT INTO _copierchkpt1_new VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "copierchkpt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t1new := table.NewTableInfo(db, "test", "_copierchkpt1_new")
+	assert.NoError(t, t1new.SetInfo(context.TODO()))
+
+	lowWatermark := `{"Key":"a","ChunkSize":1,"LowerBound":{"Value":3,"Inclusive":true},"UpperBound":{"Value":4,"Inclusive":false}}`
+	copier, err := NewCopierFromCheckpoint(db, t1, t1new, NewCopierDefaultConfig(), lowWatermark, 3, 3)
+	assert.NoError(t, err)
+	assert.NoError(t, copier.Run(context.Background())) // works
+
+	// Verify that t1new has 10 rows
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM _copierchkpt1_new").Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, count)
 }
