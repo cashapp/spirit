@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -277,6 +278,8 @@ func TestMigrationStateString(t *testing.T) {
 	assert.Equal(t, "checksum", stateChecksum.String())
 	assert.Equal(t, "cutOver", stateCutOver.String())
 	assert.Equal(t, "errCleanup", stateErrCleanup.String())
+	assert.Equal(t, "analyzeTable", stateAnalyzeTable.String())
+	assert.Equal(t, "close", stateClose.String())
 }
 
 func TestBadOptions(t *testing.T) {
@@ -598,6 +601,23 @@ func TestChangeNonIntPK(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
+type testLogger struct {
+	logrus.FieldLogger
+	lastInfof  string
+	lastWarnf  string
+	lastDebugf string
+}
+
+func (l *testLogger) Infof(format string, args ...interface{}) {
+	l.lastInfof = fmt.Sprintf(format, args...)
+}
+func (l *testLogger) Warnf(format string, args ...interface{}) {
+	l.lastWarnf = fmt.Sprintf(format, args...)
+}
+func (l *testLogger) Debugf(format string, args ...interface{}) {
+	l.lastDebugf = fmt.Sprintf(format, args...)
+}
+
 func TestCheckpoint(t *testing.T) {
 	tbl := `CREATE TABLE cpt1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -614,8 +634,11 @@ func TestCheckpoint(t *testing.T) {
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
+	testLogger := &testLogger{}
+	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
+
 	preSetup := func() *Runner {
-		m, err := NewRunner(&Migration{
+		r, err := NewRunner(&Migration{
 			Host:     cfg.Addr,
 			Username: cfg.User,
 			Password: cfg.Passwd,
@@ -625,17 +648,19 @@ func TestCheckpoint(t *testing.T) {
 			Alter:    "ENGINE=InnoDB",
 		})
 		assert.NoError(t, err)
-		assert.Equal(t, "initial", m.getCurrentState().String())
+		assert.Equal(t, "initial", r.getCurrentState().String())
+		r.SetLogger(testLogger)
 		// Usually we would call r.Run() but we want to step through
 		// the migration process manually.
-		m.db, err = sql.Open("mysql", m.dsn())
+		r.db, err = sql.Open("mysql", r.dsn())
 		assert.NoError(t, err)
 		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-		err = m.table.SetInfo(context.TODO())
+		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+		err = r.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable(context.TODO()))
-		return m
+		assert.NoError(t, r.dropOldTable(context.TODO()))
+		go r.dumpStatus() // start periodically writing status
+		return r
 	}
 
 	r := preSetup()
@@ -649,9 +674,8 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.createNewTable(context.TODO()))
 	assert.NoError(t, r.alterNewTable(context.TODO()))
 	assert.NoError(t, r.createCheckpointTable(context.TODO()))
-	logger := logrus.New()
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
+		Logger:      logrus.New(), // don't use the logger for migration since we feed status to it.
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
@@ -667,6 +691,9 @@ func TestCheckpoint(t *testing.T) {
 	r.copier.StartTime = time.Now()
 	r.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
+
+	time.Sleep(time.Second) // wait for status to be updated.
+	assert.Contains(t, testLogger.lastInfof, `migration status: state=copyRows copy-progress=0/101040 0.00% binlog-deltas=0`)
 
 	// because we are not calling copier.Run() we need to manually open.
 	assert.NoError(t, r.copier.Open4Test())
@@ -695,16 +722,21 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk1))
 	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk3))
 
+	time.Sleep(time.Second) // wait for status to be updated.
+	assert.Contains(t, testLogger.lastInfof, `migration status: state=copyRows copy-progress=3000/101040 2.97% binlog-deltas=0`)
+
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
-
 	watermark, err := r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
-	// Close the db connection since r is to be destroyed.
+	// Close everything, we can't use r.Close() because it will delete
+	// the checkpoint table.
+	r.setCurrentState(stateClose)
+	r.replClient.Close()
 	assert.NoError(t, r.db.Close())
 
 	// Now lets imagine that everything fails and we need to start
@@ -1072,4 +1104,19 @@ func TestDropColumn(t *testing.T) {
 
 	assert.False(t, m.usedInstantDDL) // need to ensure it uses full process.
 	assert.NoError(t, m.Close())
+}
+
+func TestDefaultPort(t *testing.T) {
+	m, err := NewRunner(&Migration{
+		Host:     "localhost",
+		Username: "root",
+		Password: "mypassword",
+		Database: "test",
+		Threads:  16,
+		Table:    "t1",
+		Alter:    "DROP COLUMN b, ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "localhost:3306", m.migration.Host)
+	m.SetLogger(logrus.New())
 }
