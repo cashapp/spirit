@@ -35,7 +35,8 @@ const (
 	stateErrCleanup
 )
 
-const (
+// These are really consts, but set to var for testing.
+var (
 	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 10 * time.Second
@@ -508,24 +509,21 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
-	if r.newTable == nil {
-		return nil
-	}
-	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-	_, err := r.db.Exec(query)
-	if err != nil {
-		return err
-	}
-
-	if r.checkpointTable == nil {
-		return nil
+	if r.newTable != nil {
+		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
+		_, err := r.db.Exec(query)
+		if err != nil {
+			return err
+		}
 	}
 
-	query = fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
-	_, err = r.db.Exec(query)
-	if err != nil {
-		return err
+	if r.checkpointTable != nil {
+		err := r.dropCheckpoint(context.TODO())
+		if err != nil {
+			return err
+		}
 	}
+
 	if r.replClient != nil {
 		r.replClient.Close()
 	}
