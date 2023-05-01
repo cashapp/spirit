@@ -28,9 +28,11 @@ func TestDatum(t *testing.T) {
 	assert.True(t, newsigned.GreaterThanOrEqual(signed))
 	assert.True(t, newunsigned.GreaterThanOrEqual(unsigned))
 
-	// Test for overflow on add operation.
-	overflowSigned := newDatum(uint64(math.MaxInt64), signedType) // wrong type, converts.
-	overflowUnsigned := newDatum(uint64(math.MaxUint64), unsignedType)
+	// Test that add operations do not overflow. i.e.
+	// We initialize the values to max-10 of the range, but then add 100 to each.
+	// The add operation truncates: so both should equal the maxValue exactly.
+	overflowSigned := newDatum(uint64(math.MaxInt64)-10, signedType) // wrong type, converts.
+	overflowUnsigned := newDatum(uint64(math.MaxUint64)-10, unsignedType)
 	assert.Equal(t, fmt.Sprint(math.MaxInt64), overflowSigned.Add(100).String())
 	assert.Equal(t, "18446744073709551615", overflowUnsigned.Add(100).String())
 
