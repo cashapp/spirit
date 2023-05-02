@@ -14,6 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/dbconn"
@@ -48,6 +50,7 @@ type Copier struct {
 	ExecTime             time.Duration
 	Throttler            throttler.Throttler
 	logger               loggers.Advanced
+	metricsSink          metrics.Sink
 }
 
 type CopierConfig struct {
@@ -133,7 +136,16 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	atomic.AddUint64(&c.CopyChunksCount, 1)
 	// Send feedback which can be used by the chunker
 	// and infoschema to create a low watermark.
-	c.chunker.Feedback(chunk, time.Since(startTime))
+	chunkProcessingTime := time.Since(startTime)
+	c.chunker.Feedback(chunk, chunkProcessingTime)
+
+	// Send metrics
+	err = c.sendMetrics(ctx, chunkProcessingTime, chunk.ChunkSize, uint64(affectedRows))
+	if err != nil {
+		// we don't want to stop processing if metrics sending fails, log and continue
+		c.logger.Errorf("error sending metrics from copier: %v", err)
+	}
+
 	return nil
 }
 
@@ -274,6 +286,32 @@ func (c *Copier) KeyAboveHighWatermark(key interface{}) bool {
 // guaranteed to be written to the new table.
 func (c *Copier) GetLowWatermark() (string, error) {
 	return c.chunker.GetLowWatermark()
+}
+
+func (c *Copier) sendMetrics(ctx context.Context, processingTime time.Duration, logicalRowsCount uint64, affectedRowsCount uint64) error {
+	m := &metrics.Metrics{
+		Values: []metrics.MetricValue{
+			{
+				Name:  metrics.ChunkProcessingTimeMetricName,
+				Type:  metrics.GAUGE,
+				Value: float64(processingTime.Milliseconds()), // in milliseconds
+			},
+			{
+				Name:  metrics.ChunkLogicalRowsCountMetricName,
+				Type:  metrics.COUNTER,
+				Value: float64(logicalRowsCount),
+			},
+			{
+				Name:  metrics.ChunkAffectedRowsCountMetricName,
+				Type:  metrics.COUNTER,
+				Value: float64(affectedRowsCount),
+			},
+		},
+	}
+
+	contextWithTimeout, _ := context.WithTimeout(ctx, metrics.SinkTimeout)
+
+	return c.metricsSink.Send(contextWithTimeout, m)
 }
 
 // Next4Test is typically only used in integration tests that don't want to actually migrate data,

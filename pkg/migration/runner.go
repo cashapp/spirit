@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
@@ -94,12 +96,16 @@ type Runner struct {
 
 	// Attached logger
 	logger loggers.Advanced
+
+	// MetricsSink
+	metricsSink metrics.Sink
 }
 
 func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
-		migration: m,
-		logger:    logrus.New(),
+		migration:   m,
+		logger:      logrus.New(),
+		metricsSink: metrics.NewNoopSink(),
 	}
 	if r.migration.TargetChunkTime == 0 {
 		r.migration.TargetChunkTime = 100 * time.Millisecond
@@ -126,6 +132,10 @@ func NewRunner(m *Migration) (*Runner, error) {
 		return nil, errors.New("alter statement is required")
 	}
 	return r, nil
+}
+
+func (r *Runner) SetMetricsSink(sink metrics.Sink) {
+	r.metricsSink = sink
 }
 
 func (r *Runner) SetLogger(logger loggers.Advanced) {
