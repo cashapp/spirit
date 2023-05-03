@@ -23,6 +23,9 @@ const (
 	// the chunkSize appears to be too large. For example, if the PanicFactor is 5, and the target *time*
 	// is 50ms, an actual time 250ms+ will cause the dynamic chunk size to immediately be reduced.
 	DynamicPanicFactor = 5
+
+	// ChunkerDefaultTarget is the default chunker target
+	ChunkerDefaultTarget = 100 * time.Millisecond
 )
 
 type Chunker interface {
@@ -39,7 +42,7 @@ type Chunker interface {
 
 func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced) (Chunker, error) {
 	if chunkerTarget == 0 {
-		chunkerTarget = 100 * time.Millisecond
+		chunkerTarget = ChunkerDefaultTarget
 	}
 	if err := t.isCompatibleWithChunker(); err != nil {
 		return nil, err
