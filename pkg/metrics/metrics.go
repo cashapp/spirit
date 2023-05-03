@@ -51,6 +51,8 @@ func (s noopSink) Send(ctx context.Context, m *Metrics) error {
 
 var _ Sink = noopSink{}
 
+var NoopSink = NewNoopSink()
+
 func NewNoopSink() *noopSink {
 	return &noopSink{}
 }

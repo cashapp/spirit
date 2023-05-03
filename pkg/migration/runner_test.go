@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/repl"
@@ -679,7 +681,7 @@ func TestCheckpoint(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
+	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig(), metrics.NoopSink)
 	assert.NoError(t, err)
 	err = r.replClient.Run()
 	assert.NoError(t, err)
@@ -838,7 +840,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig(), metrics.NoopSink)
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -961,7 +963,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			FinalChecksum:   m.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          m.logger,
-		})
+		}, metrics.NoopSink)
 		assert.NoError(t, err)
 		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
 		err = m.replClient.Run()

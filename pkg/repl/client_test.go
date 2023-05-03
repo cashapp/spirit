@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -99,7 +101,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, client.Run())
 	defer client.Close()
 
-	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
+	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig(), metrics.NoopSink)
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
 	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark

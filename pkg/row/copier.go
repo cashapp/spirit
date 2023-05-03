@@ -73,7 +73,7 @@ func NewCopierDefaultConfig() *CopierConfig {
 }
 
 // NewCopier creates a new copier object.
-func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
+func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig, metricsSink metrics.Sink) (*Copier, error) {
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
@@ -90,12 +90,13 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 		Throttler:     config.Throttler,
 		chunker:       chunker,
 		logger:        config.Logger,
+		metricsSink:   metricsSink,
 	}, nil
 }
 
 // NewCopierFromCheckpoint creates a new copier object, from a checkpoint (copyRowsAt, copyRows)
-func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64) (*Copier, error) {
-	c, err := NewCopier(db, tbl, newTable, config)
+func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64, metricsSink metrics.Sink) (*Copier, error) {
+	c, err := NewCopier(db, tbl, newTable, config, metricsSink)
 	if err != nil {
 		return c, err
 	}

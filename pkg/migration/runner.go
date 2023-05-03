@@ -353,7 +353,7 @@ func (r *Runner) setup(ctx context.Context) error {
 			FinalChecksum:   r.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          r.logger,
-		})
+		}, r.metricsSink)
 		if err != nil {
 			return err
 		}
@@ -601,7 +601,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		FinalChecksum:   r.migration.Checksum,
 		Throttler:       &throttler.Noop{},
 		Logger:          r.logger,
-	}, lowWatermark, rowsCopied, rowsCopiedLogical)
+	}, lowWatermark, rowsCopied, rowsCopiedLogical, r.metricsSink)
 	if err != nil {
 		return err
 	}
