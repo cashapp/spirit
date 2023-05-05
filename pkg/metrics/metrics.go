@@ -44,21 +44,18 @@ type Sink interface {
 	Send(context.Context, *Metrics) error
 }
 
-// noopSink is the default sink which does nothing
-type noopSink struct{}
+// NoopSink is the default sink which does nothing
+type NoopSink struct{}
 
-func (s *noopSink) Send(ctx context.Context, m *Metrics) error {
+func (s *NoopSink) Send(ctx context.Context, m *Metrics) error {
 	return nil
 }
 
-var _ Sink = &noopSink{}
+var _ Sink = &NoopSink{}
 
-func NewNoopSink() *noopSink {
-	return &noopSink{}
+func NewNoopSink() *NoopSink {
+	return &NoopSink{}
 }
-
-// NoopSink is a Noop Sink instance to be used in tests
-var NoopSink = NewNoopSink()
 
 // logSink logs metrics
 type logSink struct {

@@ -105,7 +105,7 @@ func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
 		migration:   m,
 		logger:      logrus.New(),
-		metricsSink: metrics.NoopSink,
+		metricsSink: &metrics.NoopSink{},
 	}
 
 	if r.migration.TargetChunkTime == 0 {

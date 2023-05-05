@@ -70,7 +70,7 @@ func NewCopierDefaultConfig() *CopierConfig {
 		FinalChecksum:   true,
 		Throttler:       &throttler.Noop{},
 		Logger:          logrus.New(),
-		MetricsSink:     metrics.NoopSink,
+		MetricsSink:     &metrics.NoopSink{},
 	}
 }
 

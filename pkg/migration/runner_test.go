@@ -963,7 +963,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			FinalChecksum:   m.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          m.logger,
-			MetricsSink:     metrics.NoopSink,
+			MetricsSink:     &metrics.NoopSink{},
 		})
 		assert.NoError(t, err)
 		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
