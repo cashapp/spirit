@@ -47,11 +47,11 @@ type Sink interface {
 // noopSink is the default sink which does nothing
 type noopSink struct{}
 
-func (s noopSink) Send(ctx context.Context, m *Metrics) error {
+func (s *noopSink) Send(ctx context.Context, m *Metrics) error {
 	return nil
 }
 
-var _ Sink = noopSink{}
+var _ Sink = &noopSink{}
 
 func NewNoopSink() *noopSink {
 	return &noopSink{}
@@ -78,6 +78,8 @@ func (l *logSink) Send(ctx context.Context, m *Metrics) error {
 	}
 	return nil
 }
+
+var _ Sink = &logSink{}
 
 func NewLogSink(logger loggers.Advanced) *logSink {
 	return &logSink{
