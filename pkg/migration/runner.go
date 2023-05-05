@@ -152,7 +152,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	// Create a database connection
 	// It will be closed in r.Close()
 	var err error
-	r.db, err = sql.Open("mysql", r.dsn())
+	r.db, err = dbconn.New(r.dsn())
 	if err != nil {
 		return err
 	}
@@ -374,7 +374,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Otherwise, it will default to the NOOP throttler.
 	var err error
 	if r.migration.ReplicaDSN != "" {
-		r.replica, err = sql.Open("mysql", r.migration.ReplicaDSN)
+		r.replica, err = dbconn.New(r.migration.ReplicaDSN)
 		if err != nil {
 			return err
 		}

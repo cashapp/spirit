@@ -2,7 +2,6 @@ package dbconn
 
 import (
 	"context"
-	"database/sql"
 	"sync"
 	"testing"
 	"time"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestTableLock(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := New(dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -38,7 +37,7 @@ func TestTableLock(t *testing.T) {
 }
 
 func TestTableLockFail(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := New(dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 
