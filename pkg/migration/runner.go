@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
@@ -94,13 +96,18 @@ type Runner struct {
 
 	// Attached logger
 	logger loggers.Advanced
+
+	// MetricsSink
+	metricsSink metrics.Sink
 }
 
 func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
-		migration: m,
-		logger:    logrus.New(),
+		migration:   m,
+		logger:      logrus.New(),
+		metricsSink: &metrics.NoopSink{},
 	}
+
 	if r.migration.TargetChunkTime == 0 {
 		r.migration.TargetChunkTime = table.ChunkerDefaultTarget
 	}
@@ -126,6 +133,10 @@ func NewRunner(m *Migration) (*Runner, error) {
 		return nil, errors.New("alter statement is required")
 	}
 	return r, nil
+}
+
+func (r *Runner) SetMetricsSink(sink metrics.Sink) {
+	r.metricsSink = sink
 }
 
 func (r *Runner) SetLogger(logger loggers.Advanced) {
@@ -343,6 +354,7 @@ func (r *Runner) setup(ctx context.Context) error {
 			FinalChecksum:   r.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          r.logger,
+			MetricsSink:     r.metricsSink,
 		})
 		if err != nil {
 			return err
@@ -591,7 +603,9 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		FinalChecksum:   r.migration.Checksum,
 		Throttler:       &throttler.Noop{},
 		Logger:          r.logger,
+		MetricsSink:     r.metricsSink,
 	}, lowWatermark, rowsCopied, rowsCopiedLogical)
+
 	if err != nil {
 		return err
 	}

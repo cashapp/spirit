@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,6 +33,18 @@ func runSQL(t *testing.T, stmt string) {
 	assert.NoError(t, err)
 }
 
+type TestMetricsSink struct {
+	sync.Mutex
+	called int
+}
+
+func (t *TestMetricsSink) Send(ctx context.Context, m *metrics.Metrics) error {
+	t.Lock()
+	defer t.Unlock()
+	t.called += 1
+	return nil
+}
+
 func TestCopier(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS copiert1, copiert2")
 	runSQL(t, "CREATE TABLE copiert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -46,7 +59,10 @@ func TestCopier(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "copiert2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
+	copierConfig := NewCopierDefaultConfig()
+	testMetricsSink := &TestMetricsSink{}
+	copierConfig.MetricsSink = testMetricsSink
+	copier, err := NewCopier(db, t1, t2, copierConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
 
@@ -55,6 +71,9 @@ func TestCopier(t *testing.T) {
 	err = db.QueryRow("SELECT COUNT(*) FROM copiert2").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
+
+	// Verify that testMetricsSink.Send was called 2 times
+	assert.Equal(t, 2, testMetricsSink.called)
 }
 
 func TestThrottler(t *testing.T) {
