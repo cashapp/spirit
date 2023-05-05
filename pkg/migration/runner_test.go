@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squareup/spirit/pkg/metrics"
+
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/repl"
@@ -961,6 +963,7 @@ func TestE2EBinlogSubscribing(t *testing.T) {
 			FinalChecksum:   m.migration.Checksum,
 			Throttler:       &throttler.Noop{},
 			Logger:          m.logger,
+			MetricsSink:     &metrics.NoopSink{},
 		})
 		assert.NoError(t, err)
 		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
