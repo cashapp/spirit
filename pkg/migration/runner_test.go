@@ -1123,3 +1123,31 @@ func TestDefaultPort(t *testing.T) {
 	assert.Equal(t, "localhost:3306", m.migration.Host)
 	m.SetLogger(logrus.New())
 }
+
+func TestNullToNotNull(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS autodatetime`)
+	table := `CREATE TABLE autodatetime (
+		id INT NOT NULL AUTO_INCREMENT,
+		created_at DATETIME(3) NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	runSQL(t, `INSERT INTO autodatetime (created_at) VALUES (NULL)`)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "autodatetime",
+		Alter:    "modify column created_at datetime(3) not null default current_timestamp(3)",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "Column 'created_at' cannot be null")
+	assert.NoError(t, m.Close())
+}
