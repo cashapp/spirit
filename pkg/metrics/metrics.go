@@ -1,3 +1,5 @@
+// Package metrics contains a sink interface to be used by clients to implement sink.
+// It also provides a default NoopSink and LogSink for convenience
 package metrics
 
 import (
@@ -51,11 +53,12 @@ func (s noopSink) Send(ctx context.Context, m *Metrics) error {
 
 var _ Sink = noopSink{}
 
-var NoopSink = NewNoopSink()
-
 func NewNoopSink() *noopSink {
 	return &noopSink{}
 }
+
+// NoopSink is a Noop Sink instance to be used in tests
+var NoopSink = NewNoopSink()
 
 // logSink logs metrics
 type logSink struct {
@@ -71,7 +74,6 @@ func (l *logSink) Send(ctx context.Context, m *Metrics) error {
 			l.logger.Infof("metric: name: %s, type: gauge, value: %f", v.Name, v.Value)
 		default:
 			l.logger.Errorf("Received invalid metric type: %s, name: %s, value: %f", v.Type, v.Name, v.Value)
-
 		}
 	}
 	return nil

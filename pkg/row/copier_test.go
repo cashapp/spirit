@@ -13,7 +13,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,6 +33,18 @@ func runSQL(t *testing.T, stmt string) {
 	assert.NoError(t, err)
 }
 
+type TestMetricsSink struct {
+	sync.Mutex
+	called int
+}
+
+func (t *TestMetricsSink) Send(ctx context.Context, m *metrics.Metrics) error {
+	t.Lock()
+	defer t.Unlock()
+	t.called += 1
+	return nil
+}
+
 func TestCopier(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS copiert1, copiert2")
 	runSQL(t, "CREATE TABLE copiert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -48,7 +59,10 @@ func TestCopier(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "copiert2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copierConfig := NewCopierDefaultConfig()
+	testMetricsSink := &TestMetricsSink{}
+	copierConfig.MetricsSink = testMetricsSink
+	copier, err := NewCopier(db, t1, t2, copierConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
 
@@ -57,6 +71,9 @@ func TestCopier(t *testing.T) {
 	err = db.QueryRow("SELECT COUNT(*) FROM copiert2").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
+
+	// Verify that testMetricsSink.Send was called 2 times
+	assert.Equal(t, 2, testMetricsSink.called)
 }
 
 func TestThrottler(t *testing.T) {
@@ -73,7 +90,7 @@ func TestThrottler(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "throttlert2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	copier.SetThrottler(&throttler.Noop{})
 	assert.NoError(t, copier.Run(context.Background())) // works
@@ -102,7 +119,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 	// if the checksum is FALSE, the unique violation will cause an error.
 	cfg := NewCopierDefaultConfig()
 	cfg.FinalChecksum = false
-	copier, err := NewCopier(db, t1, t2, cfg, metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, cfg)
 	assert.NoError(t, err)
 	assert.Error(t, copier.Run(context.Background())) // fails
 
@@ -113,7 +130,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 	t2 = table.NewTableInfo(db, "test", "copieruniqt2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
-	copier, err = NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err = NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
 }
@@ -133,7 +150,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
@@ -154,7 +171,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
@@ -175,7 +192,7 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Checksum flag does not affect this error.
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.NoError(t, err)
@@ -211,7 +228,7 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 		err = tx.Rollback()
 		assert.NoError(t, err)
 	}()
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.NoError(t, err) // succeeded within retry.
@@ -248,7 +265,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	}()
 
 	wg.Wait() // Wait only for the lock to be acquired.
-	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.Error(t, err) // exceeded retry.
@@ -261,7 +278,7 @@ func TestCopierValidation(t *testing.T) {
 	t1 := table.NewTableInfo(db, "test", "t1")
 
 	// if the checksum is FALSE, the unique violation will cause an error.
-	_, err = NewCopier(db, t1, nil, NewCopierDefaultConfig(), metrics.NoopSink)
+	_, err = NewCopier(db, t1, nil, NewCopierDefaultConfig())
 	assert.Error(t, err)
 }
 
@@ -289,9 +306,9 @@ func TestETA(t *testing.T) {
 	t1.EstimatedRows = 1000
 	t2.EstimatedRows = 1000
 
-	copier1, err := NewCopier(db, t1, t1new, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier1, err := NewCopier(db, t1, t1new, NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	copier2, err := NewCopier(db, t2, t2new, NewCopierDefaultConfig(), metrics.NoopSink)
+	copier2, err := NewCopier(db, t2, t2new, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 
 	// set the start time to -copyETAInitialWaitTime ago so the ETAs will show.
@@ -345,7 +362,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 	assert.NoError(t, t1new.SetInfo(context.TODO()))
 
 	lowWatermark := `{"Key":"a","ChunkSize":1,"LowerBound":{"Value":3,"Inclusive":true},"UpperBound":{"Value":4,"Inclusive":false}}`
-	copier, err := NewCopierFromCheckpoint(db, t1, t1new, NewCopierDefaultConfig(), lowWatermark, 3, 3, metrics.NoopSink)
+	copier, err := NewCopierFromCheckpoint(db, t1, t1new, NewCopierDefaultConfig(), lowWatermark, 3, 3)
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
 
