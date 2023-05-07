@@ -162,7 +162,7 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunk, time.Second)
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1,\"Inclusive\":true},\"UpperBound\":{\"Value\":1001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"1001\",\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
@@ -170,7 +170,7 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
 
 	chunkAsync1, err := chunker.Next()
 	assert.NoError(t, err)
@@ -187,29 +187,29 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunkAsync2, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync3, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":1001,\"Inclusive\":true},\"UpperBound\":{\"Value\":2001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync1, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":4001,\"Inclusive\":true},\"UpperBound\":{\"Value\":5001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"4001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"5001\",\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "id >= 5001 AND id < 6001", chunk.String()) // should bump immediately
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":4001,\"Inclusive\":true},\"UpperBound\":{\"Value\":5001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"4001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"5001\",\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":5001,\"Inclusive\":true},\"UpperBound\":{\"Value\":6001,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"5001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"6001\",\"Inclusive\":false}}", watermark)
 }
 
 func TestDynamicChunking(t *testing.T) {
@@ -275,7 +275,7 @@ func TestDynamicChunking(t *testing.T) {
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
 
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":22,\"LowerBound\":{\"Value\":584,\"Inclusive\":true},\"UpperBound\":{\"Value\":606,\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":22,\"LowerBound\":{\"Value\": \"584\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"606\",\"Inclusive\":false}}", watermark)
 
 	// Start everything over again as t2.
 	t2 := newTableInfo4Test("test", "t1")
