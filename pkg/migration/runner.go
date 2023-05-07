@@ -91,8 +91,9 @@ type Runner struct {
 
 	// Used by the test-suite and some post-migration output.
 	// Indicates if certain optimizations applied.
-	usedInstantDDL bool
-	usedInplaceDDL bool
+	usedInstantDDL           bool
+	usedInplaceDDL           bool
+	usedResumeFromCheckpoint bool
 
 	// Attached logger
 	logger loggers.Advanced
@@ -636,6 +637,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return err
 	}
 	r.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlogName, binlogPos, rowsCopied)
+	r.usedResumeFromCheckpoint = true
 	return nil
 }
 

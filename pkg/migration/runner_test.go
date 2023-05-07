@@ -783,6 +783,77 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.db.Close())
 }
 
+func TestCheckpointRestore(t *testing.T) {
+	tbl := `CREATE TABLE cpt2 (
+		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		id2 INT NOT NULL,
+		pad VARCHAR(100) NOT NULL default 0)`
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	runSQL(t, `DROP TABLE IF EXISTS cpt2, _cpt2_new, _cpt2_chkpnt`)
+	runSQL(t, tbl)
+
+	r, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "cpt2",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "initial", r.getCurrentState().String())
+	// Usually we would call r.Run() but we want to step through
+	// the migration process manually.
+	r.db, err = sql.Open("mysql", r.dsn())
+	assert.NoError(t, err)
+	// Get Table Info
+	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	err = r.table.SetInfo(context.TODO())
+	assert.NoError(t, err)
+	assert.NoError(t, r.dropOldTable(context.TODO()))
+
+	// So we proceed with the initial steps.
+	assert.NoError(t, r.createNewTable(context.TODO()))
+	assert.NoError(t, r.alterNewTable(context.TODO()))
+	assert.NoError(t, r.createCheckpointTable(context.TODO()))
+
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		Logger:      logrus.New(),
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	err = r.replClient.Run()
+	assert.NoError(t, err)
+
+	// Now insert a fake checkpoint, this uses a known bad value
+	// from issue #125
+	watermark := "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":\"53926425\",\"Inclusive\":true},\"UpperBound\":{\"Value\":\"53926425\",\"Inclusive\":false}}"
+	binlog := r.replClient.GetBinlogApplyPosition()
+	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
+		r.checkpointTable.QuotedName)
+	_, err = r.db.ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
+	assert.NoError(t, err)
+
+	r2, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "cpt2",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	err = r2.Run(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, r2.usedResumeFromCheckpoint)
+}
+
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	tbl := `CREATE TABLE cpt1difft1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
