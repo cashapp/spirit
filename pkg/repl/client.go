@@ -413,7 +413,6 @@ func (c *Client) Flush(ctx context.Context) error {
 		if err := c.BlockWait(ctx); err != nil {
 			return err
 		}
-
 		c.Lock()
 		changetSetLen := len(c.binlogChangeset)
 		c.Unlock()
@@ -467,11 +466,15 @@ func (c *Client) BlockWait(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for {
+	for i := 100; ; i++ {
 		if err := c.injectBinlogNoise(ctx); err != nil {
 			return err
 		}
 		canalPos := c.canal.SyncedPosition()
+		if i%100 == 0 {
+			// Print status every 100 loops = 10s
+			c.logger.Infof("blocking until we have read all binary logs: current-pos=%s target-pos=%s", canalPos, targetPos)
+		}
 		if canalPos.Compare(targetPos) >= 0 {
 			break
 		}
