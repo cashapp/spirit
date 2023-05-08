@@ -65,7 +65,9 @@ func (c *Chunk) JSON() string {
 }
 
 func (b *Boundary) JSON() string {
-	return fmt.Sprintf(`{"Value":%s,"Inclusive":%t}`, b.Value, b.Inclusive)
+	// encode values as strings otherwise we get JSON floats
+	// which can corrupt larger values. Issue #125
+	return fmt.Sprintf(`{"Value": "%s","Inclusive":%t}`, b.Value, b.Inclusive)
 }
 
 type JSONChunk struct {
