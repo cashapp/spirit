@@ -112,7 +112,7 @@ func NewClientDefaultConfig() *ClientConfig {
 // This will be used after copy rows to apply any changes that have been made.
 func (c *Client) OnRow(e *canal.RowsEvent) error {
 	for _, row := range e.Rows {
-		key := c.table.ExtractPrimaryKeyFromRowImage(row)
+		key := c.table.PrimaryKeyValues(row)
 		atomic.AddInt64(&c.changesetRowsEventCount, 1)
 		// Important! We can only apply this optimization while in migrationStateCopyRows.
 		// If we do it too early, we might miss updates in-between starting the subscription,

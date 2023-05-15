@@ -65,10 +65,10 @@ func (t *TableInfo) isCompatibleWithChunker() error {
 	return nil
 }
 
-// ExtractPrimaryKeyFromRowImage helps extract the PRIMARY KEY from a row image.
+// PrimaryKeyValues helps extract the PRIMARY KEY from a row image.
 // It uses our knowledge of the ordinal position of columns to find the
 // position of primary key columns (there might be more than one).
-func (t *TableInfo) ExtractPrimaryKeyFromRowImage(row interface{}) []interface{} {
+func (t *TableInfo) PrimaryKeyValues(row interface{}) []interface{} {
 	var pkCols []interface{}
 	for _, pCol := range t.PrimaryKey {
 		for i, col := range t.Columns {
