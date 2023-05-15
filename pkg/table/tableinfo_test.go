@@ -512,3 +512,33 @@ func TestChunkerStatisticsUpdate(t *testing.T) {
 
 	t1.Close()
 }
+
+func TestPrimaryKeyValuesExtraction(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	runSQL(t, `DROP TABLE IF EXISTS t1`)
+	table := `CREATE TABLE t1 (
+		id int(11) unsigned NOT NULL AUTO_INCREMENT,
+		name varchar(115),
+		age int(11) NOT NULL,
+		PRIMARY KEY (id, age)
+	)`
+	runSQL(t, table)
+	runSQL(t, `insert into t1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
+
+	t1 := NewTableInfo(db, "test", "t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+
+	var id, age int
+	var name string
+
+	err = db.QueryRow("SELECT * FROM `test`.`t1` ORDER BY id DESC LIMIT 1").Scan(&id, &name, &age)
+	assert.NoError(t, err)
+
+	row := []interface{}{id, name, age}
+	pkVals := t1.PrimaryKeyValues(row)
+	assert.Equal(t, id, pkVals[0])
+	assert.Equal(t, age, pkVals[1])
+}
