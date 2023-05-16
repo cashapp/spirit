@@ -1222,3 +1222,49 @@ func TestNullToNotNull(t *testing.T) {
 	assert.ErrorContains(t, err, "Column 'created_at' cannot be null")
 	assert.NoError(t, m.Close())
 }
+
+func TestChunkerPrefetching(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS prefetchtest`)
+	table := `CREATE TABLE prefetchtest (
+		id BIGINT NOT NULL AUTO_INCREMENT,
+		created_at DATETIME(3) NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	// insert about 11K rows.
+	runSQL(t, `INSERT INTO prefetchtest (created_at) VALUES (NULL)`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 10000`)
+
+	// the max id should be able 11040
+	// lets insert one far off ID: 300B
+	// and then continue inserting at greater than the max dynamic chunk size.
+	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (300000000000, NULL)`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
+
+	// and then another big gap
+	// and then continue inserting at greater than the max dynamic chunk size.
+	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (600000000000, NULL)`)
+	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
+	// and then one final value which is way out there.
+	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (900000000000, NULL)`)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "prefetchtest",
+		Alter:    "engine=innodb",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
+}

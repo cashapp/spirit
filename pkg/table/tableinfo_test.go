@@ -300,8 +300,6 @@ func TestDynamicChunking(t *testing.T) {
 	assert.Equal(t, "584", chunk.LowerBound.Value.String())
 }
 
-// These tests require a DB connection.
-
 func dsn() string {
 	dsn := os.Getenv("MYSQL_DSN")
 	if dsn == "" {
@@ -310,7 +308,7 @@ func dsn() string {
 	return dsn
 }
 
-func newTableInfo4Test(schema, table string) *TableInfo {
+func newTableInfo4Test(schema, table string) *TableInfo { //nolint: unparam
 	t1 := NewTableInfo(nil, schema, table)
 	return t1
 }
@@ -541,4 +539,57 @@ func TestPrimaryKeyValuesExtraction(t *testing.T) {
 	pkVals := t1.PrimaryKeyValues(row)
 	assert.Equal(t, id, pkVals[0])
 	assert.Equal(t, age, pkVals[1])
+}
+
+func TestPrefetchChunking(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	runSQL(t, `DROP TABLE IF EXISTS tprefetch`)
+	table := `CREATE TABLE tprefetch (
+		id BIGINT NOT NULL AUTO_INCREMENT,
+		created_at DATETIME(3) NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+
+	// insert about 11K rows.
+	runSQL(t, `INSERT INTO tprefetch (created_at) VALUES (NULL)`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 10000`)
+
+	// the max id should be able 11040
+	// lets insert one far off ID: 300B
+	// and then continue inserting at greater than the max dynamic chunk size.
+	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (300000000000, NULL)`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
+
+	// and then another big gap
+	// and then continue inserting at greater than the max dynamic chunk size.
+	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (600000000000, NULL)`)
+	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
+	// and then one final value which is way out there.
+	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (900000000000, NULL)`)
+
+	t1 := newTableInfo4Test("test", "tprefetch")
+	t1.db = db
+	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunker := &chunkerUniversal{
+		Ti:            t1,
+		ChunkerTarget: time.Second,
+		logger:        logrus.New(),
+	}
+	chunker.SetDynamicChunking(true)
+	assert.NoError(t, chunker.Open())
+	assert.False(t, chunker.chunkPrefetchingEnabled)
+
+	for !chunker.finalChunkSent {
+		chunk, err := chunker.Next()
+		assert.NoError(t, err)
+		chunker.Feedback(chunk, 100*time.Millisecond) // way too short.
+	}
+	assert.True(t, chunker.chunkPrefetchingEnabled)
 }
