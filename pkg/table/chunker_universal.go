@@ -44,7 +44,7 @@ var _ Chunker = &chunkerUniversal{}
 // nextChunkByPrefetching uses prefetching instead of feedback to determine the chunk size.
 // It is used when the chunker detects that there are very large gaps in the sequence.
 // When this mode is enabled, the chunkSize is "reset" to 1000 rows, so we know that
-// t.chunkSize is reliable. It is also expanded again based on feedback. Knowing when
+// t.chunkSize is reliable. It is also expanded again based on feedback.
 func (t *chunkerUniversal) nextChunkByPrefetching() (*Chunk, error) {
 	key := t.Ti.PrimaryKey[0]
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET %d",
