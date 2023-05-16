@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -31,10 +32,63 @@ type chunkerUniversal struct {
 	watermark             *Chunk
 	watermarkQueuedChunks []*Chunk
 
+	// The chunk prefetching algorithm is used when the chunker detects
+	// that there are very large gaps in the sequence.
+	chunkPrefetchingEnabled bool
+
 	logger loggers.Advanced
 }
 
 var _ Chunker = &chunkerUniversal{}
+
+// nextChunkByPrefetching uses prefetching instead of feedback to determine the chunk size.
+// It is used when the chunker detects that there are very large gaps in the sequence.
+// When this mode is enabled, the chunkSize is "reset" to 1000 rows, so we know that
+// t.chunkSize is reliable. It is also expanded again based on feedback. Knowing when
+func (t *chunkerUniversal) nextChunkByPrefetching() (*Chunk, error) {
+	key := t.Ti.PrimaryKey[0]
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET %d",
+		key, t.Ti.QuotedName, key, key, t.chunkSize,
+	)
+	rows, err := t.Ti.db.Query(query, t.chunkPtr.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if rows.Next() {
+		minVal := t.chunkPtr
+		var upperVal int64
+		err = rows.Scan(&upperVal)
+		if err != nil {
+			return nil, err
+		}
+		maxVal := newDatum(upperVal, t.chunkPtr.tp)
+		t.chunkPtr = maxVal
+
+		// If the difference between min and max is less than
+		// MaxDynamicRowSize we can turn off prefetching.
+		if maxVal.Range(minVal) < MaxDynamicRowSize {
+			t.logger.Warnf("disabling chunk prefetching: min-val=%s max-val=%s max-dynamic-row-size=%d", minVal, maxVal, MaxDynamicRowSize)
+			t.chunkSize = StartingChunkSize // reset
+			t.chunkPrefetchingEnabled = false
+		}
+
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        key,
+			LowerBound: &Boundary{minVal, true},
+			UpperBound: &Boundary{maxVal, false},
+		}, nil
+	}
+	// If there were no rows, it means we are indeed
+	// on the final chunk.
+	t.finalChunkSent = true
+	return &Chunk{
+		ChunkSize:  t.chunkSize,
+		Key:        key,
+		LowerBound: &Boundary{t.chunkPtr, true},
+	}, nil
+}
 
 func (t *chunkerUniversal) Next() (*Chunk, error) {
 	t.Lock()
@@ -46,7 +100,6 @@ func (t *chunkerUniversal) Next() (*Chunk, error) {
 		return nil, ErrTableNotOpen
 	}
 	key := t.Ti.PrimaryKey[0]
-	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
 
 	// If there is a minimum value, we attempt to apply
 	// the minimum value optimization.
@@ -58,6 +111,10 @@ func (t *chunkerUniversal) Next() (*Chunk, error) {
 			UpperBound: &Boundary{t.chunkPtr, false},
 		}, nil
 	}
+	if t.chunkPrefetchingEnabled {
+		return t.nextChunkByPrefetching()
+	}
+	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
 
 	// Before we return a final open bounded chunk, we check if the statistics
 	// need updating, in which case we synchronously refresh them.
@@ -348,6 +405,18 @@ func (t *chunkerUniversal) calculateNewTargetChunkSize() uint64 {
 	p90 := float64(lazyFindP90(t.chunkTimingInfo))
 	targetTime := float64(t.ChunkerTarget)
 	newTargetRows := float64(t.chunkSize) * (targetTime / p90)
+	// switch to prefetch chunking if:
+	// - We are already at the max chunk size
+	// - This new target wants to go higher
+	// - our current p90 is only a fraction of our target time
+	if t.chunkSize == MaxDynamicRowSize && newTargetRows > MaxDynamicRowSize && (p90 < targetTime*5) {
+		t.logger.Warnf("dynamic chunking is not working as expected: target-time=%s p90-time=%s new-target-rows=%d max-dynamic-row-size=%d",
+			time.Duration(targetTime), time.Duration(p90), uint64(newTargetRows), MaxDynamicRowSize,
+		)
+		t.logger.Warn("switching to prefetch algorithm")
+		t.chunkSize = StartingChunkSize // reset
+		t.chunkPrefetchingEnabled = true
+	}
 	return uint64(newTargetRows)
 }
 
