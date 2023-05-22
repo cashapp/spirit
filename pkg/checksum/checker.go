@@ -173,7 +173,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	c.logger.Info("table unlocked, starting checksum")
 
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
 	for !c.chunker.IsRead() && c.isHealthy() {
 		g.Go(func() error {

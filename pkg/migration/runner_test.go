@@ -661,7 +661,7 @@ func TestCheckpoint(t *testing.T) {
 		err = r.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, r.dropOldTable(context.TODO()))
-		go r.dumpStatus() // start periodically writing status
+		go r.dumpStatus(context.TODO()) // start periodically writing status
 		return r
 	}
 
