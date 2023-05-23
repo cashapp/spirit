@@ -1268,3 +1268,100 @@ func TestChunkerPrefetching(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
+
+func TestResumeFromCheckpointE2E(t *testing.T) {
+	// Run on mysql 5.7 so the alter statement doesn't run instantly
+	//os.Setenv("MYSQL_DSN", "msandbox:msandbox@tcp(127.0.0.1:5712)/test")
+	// Lower the checkpoint interval for testing.
+	checkpointDumpInterval = 1 * time.Second
+	defer func() {
+		checkpointDumpInterval = 50 * time.Second
+	}()
+
+	runSQL(t, `DROP TABLE IF EXISTS chkpresumetest, _chkpresumetest_old, _chkpresumetest_chkpnt`)
+	table := `CREATE TABLE chkpresumetest (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	// Insert dummy data.
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
+
+	alterSQL := "ADD index(pad);"
+	// use as slow as possible here: we want the copy to be still running
+	// when we kill it once we have a checkpoint saved.
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 1
+	migration.Checksum = true
+	migration.Table = "chkpresumetest"
+	migration.Alter = alterSQL
+	migration.TargetChunkTime = 100 * time.Millisecond
+
+	// Run the migration for 3 seconds and then kill it.
+	runner, err := NewRunner(migration)
+	assert.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		err := runner.Run(ctx)
+		assert.Error(t, err) // it gets interrupted in 3 seconds
+	}()
+
+	// wait until the migration has copied some data into the chkpresumetest_new table
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		fmt.Println("Checking count of rows in new table...")
+		// Check the _new table exists
+		stmt := `SELECT table_name FROM information_schema.tables where table_schema='test' and table_name = '_chkpresumetest_chkpnt' LIMIT 1;`
+		var table string
+		err := db.QueryRow(stmt).Scan(&table)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+			assert.NoError(t, err)
+		}
+
+		stmt = `SELECT count(*) from _chkpresumetest_chkpnt`
+		var rowCount int
+		assert.NoError(t, db.QueryRow(stmt).Scan(&rowCount))
+		if rowCount > 0 {
+			break
+		}
+	}
+	//time.Sleep(10 * time.Second)
+	fmt.Println("Cancelling Context.....")
+	cancel()
+
+	// Start a new migration with the same parameters.
+	// Let it complete.
+
+	newmigration := &Migration{}
+	newmigration.Host = cfg.Addr
+	newmigration.Username = cfg.User
+	newmigration.Password = cfg.Passwd
+	newmigration.Database = cfg.DBName
+	newmigration.Threads = 4
+	newmigration.Checksum = true
+	newmigration.Table = "chkpresumetest"
+	newmigration.Alter = alterSQL
+	newmigration.TargetChunkTime = 5 * time.Second
+
+	err = newmigration.Run()
+	assert.NoError(t, err)
+}
