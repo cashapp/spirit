@@ -1270,8 +1270,6 @@ func TestChunkerPrefetching(t *testing.T) {
 }
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
-	// Run on mysql 5.7 so the alter statement doesn't run instantly
-	//os.Setenv("MYSQL_DSN", "msandbox:msandbox@tcp(127.0.0.1:5712)/test")
 	// Lower the checkpoint interval for testing.
 	checkpointDumpInterval = 1 * time.Second
 	defer func() {
@@ -1296,7 +1294,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
 
-	alterSQL := "ADD index(pad);"
+	alterSQL := "ADD INDEX(pad);"
 	// use as slow as possible here: we want the copy to be still running
 	// when we kill it once we have a checkpoint saved.
 	migration.Host = cfg.Addr
@@ -1309,7 +1307,6 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	migration.Alter = alterSQL
 	migration.TargetChunkTime = 100 * time.Millisecond
 
-	// Run the migration for 3 seconds and then kill it.
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1319,13 +1316,11 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 		assert.Error(t, err) // it gets interrupted in 3 seconds
 	}()
 
-	// wait until the migration has copied some data into the chkpresumetest_new table
+	// wait until a checkpoint is saved (which means copy is in progress)
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
-		fmt.Println("Checking count of rows in new table...")
-		// Check the _new table exists
 		stmt := `SELECT table_name FROM information_schema.tables where table_schema='test' and table_name = '_chkpresumetest_chkpnt' LIMIT 1;`
 		var table string
 		err := db.QueryRow(stmt).Scan(&table)
@@ -1344,13 +1339,22 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 			break
 		}
 	}
-	//time.Sleep(10 * time.Second)
-	fmt.Println("Cancelling Context.....")
 	cancel()
+	// close repl client, throttler and replica
+	// we can't use runner.Close() as it will delete the checkpoint table as well, we want to test resuming
+	// TODO: Check if the following can be tied to context as well. So when context is cancelled they are cleaned up automatically.
+	if runner.replClient != nil {
+		runner.replClient.Close()
+	}
+	if runner.throttler != nil {
+		assert.NoError(t, runner.throttler.Close())
+	}
+	if runner.replica != nil {
+		assert.NoError(t, runner.replica.Close())
+	}
 
 	// Start a new migration with the same parameters.
 	// Let it complete.
-
 	newmigration := &Migration{}
 	newmigration.Host = cfg.Addr
 	newmigration.Username = cfg.User
