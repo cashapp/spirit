@@ -355,7 +355,7 @@ func (c *Client) flush(ctx context.Context) error {
 	// They should not conflict and order should not matter
 	// because they come from a consistent view of a map,
 	// which is distinct keys.
-	g, ctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(flushThreads)
 	for _, stmt := range stmts {
 		s := stmt

@@ -93,7 +93,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	// so there is a reasonable chance that on a busy system the TableLock is successful but the rename fails.
 	// Rather than try and upgrade the lock, we instead try and retry the cut-over operation
 	// again in a loop. This seems like a reasonable trade-off.
-	g, ctx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
 		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
