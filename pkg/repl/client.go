@@ -355,12 +355,12 @@ func (c *Client) flush(ctx context.Context) error {
 	// They should not conflict and order should not matter
 	// because they come from a consistent view of a map,
 	// which is distinct keys.
-	g, _ := errgroup.WithContext(ctx)
+	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(flushThreads)
 	for _, stmt := range stmts {
 		s := stmt
 		g.Go(func() error {
-			_, err := dbconn.RetryableTransaction(ctx, c.db, false, s)
+			_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, s)
 			return err
 		})
 	}
