@@ -47,6 +47,9 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
 	for i := 0; i < maxRetries; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxRetries)
 		if err = c.cutover(ctx); err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())

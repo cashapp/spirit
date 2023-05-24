@@ -148,13 +148,15 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 		// we don't want to stop processing if metrics sending fails, log and continue
 		c.logger.Errorf("error sending metrics from copier: %v", err)
 	}
-
 	return nil
 }
 
-func (c *Copier) isHealthy() bool {
+func (c *Copier) isHealthy(ctx context.Context) bool {
 	c.Lock()
 	defer c.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	return !c.isInvalid
 }
 
@@ -173,7 +175,7 @@ func (c *Copier) Run(ctx context.Context) error {
 	go c.estimateRowsPerSecondLoop(ctx) // estimate rows while copying
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
-	for !c.chunker.IsRead() && c.isHealthy() {
+	for !c.chunker.IsRead() && c.isHealthy(ctx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
 			if err != nil {
@@ -266,7 +268,7 @@ func (c *Copier) estimateRowsPerSecondLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !c.isHealthy() {
+			if !c.isHealthy(ctx) {
 				return
 			}
 			newRowsCount := atomic.LoadUint64(&c.CopyRowsCount)

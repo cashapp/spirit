@@ -245,7 +245,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		checksumTime,
 		time.Since(r.startTime),
 	)
-	return nil
+	return r.cleanup(ctx)
 }
 
 // prepareForCutover performs steps to prepare for the final cutover.
@@ -516,6 +516,23 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runner) cleanup(ctx context.Context) error {
+	if r.newTable != nil {
+		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
+		_, err := r.db.ExecContext(ctx, query)
+		if err != nil {
+			return err
+		}
+	}
+	if r.checkpointTable != nil {
+		err := r.dropCheckpoint(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Runner) Close() error {
 	r.setCurrentState(stateClose)
 	if r.table != nil {
@@ -524,21 +541,6 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
-	if r.newTable != nil {
-		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-		_, err := r.db.Exec(query)
-		if err != nil {
-			return err
-		}
-	}
-
-	if r.checkpointTable != nil {
-		err := r.dropCheckpoint(context.TODO())
-		if err != nil {
-			return err
-		}
-	}
-
 	if r.replClient != nil {
 		r.replClient.Close()
 	}

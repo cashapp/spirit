@@ -1271,7 +1271,7 @@ func TestChunkerPrefetching(t *testing.T) {
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
 	// Lower the checkpoint interval for testing.
-	checkpointDumpInterval = 1 * time.Second
+	checkpointDumpInterval = 100 * time.Millisecond
 	defer func() {
 		checkpointDumpInterval = 50 * time.Second
 	}()
@@ -1289,10 +1289,10 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	// Insert dummy data.
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 500000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
 
 	alterSQL := "ADD INDEX(pad);"
 	// use as slow as possible here: we want the copy to be still running
@@ -1313,7 +1313,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	go func() {
 		err := runner.Run(ctx)
-		assert.Error(t, err) // it gets interrupted in 3 seconds
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
@@ -1326,7 +1326,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 		err := db.QueryRow(stmt).Scan(&table)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				time.Sleep(200 * time.Millisecond)
+				time.Sleep(10 * time.Millisecond)
 				continue
 			}
 			assert.NoError(t, err)
@@ -1339,19 +1339,9 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 			break
 		}
 	}
+	// Between cancel and Close() every resource is freed.
 	cancel()
-	// close repl client, throttler and replica
-	// we can't use runner.Close() as it will delete the checkpoint table as well, we want to test resuming
-	// TODO: Check if the following can be tied to context as well. So when context is cancelled they are cleaned up automatically.
-	if runner.replClient != nil {
-		runner.replClient.Close()
-	}
-	if runner.throttler != nil {
-		assert.NoError(t, runner.throttler.Close())
-	}
-	if runner.replica != nil {
-		assert.NoError(t, runner.replica.Close())
-	}
+	assert.NoError(t, runner.Close())
 
 	// Start a new migration with the same parameters.
 	// Let it complete.
@@ -1366,6 +1356,9 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	newmigration.Alter = alterSQL
 	newmigration.TargetChunkTime = 5 * time.Second
 
-	err = newmigration.Run()
+	m, err := NewRunner(newmigration)
 	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }
