@@ -299,6 +299,13 @@ applyQueuedChunks:
 		// If there are none, we're done.
 		found := false
 		for i, queuedChunk := range t.watermarkQueuedChunks {
+			// queuedChunk.LowerBound can be nil, we need to cater for this
+			if queuedChunk.LowerBound == nil {
+				panic("queuedChunk.LowerBound is nil")
+			}
+			if t.watermark.UpperBound == nil {
+				panic("t.watermark.LowerBound is nil")
+			}
 			if queuedChunk.LowerBound.Value == t.watermark.UpperBound.Value {
 				t.watermark = queuedChunk
 				t.watermarkQueuedChunks = append(t.watermarkQueuedChunks[:i], t.watermarkQueuedChunks[i+1:]...)
