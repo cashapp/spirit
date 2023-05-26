@@ -299,12 +299,17 @@ applyQueuedChunks:
 		// If there are none, we're done.
 		found := false
 		for i, queuedChunk := range t.watermarkQueuedChunks {
-			// queuedChunk.LowerBound can be nil, we need to cater for this
+			// We had a few test failures (sigfault) originating from the below if condition, so
+			// adding more logging, so we can debug better if/when that happens again.
 			if queuedChunk.LowerBound == nil {
-				panic("queuedChunk.LowerBound is nil")
+				errMsg := fmt.Sprintf("chunkerUniversal.bumpWatermark: queuedChunk.LowerBound is nil. QueuedChunk: %v", queuedChunk)
+				t.logger.Error(errMsg)
+				panic(errMsg)
 			}
 			if t.watermark.UpperBound == nil {
-				panic("t.watermark.LowerBound is nil")
+				errMsg := fmt.Sprintf("chunkerUniversal.bumpWatermark: t.watermark.UpperBound is nil. t.watermark: %v", t.watermark)
+				t.logger.Error(errMsg)
+				panic(errMsg)
 			}
 			if queuedChunk.LowerBound.Value == t.watermark.UpperBound.Value {
 				t.watermark = queuedChunk
