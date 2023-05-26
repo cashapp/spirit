@@ -114,6 +114,9 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	return nil
 }
 func (c *Checker) RecentValue() string {
+	if c.recentValue == nil {
+		return "TBD"
+	}
 	return fmt.Sprintf("%v", c.recentValue)
 }
 
