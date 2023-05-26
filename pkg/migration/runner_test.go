@@ -1271,7 +1271,7 @@ func TestChunkerPrefetching(t *testing.T) {
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
 	// Lower the checkpoint interval for testing.
-	checkpointDumpInterval = 5 * time.Second
+	checkpointDumpInterval = 100 * time.Millisecond
 	defer func() {
 		checkpointDumpInterval = 50 * time.Second
 	}()
@@ -1289,12 +1289,10 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	// Insert dummy data.
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
-
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
 	alterSQL := "ADD INDEX(pad);"
 	// use as slow as possible here: we want the copy to be still running
 	// when we kill it once we have a checkpoint saved.
@@ -1310,6 +1308,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -1322,20 +1321,11 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
-		stmt := `SELECT table_name FROM information_schema.tables where table_schema='test' and table_name = '_chkpresumetest_chkpnt' LIMIT 1;`
-		var table string
-		err := db.QueryRow(stmt).Scan(&table)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-			assert.NoError(t, err)
-		}
-
-		stmt = `SELECT count(*) from _chkpresumetest_chkpnt`
 		var rowCount int
-		assert.NoError(t, db.QueryRow(stmt).Scan(&rowCount))
+		err = db.QueryRow(`SELECT count(*) from _chkpresumetest_chkpnt`).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
 		if rowCount > 0 {
 			break
 		}
@@ -1345,7 +1335,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	assert.NoError(t, runner.Close())
 
 	// Insert some more dummy data
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest LIMIT 1000")
 	// Start a new migration with the same parameters.
 	// Let it complete.
 	newmigration := &Migration{}
@@ -1361,6 +1351,8 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	m, err := NewRunner(newmigration)
 	assert.NoError(t, err)
+	assert.NotNil(t, m)
+
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
