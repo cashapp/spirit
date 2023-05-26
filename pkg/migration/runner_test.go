@@ -1271,7 +1271,7 @@ func TestChunkerPrefetching(t *testing.T) {
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
 	// Lower the checkpoint interval for testing.
-	checkpointDumpInterval = 100 * time.Millisecond
+	checkpointDumpInterval = 5 * time.Second
 	defer func() {
 		checkpointDumpInterval = 50 * time.Second
 	}()
@@ -1289,6 +1289,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	// Insert dummy data.
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
 	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
@@ -1343,6 +1344,8 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	cancel()
 	assert.NoError(t, runner.Close())
 
+	// Insert some more dummy data
+	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 200000")
 	// Start a new migration with the same parameters.
 	// Let it complete.
 	newmigration := &Migration{}
