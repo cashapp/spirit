@@ -177,7 +177,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	issued_at timestamp NOT NULL,
+	issued_at timestamp NULL DEFAULT NULL,
 	activated_at timestamp NULL DEFAULT NULL,
 	deactivated_at timestamp NULL DEFAULT NULL
 	)`)
@@ -185,7 +185,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 	updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-	issued_at timestamp(6) NOT NULL,
+	issued_at timestamp(6) NULL DEFAULT NULL,
 	activated_at timestamp(6) NULL DEFAULT NULL,
 	deactivated_at timestamp(6) NULL DEFAULT NULL
 	)`)

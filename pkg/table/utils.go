@@ -36,6 +36,8 @@ func castableTp(tp string) string {
 		return "char"
 	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary":
 		return "binary"
+	case "float", "double": // required for MySQL 5.7
+		return "char"
 	default:
 		return removeWidth(tp) // char, binary, datetime, year, float, double, json,
 	}

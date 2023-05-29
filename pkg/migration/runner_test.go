@@ -1275,7 +1275,7 @@ func TestTpConversion(t *testing.T) {
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-	issued_at timestamp NOT NULL,
+	issued_at timestamp NULL DEFAULT NULL,
 	activated_at timestamp NULL DEFAULT NULL,
 	deactivated_at timestamp NULL DEFAULT NULL,
 	intasstring varchar(255) NULL DEFAULT NULL,
@@ -1307,7 +1307,7 @@ func TestTpConversion(t *testing.T) {
 		Table:    "tpconvert",
 		Alter: `MODIFY COLUMN created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 		MODIFY COLUMN updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-		MODIFY COLUMN issued_at TIMESTAMP(6) NOT NULL,
+		MODIFY COLUMN issued_at TIMESTAMP(6) NULL,
 		MODIFY COLUMN activated_at TIMESTAMP(6) NULL,
 		MODIFY COLUMN deactivated_at TIMESTAMP(6) NULL,
 		MODIFY COLUMN intasstring INT NULL DEFAULT NULL
