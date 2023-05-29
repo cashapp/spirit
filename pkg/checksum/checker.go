@@ -114,12 +114,18 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	return nil
 }
 func (c *Checker) RecentValue() string {
+	if c.recentValue == nil {
+		return "TBD"
+	}
 	return fmt.Sprintf("%v", c.recentValue)
 }
 
-func (c *Checker) isHealthy() bool {
+func (c *Checker) isHealthy(ctx context.Context) bool {
 	c.Lock()
 	defer c.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	return !c.isInvalid
 }
 
@@ -173,9 +179,9 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	c.logger.Info("table unlocked, starting checksum")
 
-	g := new(errgroup.Group)
+	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
-	for !c.chunker.IsRead() && c.isHealthy() {
+	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
 			if err != nil {

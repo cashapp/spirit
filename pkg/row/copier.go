@@ -148,13 +148,15 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 		// we don't want to stop processing if metrics sending fails, log and continue
 		c.logger.Errorf("error sending metrics from copier: %v", err)
 	}
-
 	return nil
 }
 
-func (c *Copier) isHealthy() bool {
+func (c *Copier) isHealthy(ctx context.Context) bool {
 	c.Lock()
 	defer c.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
 	return !c.isInvalid
 }
 
@@ -170,10 +172,10 @@ func (c *Copier) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	go c.estimateRowsPerSecondLoop() // estimate rows while copying
-	g, ctx := errgroup.WithContext(ctx)
+	go c.estimateRowsPerSecondLoop(ctx) // estimate rows while copying
+	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
-	for !c.chunker.IsRead() && c.isHealthy() {
+	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
 			if err != nil {
@@ -183,7 +185,7 @@ func (c *Copier) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.CopyChunk(ctx, chunk); err != nil {
+			if err := c.CopyChunk(errGrpCtx, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}
@@ -251,7 +253,7 @@ func (c *Copier) GetETA() string {
 	return time.Duration(remainingSeconds * float64(time.Second)).String()
 }
 
-func (c *Copier) estimateRowsPerSecondLoop() {
+func (c *Copier) estimateRowsPerSecondLoop(ctx context.Context) {
 	// We take >10 second averages because with parallel copy it bounces around a lot.
 	// If it's an auto-inc key we use the "logical copy rows", because the estimate
 	// will be based on the max value of the auto-inc column.
@@ -261,24 +263,29 @@ func (c *Copier) estimateRowsPerSecondLoop() {
 	}
 	ticker := time.NewTicker(copyEstimateInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		if !c.isHealthy() {
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if !c.isHealthy(ctx) {
+				return
+			}
+			newRowsCount := atomic.LoadUint64(&c.CopyRowsCount)
+			if c.table.PrimaryKeyIsAutoInc {
+				newRowsCount = atomic.LoadUint64(&c.CopyRowsLogicalCount)
+			}
+			rowsPerInterval := float64(newRowsCount - prevRowsCount)
+			intervalsDivisor := float64(copyEstimateInterval / time.Second) // should be something like 10 for 10 seconds
+			rowsPerSecond := uint64(rowsPerInterval / intervalsDivisor)
+			atomic.StoreUint64(&c.rowsPerSecond, rowsPerSecond)
+			prevRowsCount = newRowsCount
 		}
-		newRowsCount := atomic.LoadUint64(&c.CopyRowsCount)
-		if c.table.PrimaryKeyIsAutoInc {
-			newRowsCount = atomic.LoadUint64(&c.CopyRowsLogicalCount)
-		}
-		rowsPerInterval := float64(newRowsCount - prevRowsCount)
-		intervalsDivisor := float64(copyEstimateInterval / time.Second) // should be something like 10 for 10 seconds
-		rowsPerSecond := uint64(rowsPerInterval / intervalsDivisor)
-		atomic.StoreUint64(&c.rowsPerSecond, rowsPerSecond)
-		prevRowsCount = newRowsCount
 	}
 }
 
 // The following funcs proxy to the chunker.
-// This is done so we don't need to export the chunker,
+// This is done, so we don't need to export the chunker,
 
 // KeyAboveHighWatermark returns true if the key is above where the chunker is currently at.
 func (c *Copier) KeyAboveHighWatermark(key interface{}) bool {

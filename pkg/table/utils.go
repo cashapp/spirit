@@ -34,7 +34,7 @@ func castableTp(tp string) string {
 		return "datetime"
 	case "varchar", "enum", "set", "text", "mediumtext", "longtext":
 		return "char"
-	case "tinyblob", "blob", "mediumblob", "longblob":
+	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary":
 		return "binary"
 	default:
 		return removeWidth(tp) // char, binary, datetime, year, float, double, json,
