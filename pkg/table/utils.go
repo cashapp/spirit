@@ -25,26 +25,37 @@ func castableTp(tp string) string {
 	newTp := removeWidth(tp)
 	newTp = removeEnumSetOpts(newTp)
 	newTp = removeZerofill(newTp)
+	newTp = removeDecimalWidth(newTp)
 	switch newTp {
 	case "tinyint", "smallint", "mediumint", "int", "bigint":
 		return "signed"
 	case "tinyint unsigned", "smallint unsigned", "mediumint unsigned", "int unsigned", "bigint unsigned":
 		return "unsigned"
-	case "timestamp":
+	case "timestamp", "datetime":
 		return "datetime"
 	case "varchar", "enum", "set", "text", "mediumtext", "longtext":
 		return "char"
-	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary":
+	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary", "binary":
 		return "binary"
 	case "float", "double": // required for MySQL 5.7
 		return "char"
+	case "json":
+		return "json"
+	case "decimal":
+		return tp
 	default:
-		return removeWidth(tp) // char, binary, datetime, year, float, double, json,
+		return "char" // default to char because it ends up being a char string in the concat anyway.
 	}
 }
 
 func removeWidth(s string) string {
 	regex := regexp.MustCompile(`\([0-9]+\)`)
+	s = regex.ReplaceAllString(s, "")
+	return strings.TrimSpace(s)
+}
+
+func removeDecimalWidth(s string) string {
+	regex := regexp.MustCompile(`\([0-9]+,[0-9]+\)`)
 	s = regex.ReplaceAllString(s, "")
 	return strings.TrimSpace(s)
 }

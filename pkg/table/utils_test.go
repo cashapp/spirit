@@ -55,7 +55,7 @@ func TestCastableTp(t *testing.T) {
 		{"binary(100)", "binary"},
 		{"datetime", "datetime"},
 		{"datetime(6)", "datetime"},
-		{"year", "year"},
+		{"year", "char"},
 		{"float", "char"},
 		{"double", "char"},
 		{"json", "json"},
