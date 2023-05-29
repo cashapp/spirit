@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
-	"github.com/squareup/spirit/pkg/utils"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -84,12 +84,12 @@ func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	defer trxPool.Put(trx)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
-		utils.IntersectColumns(c.table, c.newTable, true),
+		c.intersectColumns(),
 		c.table.QuotedName,
 		chunk.String(),
 	)
 	target := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
-		utils.IntersectColumns(c.table, c.newTable, true),
+		c.intersectColumns(),
 		c.newTable.QuotedName,
 		chunk.String(),
 	)
@@ -211,4 +211,21 @@ func (c *Checker) Run(ctx context.Context) error {
 		return err1
 	}
 	return nil
+}
+
+// intersectColumns is similar to utils.IntersectColumns, but it
+// wraps an IFNULL(), ISNULL() and cast operation around the columns.
+// The cast is to c.newTable type.
+func (c *Checker) intersectColumns() string {
+	var intersection []string
+	for _, col := range c.table.Columns {
+		for _, col2 := range c.newTable.Columns {
+			if col == col2 {
+				// Column exists in both, so we add intersection wrapped in
+				// IFNULL, ISNULL and CAST.
+				intersection = append(intersection, "IFNULL("+c.newTable.WrapCastType(col)+",''), ISNULL(`"+col+"`)")
+			}
+		}
+	}
+	return strings.Join(intersection, ", ")
 }

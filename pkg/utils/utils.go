@@ -40,20 +40,12 @@ func HashKey(key []interface{}) string {
 }
 
 // IntersectColumns returns a string of columns that are in both tables.
-// If ifNull is true, then it will wrap IFNULL(col,”), ISNULL(col) around
-// the columns for use in a checksum query.
-func IntersectColumns(t1, t2 *table.TableInfo, ifNull bool) string {
+func IntersectColumns(t1, t2 *table.TableInfo) string {
 	var intersection []string
 	for _, col := range t1.Columns {
 		for _, col2 := range t2.Columns {
 			if col == col2 {
-				if !ifNull {
-					intersection = append(intersection, "`"+col+"`")
-				} else {
-					// Test for both IFNULL (for concat function to not return NULL)
-					// and ISNULL (to handle nullability)
-					intersection = append(intersection, "IFNULL(`"+col+"`,''), ISNULL(`"+col+"`)")
-				}
+				intersection = append(intersection, "`"+col+"`")
 			}
 		}
 	}

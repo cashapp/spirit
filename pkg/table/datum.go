@@ -3,9 +3,7 @@ package table
 import (
 	"fmt"
 	"math"
-	"regexp"
 	"strconv"
-	"strings"
 )
 
 type datumTp int
@@ -33,12 +31,6 @@ func mySQLTypeToDatumTp(mysqlTp string) datumTp {
 		return binaryType
 	}
 	return unknownType
-}
-
-func removeWidth(s string) string {
-	regex := regexp.MustCompile(`\([0-9]+\)`)
-	s = regex.ReplaceAllString(s, "")
-	return strings.TrimSpace(s)
 }
 
 func newDatum(val interface{}, tp datumTp) datum {

@@ -342,6 +342,11 @@ func TestDiscovery(t *testing.T) {
 	assert.Equal(t, "test", t1.SchemaName)
 	assert.Equal(t, "id", t1.PrimaryKey[0])
 
+	// normalize for mysql 5.7 and 8.0
+	assert.Equal(t, "int", removeWidth(t1.colTps["id"]))
+	assert.Equal(t, "CAST(`id` AS signed)", t1.WrapCastType("id"))
+	assert.Equal(t, "CAST(`name` AS char)", t1.WrapCastType("name"))
+
 	assert.Equal(t, "1", t1.minValue.String())
 	assert.Equal(t, "3", t1.maxValue.String())
 

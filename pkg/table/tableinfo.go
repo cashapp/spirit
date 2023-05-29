@@ -33,11 +33,12 @@ type TableInfo struct {
 	QuotedName            string
 	PrimaryKey            []string
 	Columns               []string
-	pkMySQLTp             []string  // the MySQL type of pk
-	pkDatumTp             []datumTp // the datum type of pk
-	PrimaryKeyIsAutoInc   bool      // if pk[0] is an auto_increment column
-	minValue              datum     // known minValue of pk[0] (using type of PK[0])
-	maxValue              datum     // known maxValue of pk[0] (using type of PK[0])
+	pkMySQLTp             []string          // the MySQL type of pk
+	pkDatumTp             []datumTp         // the datum type of pk
+	PrimaryKeyIsAutoInc   bool              // if pk[0] is an auto_increment column
+	minValue              datum             // known minValue of pk[0] (using type of PK[0])
+	maxValue              datum             // known maxValue of pk[0] (using type of PK[0])
+	colTps                map[string]string // map from column name to MySQL type
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
 }
@@ -114,7 +115,7 @@ func (t *TableInfo) setRowEstimate(ctx context.Context) error {
 }
 
 func (t *TableInfo) setColumns(ctx context.Context) error {
-	rows, err := t.db.QueryContext(ctx, "SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
+	rows, err := t.db.QueryContext(ctx, "SELECT column_name, column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
@@ -123,12 +124,14 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 	}
 	defer rows.Close()
 	t.Columns = []string{}
+	t.colTps = make(map[string]string)
 	for rows.Next() {
-		var col string
-		if err := rows.Scan(&col); err != nil {
+		var col, tp string
+		if err := rows.Scan(&col, &tp); err != nil {
 			return err
 		}
 		t.Columns = append(t.Columns, col)
+		t.colTps[col] = tp
 	}
 	return nil
 }
@@ -261,4 +264,12 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 // MaxValue as a string
 func (t *TableInfo) MaxValue() string {
 	return fmt.Sprintf("%v", t.maxValue)
+}
+
+func (t *TableInfo) WrapCastType(col string) string {
+	tp, ok := t.colTps[col] // the tp keeps the width in this context.
+	if !ok {
+		panic("column not found")
+	}
+	return fmt.Sprintf("CAST(`%s` AS %s)", col, castableTp(tp))
 }
