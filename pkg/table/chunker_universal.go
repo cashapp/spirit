@@ -273,8 +273,13 @@ func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
 //   - If any queued chunks align, they are popped off the queue and the watermark is bumped.
 //   - This process repeats until there is no more alignment from the queue *or* the queue is empty.
 func (t *chunkerUniversal) bumpWatermark(chunk *Chunk) {
+	// We never set the watermark for the very last chunk, which has an open ended upper bound.
+	// This is safer anyway since between resumes a lot more data could arrive.
+	if chunk.UpperBound == nil {
+		return
+	}
 	// Check if this is the first chunk or it's the special restored chunk.
-	// If so, set the watermark.
+	// If so, set the watermark and then go on to applying any queued chunks.
 	if (t.watermark == nil && chunk.LowerBound == nil) || t.isSpecialRestoredChunk(chunk) {
 		t.watermark = chunk
 		goto applyQueuedChunks
@@ -299,6 +304,13 @@ applyQueuedChunks:
 		// If there are none, we're done.
 		found := false
 		for i, queuedChunk := range t.watermarkQueuedChunks {
+			// sanity checking: chunks *should* have a lower bound and upper bound.
+			if queuedChunk.LowerBound == nil || queuedChunk.UpperBound == nil {
+				errMsg := fmt.Sprintf("chunkerUniversal.bumpWatermark: nil value encountered: %v", queuedChunk)
+				t.logger.Error(errMsg)
+				panic(errMsg)
+			}
+			// The value aligns, remove it from the queued chunks and set the watermark to it.
 			if queuedChunk.LowerBound.Value == t.watermark.UpperBound.Value {
 				t.watermark = queuedChunk
 				t.watermarkQueuedChunks = append(t.watermarkQueuedChunks[:i], t.watermarkQueuedChunks[i+1:]...)

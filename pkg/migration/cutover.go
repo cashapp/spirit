@@ -47,6 +47,9 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
 	for i := 0; i < maxRetries; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxRetries)
 		if err = c.cutover(ctx); err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())
@@ -93,14 +96,14 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	// so there is a reasonable chance that on a busy system the TableLock is successful but the rename fails.
 	// Rather than try and upgrade the lock, we instead try and retry the cut-over operation
 	// again in a loop. This seems like a reasonable trade-off.
-	g := new(errgroup.Group)
+	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
 		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName, oldQuotedName,
 			c.newTable.QuotedName, c.table.QuotedName)
-		return dbconn.DBExec(ctx, c.db, query)
+		return dbconn.DBExec(errGrpCtx, c.db, query)
 	})
 	// We can now unlock the table to allow the rename to go through.
 	// Include a ROLLBACK before returning because of MDL.

@@ -355,12 +355,12 @@ func (c *Client) flush(ctx context.Context) error {
 	// They should not conflict and order should not matter
 	// because they come from a consistent view of a map,
 	// which is distinct keys.
-	g := new(errgroup.Group)
+	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(flushThreads)
 	for _, stmt := range stmts {
 		s := stmt
 		g.Go(func() error {
-			_, err := dbconn.RetryableTransaction(ctx, c.db, false, s)
+			_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, s)
 			return err
 		})
 	}
@@ -437,24 +437,29 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 	c.periodicFlushEnabled = true
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for range ticker.C {
-		c.periodicFlushLock.Lock()
-		// At some point before cutover we want to disable th periodic flush.
-		// The migrator will do this by calling StopPeriodicFlush()
-		if !c.periodicFlushEnabled {
-			c.periodicFlushLock.Unlock()
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			c.periodicFlushLock.Lock()
+			// At some point before cutover we want to disable th periodic flush.
+			// The migrator will do this by calling StopPeriodicFlush()
+			if !c.periodicFlushEnabled {
+				c.periodicFlushLock.Unlock()
+				return
+			}
+			startLoop := time.Now()
+			c.logger.Info("starting periodic flush of binary log")
+			// The periodic flush does not respect the throttler since we want to advance the binlog position
+			// we allow this to run, and then expect that if it is under load the throttler
+			// will kick in and slow down the copy-rows.
+			if err := c.flush(ctx); err != nil {
+				c.logger.Errorf("error flushing binary log: %v", err)
+			}
+			c.periodicFlushLock.Unlock()
+			c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
 		}
-		startLoop := time.Now()
-		c.logger.Info("starting periodic flush of binary log")
-		// The periodic flush does not respect the throttler since we want to advance the binlog position
-		// we allow this to run, and then expect that if it is under load the throttler
-		// will kick in and slow down the copy-rows.
-		if err := c.flush(ctx); err != nil {
-			c.logger.Errorf("error flushing binary log: %v", err)
-		}
-		c.periodicFlushLock.Unlock()
-		c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
 	}
 }
 

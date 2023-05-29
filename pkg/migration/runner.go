@@ -144,7 +144,9 @@ func (r *Runner) SetLogger(logger loggers.Advanced) {
 	r.logger = logger
 }
 
-func (r *Runner) Run(ctx context.Context) error {
+func (r *Runner) Run(originalCtx context.Context) error {
+	ctx, cancel := context.WithCancel(originalCtx)
+	defer cancel()
 	r.startTime = time.Now()
 	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
 		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.migration.Table, r.migration.Alter,
@@ -193,7 +195,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 
-	go r.dumpStatus()                    // start periodically writing status
+	go r.dumpStatus(ctx)                 // start periodically writing status
 	go r.dumpCheckpointContinuously(ctx) // start periodically dumping the checkpoint.
 
 	// Perform the main copy rows task. This is where the majority
@@ -243,7 +245,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		checksumTime,
 		time.Since(r.startTime),
 	)
-	return nil
+	return r.cleanup(ctx)
 }
 
 // prepareForCutover performs steps to prepare for the final cutover.
@@ -514,6 +516,23 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runner) cleanup(ctx context.Context) error {
+	if r.newTable != nil {
+		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
+		_, err := r.db.ExecContext(ctx, query)
+		if err != nil {
+			return err
+		}
+	}
+	if r.checkpointTable != nil {
+		err := r.dropCheckpoint(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Runner) Close() error {
 	r.setCurrentState(stateClose)
 	if r.table != nil {
@@ -522,21 +541,6 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
-	if r.newTable != nil {
-		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-		_, err := r.db.Exec(query)
-		if err != nil {
-			return err
-		}
-	}
-
-	if r.checkpointTable != nil {
-		err := r.dropCheckpoint(context.TODO())
-		if err != nil {
-			return err
-		}
-	}
-
 	if r.replClient != nil {
 		r.replClient.Close()
 	}
@@ -700,63 +704,73 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 func (r *Runner) dumpCheckpointContinuously(ctx context.Context) {
 	ticker := time.NewTicker(checkpointDumpInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		// Continue to checkpoint until we exit copy-rows.
-		// Ideally in future we can continue further than this,
-		// but unfortunately this currently results in a
-		// "watermark not ready" error.
-		if r.getCurrentState() > stateCopyRows {
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
-		if err := r.dumpCheckpoint(ctx); err != nil {
-			r.logger.Errorf("error writing checkpoint: %v", err)
+		case <-ticker.C:
+			// Continue to checkpoint until we exit copy-rows.
+			// Ideally in future we can continue further than this,
+			// but unfortunately this currently results in a
+			// "watermark not ready" error.
+			if r.getCurrentState() > stateCopyRows {
+				return
+			}
+			if err := r.dumpCheckpoint(ctx); err != nil {
+				r.logger.Errorf("error writing checkpoint: %v", err)
+			}
 		}
 	}
 }
 
-func (r *Runner) dumpStatus() {
+func (r *Runner) dumpStatus(ctx context.Context) {
 	ticker := time.NewTicker(statusInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		state := r.getCurrentState()
-		if state > stateCutOver {
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
+		case <-ticker.C:
+			state := r.getCurrentState()
+			if state > stateCutOver {
+				return
+			}
 
-		switch state {
-		case stateCopyRows:
-			// Status for copy rows
-			r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
-				r.getCurrentState().String(),
-				r.copier.GetProgress(),
-				r.replClient.GetDeltaLen(),
-				time.Since(r.startTime),
-				time.Since(r.copier.StartTime),
-				r.copier.GetETA(),
-				r.copier.Throttler.IsThrottled(),
-			)
-		case stateApplyChangeset, statePostChecksum:
-			// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
-			// proceeding to the checksum and then the final cutover.
-			r.logger.Infof("migration status: state=%s binlog-deltas=%v time-total=%v",
-				r.getCurrentState().String(),
-				r.replClient.GetDeltaLen(),
-				time.Since(r.startTime).String(),
-			)
-		case stateChecksum:
-			// This could take a while if it's a large table. We just have to show approximate progress.
-			// This is a little bit harder for checksum because it doesn't have returned rows
-			// so we just show a "recent value" over the "maximum value".
-			r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-total=%s checksum-time=%s",
-				r.getCurrentState().String(),
-				r.checker.RecentValue(), r.table.MaxValue(),
-				r.replClient.GetDeltaLen(),
-				time.Since(r.startTime),
-				time.Since(r.checker.StartTime),
-			)
-		default:
-			// For the linter:
-			// Status for all other states
+			switch state {
+			case stateCopyRows:
+				// Status for copy rows
+				r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
+					r.getCurrentState().String(),
+					r.copier.GetProgress(),
+					r.replClient.GetDeltaLen(),
+					time.Since(r.startTime),
+					time.Since(r.copier.StartTime),
+					r.copier.GetETA(),
+					r.copier.Throttler.IsThrottled(),
+				)
+			case stateApplyChangeset, statePostChecksum:
+				// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
+				// proceeding to the checksum and then the final cutover.
+				r.logger.Infof("migration status: state=%s binlog-deltas=%v time-total=%v",
+					r.getCurrentState().String(),
+					r.replClient.GetDeltaLen(),
+					time.Since(r.startTime).String(),
+				)
+			case stateChecksum:
+				// This could take a while if it's a large table. We just have to show approximate progress.
+				// This is a little bit harder for checksum because it doesn't have returned rows
+				// so we just show a "recent value" over the "maximum value".
+				r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-total=%s checksum-time=%s",
+					r.getCurrentState().String(),
+					r.checker.RecentValue(), r.table.MaxValue(),
+					r.replClient.GetDeltaLen(),
+					time.Since(r.startTime),
+					time.Since(r.checker.StartTime),
+				)
+			default:
+				// For the linter:
+				// Status for all other states
+			}
 		}
 	}
 }

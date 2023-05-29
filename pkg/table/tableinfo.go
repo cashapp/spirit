@@ -38,7 +38,6 @@ type TableInfo struct {
 	PrimaryKeyIsAutoInc   bool      // if pk[0] is an auto_increment column
 	minValue              datum     // known minValue of pk[0] (using type of PK[0])
 	maxValue              datum     // known maxValue of pk[0] (using type of PK[0])
-	isClosed              bool      // if this tableInfo is closed.
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
 }
@@ -213,9 +212,8 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 	return nil
 }
 
-// Close closes the tableInfo and stops the goroutine that updates the table statistics.
+// Close currently does nothing
 func (t *TableInfo) Close() error {
-	t.isClosed = true
 	return nil
 }
 
@@ -224,14 +222,16 @@ func (t *TableInfo) Close() error {
 func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for range ticker.C {
-		if t.isClosed {
+	for {
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if err := t.updateTableStatistics(ctx); err != nil {
+				logger.Errorf("error updating table statistics: %v", err)
+			}
+			logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
 		}
-		if err := t.updateTableStatistics(ctx); err != nil {
-			logger.Errorf("error updating table statistics: %v", err)
-		}
-		logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
 	}
 }
 
