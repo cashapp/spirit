@@ -123,8 +123,8 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	// resuming from checkpoint we will be re-applying some of the previous executed work.
 	query := fmt.Sprintf("INSERT IGNORE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE %s",
 		c.newTable.QuotedName,
-		utils.IntersectColumns(c.table, c.newTable, false),
-		utils.IntersectColumns(c.table, c.newTable, false),
+		utils.IntersectColumns(c.table, c.newTable),
+		utils.IntersectColumns(c.table, c.newTable),
 		c.table.QuotedName,
 		chunk.String(),
 	)

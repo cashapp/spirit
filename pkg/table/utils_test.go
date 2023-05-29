@@ -22,3 +22,51 @@ func TestFindP90(t *testing.T) {
 	}
 	assert.Equal(t, 3*time.Second, lazyFindP90(times))
 }
+
+type castableTpTest struct {
+	tp       string
+	expected string
+}
+
+func TestCastableTp(t *testing.T) {
+	tps := []castableTpTest{
+		{"tinyint", "signed"},
+		{"smallint", "signed"},
+		{"mediumint", "signed"},
+		{"int", "signed"},
+		{"bigint", "signed"},
+		{"tinyint unsigned", "unsigned"},
+		{"smallint unsigned", "unsigned"},
+		{"mediumint unsigned", "unsigned"},
+		{"int unsigned", "unsigned"},
+		{"bigint unsigned", "unsigned"},
+		{"timestamp", "datetime"},
+		{"timestamp(6)", "datetime"},
+		{"varchar(100)", "char"},
+		{"text", "char"},
+		{"mediumtext", "char"},
+		{"longtext", "char"},
+		{"tinyblob", "binary"},
+		{"blob", "binary"},
+		{"mediumblob", "binary"},
+		{"longblob", "binary"},
+		{"char(100)", "char"},
+		{"binary(100)", "binary"},
+		{"datetime", "datetime"},
+		{"datetime(6)", "datetime"},
+		{"year", "year"},
+		{"float", "float"},
+		{"double", "double"},
+		{"json", "json"},
+		{"int(11)", "signed"},
+		{"int(11) unsigned", "unsigned"},
+		{"int(11) zerofill", "signed"},
+		{"int(11) unsigned zerofill", "unsigned"},
+		{"enum('a', 'b', 'c')", "char"},
+		{"set('a', 'b', 'c')", "char"},
+		{"decimal(6,2)", "decimal(6,2)"},
+	}
+	for _, tp := range tps {
+		assert.Equal(t, tp.expected, castableTp(tp.tp))
+	}
+}

@@ -166,3 +166,61 @@ func TestBoundaryCases(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
+
+func TestChangeDataTypeDatetime(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS tdatetime, tdatetime2")
+	runSQL(t, `CREATE TABLE tdatetime (
+	id bigint NOT NULL AUTO_INCREMENT primary key,
+	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+	issued_at timestamp NOT NULL,
+	activated_at timestamp NULL DEFAULT NULL,
+	deactivated_at timestamp NULL DEFAULT NULL
+	)`)
+	runSQL(t, `CREATE TABLE tdatetime2 (
+	id bigint NOT NULL AUTO_INCREMENT primary key,
+	created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+	issued_at timestamp(6) NOT NULL,
+	activated_at timestamp(6) NULL DEFAULT NULL,
+	deactivated_at timestamp(6) NULL DEFAULT NULL
+	)`)
+	runSQL(t, `INSERT INTO tdatetime (created_at, updated_at, issued_at, activated_at, deactivated_at) VALUES
+	('2023-05-18 09:28:46', '2023-05-18 09:33:27', '2023-05-18 09:28:45', '2023-05-18 09:28:45', NULL               ),
+	('2023-05-18 09:34:38', '2023-05-24 07:38:25', '2023-05-18 09:34:37', '2023-05-18 09:34:37', '2023-05-24 07:38:25'),
+	('2023-05-24 07:34:36', '2023-05-24 07:34:36', '2023-05-24 07:34:35', NULL               , NULL               ),
+	('2023-05-24 07:41:05', '2023-05-25 06:15:37', '2023-05-24 07:41:04', '2023-05-24 07:41:04', '2023-05-25 06:15:37'),
+	('2023-05-25 06:17:30', '2023-05-25 06:17:30', '2023-05-25 06:17:29', '2023-05-25 06:17:29', NULL               ),
+	('2023-05-25 06:18:33', '2023-05-25 06:41:13', '2023-05-25 06:18:32', '2023-05-25 06:18:32', '2023-05-25 06:41:13'),
+	('2023-05-25 06:24:23', '2023-05-25 06:24:23', '2023-05-25 06:24:22', NULL               , NULL               ),
+	('2023-05-25 06:41:35', '2023-05-28 23:45:09', '2023-05-25 06:41:34', '2023-05-25 06:41:34', '2023-05-28 23:45:09'),
+	('2023-05-25 06:44:41', '2023-05-28 23:45:03', '2023-05-25 06:44:40', '2023-05-25 06:46:48', '2023-05-28 23:45:03'),
+	('2023-05-26 06:24:24', '2023-05-28 23:45:01', '2023-05-26 06:24:23', '2023-05-26 06:24:42', '2023-05-28 23:45:01'),
+	('2023-05-28 23:46:07', '2023-05-29 00:57:55', '2023-05-28 23:46:05', '2023-05-28 23:46:05', NULL               ),
+	('2023-05-28 23:53:34', '2023-05-29 00:57:56', '2023-05-28 23:53:33', '2023-05-28 23:58:09', NULL               );`)
+	runSQL(t, `INSERT INTO tdatetime2 SELECT * FROM tdatetime`)
+	// The checkpoint table is required for blockwait, structure doesn't matter.
+	runSQL(t, "CREATE TABLE IF NOT EXISTS _tdatetime_chkpnt (id int)")
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "tdatetime")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "tdatetime2")
+	assert.NoError(t, t2.SetInfo(context.TODO())) // fails
+	logger := logrus.New()
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	assert.NoError(t, feed.Run())
+
+	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	assert.NoError(t, err)
+	assert.NoError(t, checker.Run(context.Background())) // fails
+}

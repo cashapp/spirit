@@ -389,8 +389,8 @@ func (c *Client) createReplaceStmt(replaceKeys []string) string {
 	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
 			c.newTable.QuotedName,
-			utils.IntersectColumns(c.table, c.newTable, false),
-			utils.IntersectColumns(c.table, c.newTable, false),
+			utils.IntersectColumns(c.table, c.newTable),
+			utils.IntersectColumns(c.table, c.newTable),
 			c.table.QuotedName,
 			strings.Join(c.newTable.PrimaryKey, ","),
 			c.pksToRowValueConstructor(replaceKeys),
