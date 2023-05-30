@@ -109,6 +109,9 @@ func (t *TableInfo) setRowEstimate(ctx context.Context) error {
 	}
 	err = t.db.QueryRowContext(ctx, "SELECT IFNULL(table_rows,0) FROM information_schema.tables WHERE table_schema=? AND table_name=?", t.SchemaName, t.TableName).Scan(&t.EstimatedRows)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("table %s.%s does not exist", t.SchemaName, t.TableName)
+		}
 		return err
 	}
 	return nil
