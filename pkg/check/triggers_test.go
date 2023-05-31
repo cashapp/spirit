@@ -57,7 +57,7 @@ func TestHasTriggers(t *testing.T) {
 	}
 
 	err = hasTriggersCheck(context.Background(), r, logrus.New())
-	assert.ErrorContains(t, err, "") // already has a trigger associated.
+	assert.ErrorContains(t, err, "tables with triggers associated are not supported") // already has a trigger associated.
 
 	_, err = db.Exec(`drop trigger if exists ins_sum`)
 	assert.NoError(t, err)
