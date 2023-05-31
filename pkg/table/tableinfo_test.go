@@ -413,7 +413,7 @@ func TestDiscoveryNoPrimaryKeyOrNoTable(t *testing.T) {
 	assert.Error(t, t1.SetInfo(context.TODO()))
 
 	t2 := NewTableInfo(db, "test", "t2fdsfds")
-	assert.Error(t, t2.SetInfo(context.TODO()))
+	assert.ErrorContains(t, t2.SetInfo(context.TODO()), "table test.t2fdsfds does not exist")
 }
 
 func TestDiscoveryBalancesTable(t *testing.T) {
