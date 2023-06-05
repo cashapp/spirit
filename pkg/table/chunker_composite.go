@@ -1,8 +1,10 @@
 package table
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -95,8 +97,59 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	if !t.isOpen {
 		return nil, ErrTableNotOpen
 	}
+	key := t.Ti.PrimaryKey[0]
 
-	return t.nextChunk()
+	// If there is a minimum value, we attempt to apply
+	// the minimum value optimization.
+	if t.chunkPtr.IsNil() {
+		t.chunkPtr = t.Ti.minValue
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        key,
+			UpperBound: &Boundary{t.chunkPtr, false},
+		}, nil
+	}
+	if t.chunkPrefetchingEnabled {
+		return t.nextChunk()
+	}
+	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
+
+	// Before we return a final open bounded chunk, we check if the statistics
+	// need updating, in which case we synchronously refresh them.
+	// This helps reduce the risk of a very large unbounded
+	// chunk from a table that is actively growing.
+	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) && t.Ti.statisticsNeedUpdating() {
+		t.logger.Info("approaching the end of the table, synchronously updating statistics")
+		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+			return nil, err
+		}
+	}
+
+	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
+	// the maximum value optimization which is to return an open bounded
+	// chunk.
+	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) {
+		t.finalChunkSent = true
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        key,
+			LowerBound: &Boundary{t.chunkPtr, true},
+		}, nil
+	}
+
+	// This is the typical case. We return a chunk with a lower bound
+	// of the current chunkPtr and an upper bound of the chunkPtr + chunkSize,
+	// but not exceeding math.MaxInt64.
+
+	minVal := t.chunkPtr
+	maxVal := t.chunkPtr.Add(incrementSize)
+	t.chunkPtr = maxVal
+	return &Chunk{
+		ChunkSize:  t.chunkSize,
+		Key:        key,
+		LowerBound: &Boundary{minVal, true},
+		UpperBound: &Boundary{maxVal, false},
+	}, nil
 }
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
@@ -297,6 +350,38 @@ func (t *chunkerComposite) open() (err error) {
 
 func (t *chunkerComposite) IsRead() bool {
 	return t.finalChunkSent
+}
+
+func (t *chunkerComposite) chunkToIncrementSize() uint64 {
+	// already called under a mutex.
+	var increment = t.chunkSize
+
+	// Logical range is MaxValue-MinValue. If it matches close to estimated rows,
+	// then the increment will be the same as the chunk size. If it's higher or lower,
+	// then the increment will be smaller or larger.
+	logicalRange := t.logicalRange()
+
+	if t.Ti.PrimaryKeyIsAutoInc {
+		// There is a case when there are large "gaps" in the table because
+		// the difference between min<->max is larger than the estimated rows.
+		// Estimated rows is often wrong, and it could just be a large chunk deleted,
+		// which could get us in trouble with some large chunks. So for now if the estimatedRows
+		// is greater than 1K we don't expand the range. We have no idea if all these
+		// rows will show up together.
+		if t.Ti.EstimatedRows > trivialChunkerThreshold {
+			return increment
+		}
+	}
+	divideBy := float64(t.Ti.EstimatedRows) / float64(logicalRange)
+	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
+}
+
+func (t *chunkerComposite) logicalRange() uint64 {
+	if !t.Ti.maxValue.IsNil() && !t.Ti.minValue.IsNil() {
+		return t.Ti.maxValue.Range(t.Ti.minValue)
+	}
+	// For binary types, we can't really do anything useful yet:
+	return math.MaxUint64
 }
 
 func (t *chunkerComposite) updateChunkerTarget(newTarget uint64) {
