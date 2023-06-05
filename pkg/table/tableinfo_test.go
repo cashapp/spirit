@@ -478,6 +478,28 @@ func TestDiscoveryCompositeNonComparable(t *testing.T) {
 	assert.Error(t, t1.SetInfo(context.TODO()))
 }
 
+func TestDiscoveryCompositeComparable(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS compcomparable`)
+	table := `CREATE TABLE compcomparable (
+		id int(11) unsigned NOT NULL AUTO_INCREMENT,
+		age int(11) NOT NULL,
+		PRIMARY KEY (id, age)
+	)`
+	runSQL(t, table)
+	runSQL(t, `insert into compcomparable values (1, 1), (2, 2), (3, 3)`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "compcomparable")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+
+	assert.True(t, t1.PrimaryKeyIsAutoInc)
+	assert.Equal(t, []string{"int unsigned", "int"}, t1.pkMySQLTp)
+	assert.Equal(t, []string{"id", "age"}, t1.PrimaryKey)
+}
+
 func TestChunkerStatisticsUpdate(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
