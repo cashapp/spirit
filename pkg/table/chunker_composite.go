@@ -1,10 +1,8 @@
 package table
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -32,10 +30,6 @@ type chunkerComposite struct {
 	watermark             *Chunk
 	watermarkQueuedChunks []*Chunk
 
-	// The chunk prefetching algorithm is used when the chunker detects
-	// that there are very large gaps in the sequence.
-	chunkPrefetchingEnabled bool
-
 	logger loggers.Advanced
 }
 
@@ -62,14 +56,6 @@ func (t *chunkerComposite) nextChunk() (*Chunk, error) {
 		}
 		maxVal := newDatum(upperVal, t.chunkPtr.tp)
 		t.chunkPtr = maxVal
-
-		// If the difference between min and max is less than
-		// MaxDynamicRowSize we can turn off prefetching.
-		if maxVal.Range(minVal) < MaxDynamicRowSize {
-			t.logger.Warnf("disabling chunk prefetching: min-val=%s max-val=%s max-dynamic-row-size=%d", minVal, maxVal, MaxDynamicRowSize)
-			t.chunkSize = StartingChunkSize // reset
-			t.chunkPrefetchingEnabled = false
-		}
 
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
@@ -109,47 +95,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 			UpperBound: &Boundary{t.chunkPtr, false},
 		}, nil
 	}
-	if t.chunkPrefetchingEnabled {
-		return t.nextChunk()
-	}
-	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
-
-	// Before we return a final open bounded chunk, we check if the statistics
-	// need updating, in which case we synchronously refresh them.
-	// This helps reduce the risk of a very large unbounded
-	// chunk from a table that is actively growing.
-	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) && t.Ti.statisticsNeedUpdating() {
-		t.logger.Info("approaching the end of the table, synchronously updating statistics")
-		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
-			return nil, err
-		}
-	}
-
-	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
-	// the maximum value optimization which is to return an open bounded
-	// chunk.
-	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) {
-		t.finalChunkSent = true
-		return &Chunk{
-			ChunkSize:  t.chunkSize,
-			Key:        key,
-			LowerBound: &Boundary{t.chunkPtr, true},
-		}, nil
-	}
-
-	// This is the typical case. We return a chunk with a lower bound
-	// of the current chunkPtr and an upper bound of the chunkPtr + chunkSize,
-	// but not exceeding math.MaxInt64.
-
-	minVal := t.chunkPtr
-	maxVal := t.chunkPtr.Add(incrementSize)
-	t.chunkPtr = maxVal
-	return &Chunk{
-		ChunkSize:  t.chunkSize,
-		Key:        key,
-		LowerBound: &Boundary{minVal, true},
-		UpperBound: &Boundary{maxVal, false},
-	}, nil
+	return t.nextChunk()
 }
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
@@ -352,38 +298,6 @@ func (t *chunkerComposite) IsRead() bool {
 	return t.finalChunkSent
 }
 
-func (t *chunkerComposite) chunkToIncrementSize() uint64 {
-	// already called under a mutex.
-	var increment = t.chunkSize
-
-	// Logical range is MaxValue-MinValue. If it matches close to estimated rows,
-	// then the increment will be the same as the chunk size. If it's higher or lower,
-	// then the increment will be smaller or larger.
-	logicalRange := t.logicalRange()
-
-	if t.Ti.PrimaryKeyIsAutoInc {
-		// There is a case when there are large "gaps" in the table because
-		// the difference between min<->max is larger than the estimated rows.
-		// Estimated rows is often wrong, and it could just be a large chunk deleted,
-		// which could get us in trouble with some large chunks. So for now if the estimatedRows
-		// is greater than 1K we don't expand the range. We have no idea if all these
-		// rows will show up together.
-		if t.Ti.EstimatedRows > trivialChunkerThreshold {
-			return increment
-		}
-	}
-	divideBy := float64(t.Ti.EstimatedRows) / float64(logicalRange)
-	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
-}
-
-func (t *chunkerComposite) logicalRange() uint64 {
-	if !t.Ti.maxValue.IsNil() && !t.Ti.minValue.IsNil() {
-		return t.Ti.maxValue.Range(t.Ti.minValue)
-	}
-	// For binary types, we can't really do anything useful yet:
-	return math.MaxUint64
-}
-
 func (t *chunkerComposite) updateChunkerTarget(newTarget uint64) {
 	// Already called under a mutex.
 	newTarget = t.boundaryCheckTargetChunkSize(newTarget)
@@ -415,18 +329,6 @@ func (t *chunkerComposite) calculateNewTargetChunkSize() uint64 {
 	p90 := float64(lazyFindP90(t.chunkTimingInfo))
 	targetTime := float64(t.ChunkerTarget)
 	newTargetRows := float64(t.chunkSize) * (targetTime / p90)
-	// switch to prefetch chunking if:
-	// - We are already at the max chunk size
-	// - This new target wants to go higher
-	// - our current p90 is only a fraction of our target time
-	if t.chunkSize == MaxDynamicRowSize && newTargetRows > MaxDynamicRowSize && (p90 < targetTime*5) {
-		t.logger.Warnf("dynamic chunking is not working as expected: target-time=%s p90-time=%s new-target-rows=%d max-dynamic-row-size=%d",
-			time.Duration(targetTime), time.Duration(p90), uint64(newTargetRows), MaxDynamicRowSize,
-		)
-		t.logger.Warn("switching to prefetch algorithm")
-		t.chunkSize = StartingChunkSize // reset
-		t.chunkPrefetchingEnabled = true
-	}
 	return uint64(newTargetRows)
 }
 
