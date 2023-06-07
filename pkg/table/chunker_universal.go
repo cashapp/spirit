@@ -24,9 +24,7 @@ type chunkerUniversal struct {
 	chunkTimingInfo []time.Duration
 	ChunkerTarget   time.Duration // i.e. 500ms for target
 
-	// Some options which are usually good, but might want to be disabled
-	// particularly for the test suite.
-	DisableDynamicChunker bool // optimization to adjust chunk size.
+	disableDynamicChunker bool // only used by the test suite
 
 	// This is used for restore.
 	watermark             *Chunk
@@ -163,10 +161,10 @@ func (t *chunkerUniversal) Open() (err error) {
 	return t.open()
 }
 
-func (t *chunkerUniversal) SetDynamicChunking(newValue bool) {
+func (t *chunkerUniversal) setDynamicChunking(newValue bool) {
 	t.Lock()
 	defer t.Unlock()
-	t.DisableDynamicChunker = !newValue
+	t.disableDynamicChunker = !newValue
 }
 
 func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
@@ -207,7 +205,7 @@ func (t *chunkerUniversal) Feedback(chunk *Chunk, d time.Duration) {
 	// Check if the feedback is based on an earlier chunker size.
 	// if it is, it is misleading to incorporate feedback now.
 	// We should just skip it. We also skip if dynamic chunking is disabled.
-	if chunk.ChunkSize != t.chunkSize || t.DisableDynamicChunker {
+	if chunk.ChunkSize != t.chunkSize || t.disableDynamicChunker {
 		return
 	}
 

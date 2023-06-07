@@ -27,9 +27,12 @@ func TestChunkerBasic(t *testing.T) {
 		Columns:             []string{"id", "name"},
 	}
 	t1.statisticsLastUpdated = time.Now()
-	chunker, err := NewChunker(t1, 0, logrus.New())
-	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
+	chunker := &chunkerUniversal{
+		Ti:            t1,
+		ChunkerTarget: ChunkerDefaultTarget,
+		logger:        logrus.New(),
+	}
+	chunker.setDynamicChunking(false)
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
 	t1.pkMySQLTp[0] = "varchar"
@@ -40,7 +43,7 @@ func TestChunkerBasic(t *testing.T) {
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
 
 	assert.NoError(t, chunker.Open())
-	_, err = chunker.Next()
+	_, err := chunker.Next()
 	assert.NoError(t, err)
 
 	assert.True(t, chunker.KeyAboveHighWatermark(100)) // we are at 1
@@ -86,9 +89,8 @@ func TestOpenOnBinaryType(t *testing.T) {
 	t1.pkDatumTp = []datumTp{binaryType}
 	t1.PrimaryKeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
-	chunker, err := NewChunker(t1, 100, logrus.New())
+	chunker, err := NewChunker(t1, ChunkerDefaultTarget, logrus.New())
 	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
 	assert.NoError(t, chunker.Open())
 }
 
@@ -102,7 +104,6 @@ func TestOpenOnNoMinMax(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
 	assert.NoError(t, chunker.Open())
 }
 
@@ -116,7 +117,6 @@ func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
 
 	_, err = chunker.Next()
 	assert.Error(t, err)
@@ -138,13 +138,16 @@ func TestLowWatermark(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
-	chunker, err := NewChunker(t1, 100, logrus.New())
-	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
+	chunker := &chunkerUniversal{
+		Ti:            t1,
+		ChunkerTarget: ChunkerDefaultTarget,
+		logger:        logrus.New(),
+	}
+	chunker.setDynamicChunking(false)
 
 	assert.NoError(t, chunker.Open())
 
-	_, err = chunker.GetLowWatermark()
+	_, err := chunker.GetLowWatermark()
 	assert.Error(t, err)
 
 	chunk, err := chunker.Next()
@@ -224,7 +227,6 @@ func TestDynamicChunking(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100*time.Millisecond, logrus.New())
 	assert.NoError(t, err)
-	chunker.SetDynamicChunking(true)
 
 	assert.NoError(t, chunker.Open())
 
@@ -288,7 +290,6 @@ func TestDynamicChunking(t *testing.T) {
 
 	chunker2, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
-	chunker2.SetDynamicChunking(true)
 	t2.Columns = []string{"id", "name"}
 	assert.NoError(t, chunker2.OpenAtWatermark(watermark))
 
@@ -500,7 +501,7 @@ func TestDiscoveryCompositeComparable(t *testing.T) {
 	assert.Equal(t, []string{"id", "age"}, t1.PrimaryKey)
 }
 
-func TestChunkerStatisticsUpdate(t *testing.T) {
+func TestStatisticsUpdate(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
@@ -528,9 +529,6 @@ func TestChunkerStatisticsUpdate(t *testing.T) {
 		db:                  db,
 	}
 	t1.statisticsLastUpdated = time.Now()
-	chunker, err := NewChunker(t1, 0, logrus.New())
-	assert.NoError(t, err)
-	chunker.SetDynamicChunking(false)
 
 	go t1.AutoUpdateStatistics(context.Background(), time.Millisecond*10, logrus.New())
 	time.Sleep(time.Millisecond * 100)
@@ -609,7 +607,7 @@ func TestPrefetchChunking(t *testing.T) {
 		ChunkerTarget: time.Second,
 		logger:        logrus.New(),
 	}
-	chunker.SetDynamicChunking(true)
+	chunker.setDynamicChunking(true)
 	assert.NoError(t, chunker.Open())
 	assert.False(t, chunker.chunkPrefetchingEnabled)
 
