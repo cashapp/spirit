@@ -230,7 +230,6 @@ func TestOnline(t *testing.T) {
 }
 
 func TestTableLength(t *testing.T) {
-	t.Skip("Not sure why, fails for now.")
 	runSQL(t, `DROP TABLE IF EXISTS thisisareallylongtablenamethisisareallylongtablename60charac`)
 	table := `CREATE TABLE thisisareallylongtablenamethisisareallylongtablename60charac (
 		id int(11) NOT NULL AUTO_INCREMENT,
@@ -263,7 +262,7 @@ func TestTableLength(t *testing.T) {
 		Password: cfg.Passwd,
 		Database: cfg.DBName,
 		Threads:  16,
-		Table:    "thisisareallylongtablenamethisisareallylongtablename64characters",
+		Table:    "thisisareallylongtablenamethisisareallylongtablename60charac",
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
@@ -966,151 +965,274 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.Error(t, m.resumeFromCheckpoint(context.TODO())) // it should error because the ALTER does not match.
 }
 
-// TestE2EBinlogSubscribing is a complex test that uses the lower level interface
+// TestE2EBinlogSubscribingCompositeKey and TestE2EBinlogSubscribingNonCompositeKey tests
+// are complex tests that uses the lower level interface
 // to step through the table while subscribing to changes that we will
 // be making to the table between chunks. It is effectively an
 // end-to-end test with concurrent operations on the table.
-func TestE2EBinlogSubscribing(t *testing.T) {
-	// Need to test both composite and non composite keys.
-	// Possibly more like mem comparable varbinary.
-	tables := []string{`CREATE TABLE e2et1 (
-	id1 INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-	id2 INT NOT NULL,
-	pad int NOT NULL default 0)`,
-		`CREATE TABLE e2et1 (
+func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
+	tbl := `CREATE TABLE e2et1 (
 		id1 int NOT NULL,
 		id2 int not null,
 		pad int NOT NULL  default 0,
-		PRIMARY KEY (id1, id2))`,
-	}
+		PRIMARY KEY (id1, id2))`
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	for _, tbl := range tables {
-		runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
-		runSQL(t, tbl)
-		runSQL(t, `insert into e2et1 (id1, id2) values (1, 1)`)
-		runSQL(t, `insert into e2et1 (id1, id2) values (2, 1)`)
-		runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
+	runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
+	runSQL(t, tbl)
+	runSQL(t, `insert into e2et1 (id1, id2) values (1, 1)`)
+	runSQL(t, `insert into e2et1 (id1, id2) values (2, 1)`)
+	runSQL(t, `insert into e2et1 (id1, id2) values (3, 1)`)
 
-		m, err := NewRunner(&Migration{
-			Host:     cfg.Addr,
-			Username: cfg.User,
-			Password: cfg.Passwd,
-			Database: cfg.DBName,
-			Threads:  16,
-			Table:    "e2et1",
-			Alter:    "ENGINE=InnoDB",
-		})
-		assert.NoError(t, err)
-		assert.Equal(t, "initial", m.getCurrentState().String())
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "e2et1",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "initial", m.getCurrentState().String())
 
-		// Usually we would call m.Run() but we want to step through
-		// the migration process manually.
-		m.db, err = sql.Open("mysql", m.dsn())
-		assert.NoError(t, err)
-		defer m.db.Close()
-		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-		err = m.table.SetInfo(context.TODO())
-		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable(context.TODO()))
+	// Usually we would call m.Run() but we want to step through
+	// the migration process manually.
+	m.db, err = sql.Open("mysql", m.dsn())
+	assert.NoError(t, err)
+	defer m.db.Close()
+	// Get Table Info
+	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	err = m.table.SetInfo(context.TODO())
+	assert.NoError(t, err)
+	assert.NoError(t, m.dropOldTable(context.TODO()))
 
-		// migration.Run usually calls m.Migrate() here.
-		// Which does the following before calling copyRows:
-		// So we proceed with the initial steps.
-		assert.NoError(t, m.createNewTable(context.TODO()))
-		assert.NoError(t, m.alterNewTable(context.TODO()))
-		assert.NoError(t, m.createCheckpointTable(context.TODO()))
-		logger := logrus.New()
-		m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-			Logger:      logger,
-			Concurrency: 4,
-			BatchSize:   10000,
-		})
-		m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
-			Concurrency:     m.migration.Threads,
-			TargetChunkTime: m.migration.TargetChunkTime,
-			FinalChecksum:   m.migration.Checksum,
-			Throttler:       &throttler.Noop{},
-			Logger:          m.logger,
-			MetricsSink:     &metrics.NoopSink{},
-		})
-		assert.NoError(t, err)
-		m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-		err = m.replClient.Run()
-		assert.NoError(t, err)
+	// migration.Run usually calls m.Migrate() here.
+	// Which does the following before calling copyRows:
+	// So we proceed with the initial steps.
+	assert.NoError(t, m.createNewTable(context.TODO()))
+	assert.NoError(t, m.alterNewTable(context.TODO()))
+	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	logger := logrus.New()
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
+		Concurrency:     m.migration.Threads,
+		TargetChunkTime: m.migration.TargetChunkTime,
+		FinalChecksum:   m.migration.Checksum,
+		Throttler:       &throttler.Noop{},
+		Logger:          m.logger,
+		MetricsSink:     &metrics.NoopSink{},
+	})
+	assert.NoError(t, err)
+	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+	err = m.replClient.Run()
+	assert.NoError(t, err)
 
-		// Now we are ready to start copying rows.
-		// Instead of calling m.copyRows() we will step through it manually.
-		// Since we want to checkpoint after a few chunks.
+	// Now we are ready to start copying rows.
+	// Instead of calling m.copyRows() we will step through it manually.
+	// Since we want to checkpoint after a few chunks.
 
-		m.copier.StartTime = time.Now()
-		m.setCurrentState(stateCopyRows)
-		assert.Equal(t, "copyRows", m.getCurrentState().String())
+	m.copier.StartTime = time.Now()
+	m.setCurrentState(stateCopyRows)
+	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
-		// We expect 3 chunks to be copied.
-		// The special first and last case and middle case.
-		assert.NoError(t, m.copier.Open4Test())
+	// We expect 2 chunks to be copied.
+	assert.NoError(t, m.copier.Open4Test())
 
-		// first chunk.
-		chunk, err := m.copier.Next4Test()
-		assert.NoError(t, err)
-		assert.NotNil(t, chunk)
-		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	// first chunk.
+	chunk, err := m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.NotNil(t, chunk)
+	assert.Equal(t, "id1 < 1", chunk.String())
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
-		// Now insert some data.
-		// This will be ignored by the binlog subscription.
-		// Because it's ahead of the high watermark.
-		runSQL(t, `insert into e2et1 (id1, id2) values (4, 1)`)
-		assert.True(t, m.copier.KeyAboveHighWatermark(4))
+	// Now insert some data.
+	// This will be ignored by the binlog subscription.
+	// Because it's ahead of the high watermark.
+	runSQL(t, `insert into e2et1 (id1, id2) values (4, 1)`)
+	assert.True(t, m.copier.KeyAboveHighWatermark(4))
 
-		// Give it a chance, since we need to read from the binary log to populate this
-		// Even though we expect nothing.
-		sleep() // plenty
-		assert.Equal(t, 0, m.replClient.GetDeltaLen())
+	// Give it a chance, since we need to read from the binary log to populate this
+	// Even though we expect nothing.
+	sleep() // plenty
+	assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
-		// second chunk is between min and max value.
-		chunk, err = m.copier.Next4Test()
-		assert.NoError(t, err)
-		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	// second chunk is greater than min value.
+	chunk, err = m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.Equal(t, "id1 >= 1", chunk.String())
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
-		// Now insert some data.
-		// This should be picked up by the binlog subscription
-		// because it is within chunk size range of the second chunk.
-		runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
-		assert.False(t, m.copier.KeyAboveHighWatermark(5))
-		sleep() // wait for binlog
-		assert.Equal(t, 1, m.replClient.GetDeltaLen())
+	// Now insert some data.
+	// This should be picked up by the binlog subscription
+	// because it is within chunk size range of the second chunk.
+	runSQL(t, `insert into e2et1 (id1, id2) values (5, 1)`)
+	assert.False(t, m.copier.KeyAboveHighWatermark(5))
+	sleep() // wait for binlog
+	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
-		runSQL(t, `delete from e2et1 where id1 = 1`)
-		assert.False(t, m.copier.KeyAboveHighWatermark(1))
-		sleep() // wait for binlog
-		assert.Equal(t, 2, m.replClient.GetDeltaLen())
+	runSQL(t, `delete from e2et1 where id1 = 1`)
+	assert.False(t, m.copier.KeyAboveHighWatermark(1))
+	sleep() // wait for binlog
+	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
-		// third (and last) chunk is open ended,
-		// so anything after it will be picked up by the binlog.
-		chunk, err = m.copier.Next4Test()
-		assert.NoError(t, err)
-		assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	// Some data is inserted later, even though the last chunk is done.
+	// We still care to pick it up because it could be inserted during checkpoint.
+	runSQL(t, `insert into e2et1 (id1, id2) values (6, 1)`)
+	// the pointer should be at maxint64 for safety. this ensures
+	// that any keyAboveHighWatermark checks return false
+	assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
 
-		// Some data is inserted later, even though the last chunk is done.
-		// We still care to pick it up because it could be inserted during checkpoint.
-		runSQL(t, `insert into e2et1 (id1, id2) values (6, 1)`)
-		// the pointer should be at maxint64 for safety. this ensures
-		// that any keyAboveHighWatermark checks return false
-		assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
+	// Now that copy rows is done, we flush the changeset until trivial.
+	// and perform the optional checksum.
+	assert.NoError(t, m.replClient.Flush(context.TODO()))
+	m.setCurrentState(stateApplyChangeset)
+	assert.Equal(t, "applyChangeset", m.getCurrentState().String())
+	m.setCurrentState(stateChecksum)
+	assert.NoError(t, m.checksum(context.TODO()))
+	assert.Equal(t, "postChecksum", m.getCurrentState().String())
+	// All done!
+}
 
-		// Now that copy rows is done, we flush the changeset until trivial.
-		// and perform the optional checksum.
-		assert.NoError(t, m.replClient.Flush(context.TODO()))
-		m.setCurrentState(stateApplyChangeset)
-		assert.Equal(t, "applyChangeset", m.getCurrentState().String())
-		m.setCurrentState(stateChecksum)
-		assert.NoError(t, m.checksum(context.TODO()))
-		assert.Equal(t, "postChecksum", m.getCurrentState().String())
-		// All done!
-	}
+func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
+	tbl := `CREATE TABLE e2et2 (
+		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		pad int NOT NULL default 0)`
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	runSQL(t, `DROP TABLE IF EXISTS e2et2, _e2et2_new`)
+	runSQL(t, tbl)
+	runSQL(t, `insert into e2et2 (id) values (1)`)
+	runSQL(t, `insert into e2et2 (id) values (2)`)
+	runSQL(t, `insert into e2et2 (id) values (3)`)
+
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "e2et2",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "initial", m.getCurrentState().String())
+
+	// Usually we would call m.Run() but we want to step through
+	// the migration process manually.
+	m.db, err = sql.Open("mysql", m.dsn())
+	assert.NoError(t, err)
+	defer m.db.Close()
+	// Get Table Info
+	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	err = m.table.SetInfo(context.TODO())
+	assert.NoError(t, err)
+	assert.NoError(t, m.dropOldTable(context.TODO()))
+
+	// migration.Run usually calls m.Migrate() here.
+	// Which does the following before calling copyRows:
+	// So we proceed with the initial steps.
+	assert.NoError(t, m.createNewTable(context.TODO()))
+	assert.NoError(t, m.alterNewTable(context.TODO()))
+	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	logger := logrus.New()
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
+		Concurrency:     m.migration.Threads,
+		TargetChunkTime: m.migration.TargetChunkTime,
+		FinalChecksum:   m.migration.Checksum,
+		Throttler:       &throttler.Noop{},
+		Logger:          m.logger,
+		MetricsSink:     &metrics.NoopSink{},
+	})
+	assert.NoError(t, err)
+	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+	err = m.replClient.Run()
+	assert.NoError(t, err)
+
+	// Now we are ready to start copying rows.
+	// Instead of calling m.copyRows() we will step through it manually.
+	// Since we want to checkpoint after a few chunks.
+
+	m.copier.StartTime = time.Now()
+	m.setCurrentState(stateCopyRows)
+	assert.Equal(t, "copyRows", m.getCurrentState().String())
+
+	// We expect 3 chunks to be copied.
+	// The special first and last case and middle case.
+	assert.NoError(t, m.copier.Open4Test())
+
+	// first chunk.
+	chunk, err := m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.NotNil(t, chunk)
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.Equal(t, "id < 1", chunk.String())
+
+	// Now insert some data.
+	// This will be ignored by the binlog subscription.
+	// Because it's ahead of the high watermark.
+	runSQL(t, `insert into e2et2 (id) values (4)`)
+	assert.True(t, m.copier.KeyAboveHighWatermark(4))
+
+	// Give it a chance, since we need to read from the binary log to populate this
+	// Even though we expect nothing.
+	sleep() // plenty
+	assert.Equal(t, 0, m.replClient.GetDeltaLen())
+
+	// second chunk is between min and max value.
+	chunk, err = m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.Equal(t, "id >= 1 AND id < 668", chunk.String())
+
+	// Now insert some data.
+	// This should be picked up by the binlog subscription
+	// because it is within chunk size range of the second chunk.
+	runSQL(t, `insert into e2et2 (id) values (5)`)
+	assert.False(t, m.copier.KeyAboveHighWatermark(5))
+	sleep() // wait for binlog
+	assert.Equal(t, 1, m.replClient.GetDeltaLen())
+
+	runSQL(t, `delete from e2et2 where id = 1`)
+	assert.False(t, m.copier.KeyAboveHighWatermark(1))
+	sleep() // wait for binlog
+	assert.Equal(t, 2, m.replClient.GetDeltaLen())
+
+	// third (and last) chunk is open ended,
+	// so anything after it will be picked up by the binlog.
+	chunk, err = m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.Equal(t, "id >= 668", chunk.String())
+
+	// Some data is inserted later, even though the last chunk is done.
+	// We still care to pick it up because it could be inserted during checkpoint.
+	runSQL(t, `insert into e2et2 (id) values (6)`)
+	// the pointer should be at maxint64 for safety. this ensures
+	// that any keyAboveHighWatermark checks return false
+	assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
+
+	// Now that copy rows is done, we flush the changeset until trivial.
+	// and perform the optional checksum.
+	assert.NoError(t, m.replClient.Flush(context.TODO()))
+	m.setCurrentState(stateApplyChangeset)
+	assert.Equal(t, "applyChangeset", m.getCurrentState().String())
+	m.setCurrentState(stateChecksum)
+	assert.NoError(t, m.checksum(context.TODO()))
+	assert.Equal(t, "postChecksum", m.getCurrentState().String())
+	// All done!
 }
 
 // TestForRemainingTableArtifacts tests that the _{name}_old table is left after

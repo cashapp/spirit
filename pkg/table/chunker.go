@@ -47,6 +47,16 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 	if err := t.isCompatibleWithChunker(); err != nil {
 		return nil, err
 	}
+
+	// Use a different chunker if the table has composite key
+	if len(t.PrimaryKey) > 1 {
+		return &chunkerComposite{
+			Ti:            t,
+			ChunkerTarget: chunkerTarget,
+			logger:        logger,
+		}, nil
+	}
+
 	return &chunkerUniversal{
 		Ti:            t,
 		ChunkerTarget: chunkerTarget,
