@@ -29,9 +29,9 @@ func TestCompositeChunker(t *testing.T) {
 	assert.IsType(t, &chunkerComposite{}, chunker)
 }
 
-func TestUniversalChunker(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS universal`)
-	table := `CREATE TABLE universal (
+func TestOptimisticChunker(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS optimistic`)
+	table := `CREATE TABLE optimistic (
 		id bigint NOT NULL AUTO_INCREMENT,
 		PRIMARY KEY (id)
 	)`
@@ -41,9 +41,9 @@ func TestUniversalChunker(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo(db, "test", "universal")
+	t1 := NewTableInfo(db, "test", "optimistic")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
 	chunker, _ := NewChunker(t1, 0, logrus.New())
-	assert.IsType(t, &chunkerUniversal{}, chunker)
+	assert.IsType(t, &chunkerOptimistic{}, chunker)
 }

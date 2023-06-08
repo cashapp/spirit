@@ -29,7 +29,7 @@ type chunkerComposite struct {
 	logger loggers.Advanced
 }
 
-var _ Chunker = &chunkerUniversal{}
+var _ Chunker = &chunkerOptimistic{}
 
 // nextChunk uses prefetching instead of feedback to determine the chunk size.
 // For table with composite keys, only prefecting is supported.
@@ -240,7 +240,7 @@ applyQueuedChunks:
 		for i, queuedChunk := range t.watermarkQueuedChunks {
 			// sanity checking: chunks *should* have a lower bound and upper bound.
 			if queuedChunk.LowerBound == nil || queuedChunk.UpperBound == nil {
-				errMsg := fmt.Sprintf("chunkerUniversal.bumpWatermark: nil value encountered: %v", queuedChunk)
+				errMsg := fmt.Sprintf("chunkerOptimistic.bumpWatermark: nil value encountered: %v", queuedChunk)
 				t.logger.Error(errMsg)
 				panic(errMsg)
 			}
