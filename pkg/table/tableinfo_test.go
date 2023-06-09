@@ -27,7 +27,7 @@ func TestChunkerBasic(t *testing.T) {
 		Columns:             []string{"id", "name"},
 	}
 	t1.statisticsLastUpdated = time.Now()
-	chunker := &chunkerUniversal{
+	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: ChunkerDefaultTarget,
 		logger:        logrus.New(),
@@ -138,7 +138,7 @@ func TestLowWatermark(t *testing.T) {
 	t1.Columns = []string{"id", "name"}
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
-	chunker := &chunkerUniversal{
+	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: ChunkerDefaultTarget,
 		logger:        logrus.New(),
@@ -602,7 +602,7 @@ func TestPrefetchChunking(t *testing.T) {
 	t1 := newTableInfo4Test("test", "tprefetch")
 	t1.db = db
 	assert.NoError(t, t1.SetInfo(context.Background()))
-	chunker := &chunkerUniversal{
+	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: time.Second,
 		logger:        logrus.New(),

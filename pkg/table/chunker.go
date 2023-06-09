@@ -56,7 +56,7 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 		}, nil
 	}
 
-	return &chunkerUniversal{
+	return &chunkerOptimistic{
 		Ti:            t,
 		ChunkerTarget: chunkerTarget,
 		logger:        logger,

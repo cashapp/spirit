@@ -11,7 +11,7 @@ import (
 	"github.com/siddontang/loggers"
 )
 
-type chunkerUniversal struct {
+type chunkerOptimistic struct {
 	sync.Mutex
 	Ti             *TableInfo
 	chunkSize      uint64
@@ -37,13 +37,13 @@ type chunkerUniversal struct {
 	logger loggers.Advanced
 }
 
-var _ Chunker = &chunkerUniversal{}
+var _ Chunker = &chunkerOptimistic{}
 
 // nextChunkByPrefetching uses prefetching instead of feedback to determine the chunk size.
 // It is used when the chunker detects that there are very large gaps in the sequence.
 // When this mode is enabled, the chunkSize is "reset" to 1000 rows, so we know that
 // t.chunkSize is reliable. It is also expanded again based on feedback.
-func (t *chunkerUniversal) nextChunkByPrefetching() (*Chunk, error) {
+func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 	key := t.Ti.PrimaryKey[0]
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET %d",
 		key, t.Ti.QuotedName, key, key, t.chunkSize,
@@ -88,7 +88,7 @@ func (t *chunkerUniversal) nextChunkByPrefetching() (*Chunk, error) {
 	}, nil
 }
 
-func (t *chunkerUniversal) Next() (*Chunk, error) {
+func (t *chunkerOptimistic) Next() (*Chunk, error) {
 	t.Lock()
 	defer t.Unlock()
 	if t.IsRead() {
@@ -154,20 +154,20 @@ func (t *chunkerUniversal) Next() (*Chunk, error) {
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
 // to resume from a specific point.
-func (t *chunkerUniversal) Open() (err error) {
+func (t *chunkerOptimistic) Open() (err error) {
 	t.Lock()
 	defer t.Unlock()
 
 	return t.open()
 }
 
-func (t *chunkerUniversal) setDynamicChunking(newValue bool) {
+func (t *chunkerOptimistic) setDynamicChunking(newValue bool) {
 	t.Lock()
 	defer t.Unlock()
 	t.disableDynamicChunker = !newValue
 }
 
-func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
+func (t *chunkerOptimistic) OpenAtWatermark(cp string) error {
 	t.Lock()
 	defer t.Unlock()
 
@@ -190,14 +190,14 @@ func (t *chunkerUniversal) OpenAtWatermark(cp string) error {
 	return nil
 }
 
-func (t *chunkerUniversal) Close() error {
+func (t *chunkerOptimistic) Close() error {
 	return nil
 }
 
 // Feedback is a way for consumers of chunks to give feedback on how long
 // processing the chunk took. It is incorporated into the calculation of future
 // chunk sizes.
-func (t *chunkerUniversal) Feedback(chunk *Chunk, d time.Duration) {
+func (t *chunkerOptimistic) Feedback(chunk *Chunk, d time.Duration) {
 	t.Lock()
 	defer t.Unlock()
 	t.bumpWatermark(chunk)
@@ -237,7 +237,7 @@ func (t *chunkerUniversal) Feedback(chunk *Chunk, d time.Duration) {
 // which (due to parallelism) could be significantly behind the high watermark.
 // The value is discovered via ChunkerFeedback(), and when retrieved from this func
 // can be used to write a checkpoint for restoration.
-func (t *chunkerUniversal) GetLowWatermark() (string, error) {
+func (t *chunkerOptimistic) GetLowWatermark() (string, error) {
 	t.Lock()
 	defer t.Unlock()
 
@@ -252,7 +252,7 @@ func (t *chunkerUniversal) GetLowWatermark() (string, error) {
 // The restored chunk is a really special beast because the lowerbound
 // will be repeated by the first chunk that is applied post restore.
 // This is called under a mutex.
-func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
+func (t *chunkerOptimistic) isSpecialRestoredChunk(chunk *Chunk) bool {
 	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
 		return false // restored checkpoints always have both.
 	}
@@ -270,7 +270,7 @@ func (t *chunkerUniversal) isSpecialRestoredChunk(chunk *Chunk) bool {
 //     each of the queued chunks is checked to see if it aligns with the new watermark.
 //   - If any queued chunks align, they are popped off the queue and the watermark is bumped.
 //   - This process repeats until there is no more alignment from the queue *or* the queue is empty.
-func (t *chunkerUniversal) bumpWatermark(chunk *Chunk) {
+func (t *chunkerOptimistic) bumpWatermark(chunk *Chunk) {
 	// We never set the watermark for the very last chunk, which has an open ended upper bound.
 	// This is safer anyway since between resumes a lot more data could arrive.
 	if chunk.UpperBound == nil {
@@ -304,7 +304,7 @@ applyQueuedChunks:
 		for i, queuedChunk := range t.watermarkQueuedChunks {
 			// sanity checking: chunks *should* have a lower bound and upper bound.
 			if queuedChunk.LowerBound == nil || queuedChunk.UpperBound == nil {
-				errMsg := fmt.Sprintf("chunkerUniversal.bumpWatermark: nil value encountered: %v", queuedChunk)
+				errMsg := fmt.Sprintf("chunkerOptimistic.bumpWatermark: nil value encountered: %v", queuedChunk)
 				t.logger.Error(errMsg)
 				panic(errMsg)
 			}
@@ -322,7 +322,7 @@ applyQueuedChunks:
 	}
 }
 
-func (t *chunkerUniversal) open() (err error) {
+func (t *chunkerOptimistic) open() (err error) {
 	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp[0])
 	if tp == unknownType {
 		return ErrUnsupportedPKType
@@ -348,11 +348,11 @@ func (t *chunkerUniversal) open() (err error) {
 	return nil
 }
 
-func (t *chunkerUniversal) IsRead() bool {
+func (t *chunkerOptimistic) IsRead() bool {
 	return t.finalChunkSent
 }
 
-func (t *chunkerUniversal) chunkToIncrementSize() uint64 {
+func (t *chunkerOptimistic) chunkToIncrementSize() uint64 {
 	// already called under a mutex.
 	var increment = t.chunkSize
 
@@ -376,7 +376,7 @@ func (t *chunkerUniversal) chunkToIncrementSize() uint64 {
 	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
 }
 
-func (t *chunkerUniversal) logicalRange() uint64 {
+func (t *chunkerOptimistic) logicalRange() uint64 {
 	if !t.Ti.maxValue.IsNil() && !t.Ti.minValue.IsNil() {
 		return t.Ti.maxValue.Range(t.Ti.minValue)
 	}
@@ -384,14 +384,14 @@ func (t *chunkerUniversal) logicalRange() uint64 {
 	return math.MaxUint64
 }
 
-func (t *chunkerUniversal) updateChunkerTarget(newTarget uint64) {
+func (t *chunkerOptimistic) updateChunkerTarget(newTarget uint64) {
 	// Already called under a mutex.
 	newTarget = t.boundaryCheckTargetChunkSize(newTarget)
 	t.chunkSize = newTarget
 	t.chunkTimingInfo = []time.Duration{}
 }
 
-func (t *chunkerUniversal) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
+func (t *chunkerOptimistic) boundaryCheckTargetChunkSize(newTarget uint64) uint64 {
 	newTargetRows := float64(newTarget)
 
 	// we only scale up 50% at a time in case the data from previous chunks had "gaps" leading to quicker than expected time.
@@ -410,7 +410,7 @@ func (t *chunkerUniversal) boundaryCheckTargetChunkSize(newTarget uint64) uint64
 	return uint64(newTargetRows)
 }
 
-func (t *chunkerUniversal) calculateNewTargetChunkSize() uint64 {
+func (t *chunkerOptimistic) calculateNewTargetChunkSize() uint64 {
 	// We do all our math as float64 of time in ns
 	p90 := float64(lazyFindP90(t.chunkTimingInfo))
 	targetTime := float64(t.ChunkerTarget)
@@ -430,7 +430,7 @@ func (t *chunkerUniversal) calculateNewTargetChunkSize() uint64 {
 	return uint64(newTargetRows)
 }
 
-func (t *chunkerUniversal) KeyAboveHighWatermark(key interface{}) bool {
+func (t *chunkerOptimistic) KeyAboveHighWatermark(key interface{}) bool {
 	t.Lock()
 	defer t.Unlock()
 	if t.chunkPtr.IsNil() {
