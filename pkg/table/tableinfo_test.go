@@ -14,17 +14,17 @@ import (
 
 func TestChunkerBasic(t *testing.T) {
 	t1 := &TableInfo{
-		minValue:            newDatum(1, signedType),
-		maxValue:            newDatum(1000000, signedType),
-		EstimatedRows:       1000000, // avoid trivial chunker.
-		SchemaName:          "test",
-		TableName:           "t1",
-		QuotedName:          "`test`.`t1`",
-		PrimaryKey:          []string{"id"},
-		pkMySQLTp:           []string{"int"},
-		pkDatumTp:           []datumTp{signedType},
-		PrimaryKeyIsAutoInc: true,
-		Columns:             []string{"id", "name"},
+		minValue:          newDatum(1, signedType),
+		maxValue:          newDatum(1000000, signedType),
+		EstimatedRows:     1000000, // avoid trivial chunker.
+		SchemaName:        "test",
+		TableName:         "t1",
+		QuotedName:        "`test`.`t1`",
+		KeyColumns:        []string{"id"},
+		keyColumnsMySQLTp: []string{"int"},
+		keyDatums:         []datumTp{signedType},
+		KeyIsAutoInc:      true,
+		Columns:           []string{"id", "name"},
 	}
 	t1.statisticsLastUpdated = time.Now()
 	chunker := &chunkerOptimistic{
@@ -35,9 +35,9 @@ func TestChunkerBasic(t *testing.T) {
 	chunker.setDynamicChunking(false)
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
-	t1.pkMySQLTp[0] = "varchar"
+	t1.keyColumnsMySQLTp[0] = "varchar"
 	assert.Error(t, t1.isCompatibleWithChunker())
-	t1.pkMySQLTp[0] = "bigint"
+	t1.keyColumnsMySQLTp[0] = "bigint"
 	assert.NoError(t, t1.isCompatibleWithChunker())
 
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
@@ -72,9 +72,9 @@ func TestChunkerBasic(t *testing.T) {
 func TestOpenOnUnsupportedType(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"varchar"}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"varchar"}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	_, err := NewChunker(t1, 100, logrus.New())
@@ -84,10 +84,10 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 func TestOpenOnBinaryType(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"varbinary"}
-	t1.pkDatumTp = []datumTp{binaryType}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"varbinary"}
+	t1.keyDatums = []datumTp{binaryType}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, ChunkerDefaultTarget, logrus.New())
 	assert.NoError(t, err)
@@ -97,10 +97,10 @@ func TestOpenOnBinaryType(t *testing.T) {
 func TestOpenOnNoMinMax(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"varbinary"}
-	t1.pkDatumTp = []datumTp{binaryType}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"varbinary"}
+	t1.keyDatums = []datumTp{binaryType}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
@@ -110,10 +110,10 @@ func TestOpenOnNoMinMax(t *testing.T) {
 func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"varbinary"}
-	t1.pkDatumTp = []datumTp{binaryType}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"varbinary"}
+	t1.keyDatums = []datumTp{binaryType}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
@@ -131,10 +131,10 @@ func TestLowWatermark(t *testing.T) {
 	t1.minValue = newDatum(1, signedType)
 	t1.maxValue = newDatum(1000000, signedType)
 	t1.EstimatedRows = 1000000 // avoid trivial chunker.
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"bigint"}
-	t1.pkDatumTp = []datumTp{signedType}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"bigint"}
+	t1.keyDatums = []datumTp{signedType}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	assert.NoError(t, t1.isCompatibleWithChunker())
@@ -220,10 +220,10 @@ func TestDynamicChunking(t *testing.T) {
 	t1.minValue = newDatum(1, signedType)
 	t1.maxValue = newDatum(1000000, signedType)
 	t1.EstimatedRows = 1000000
-	t1.PrimaryKey = []string{"id"}
-	t1.pkMySQLTp = []string{"bigint"}
-	t1.pkDatumTp = []datumTp{signedType}
-	t1.PrimaryKeyIsAutoInc = true
+	t1.KeyColumns = []string{"id"}
+	t1.keyColumnsMySQLTp = []string{"bigint"}
+	t1.keyDatums = []datumTp{signedType}
+	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 	chunker, err := NewChunker(t1, 100*time.Millisecond, logrus.New())
 	assert.NoError(t, err)
@@ -284,9 +284,9 @@ func TestDynamicChunking(t *testing.T) {
 	t2.minValue = newDatum(1, signedType)
 	t2.maxValue = newDatum(1000000, signedType)
 	t2.EstimatedRows = 1000000
-	t2.PrimaryKey = []string{"id"}
-	t2.pkMySQLTp = []string{"bigint"}
-	t2.PrimaryKeyIsAutoInc = true
+	t2.KeyColumns = []string{"id"}
+	t2.keyColumnsMySQLTp = []string{"bigint"}
+	t2.KeyIsAutoInc = true
 
 	chunker2, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
@@ -341,10 +341,10 @@ func TestDiscovery(t *testing.T) {
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
-	assert.Equal(t, "id", t1.PrimaryKey[0])
+	assert.Equal(t, "id", t1.KeyColumns[0])
 
 	// normalize for mysql 5.7 and 8.0
-	assert.Equal(t, "int", removeWidth(t1.colTps["id"]))
+	assert.Equal(t, "int", removeWidth(t1.columnsMySQLTps["id"]))
 	assert.Equal(t, "CAST(`id` AS signed)", t1.WrapCastType("id"))
 	assert.Equal(t, "CAST(`name` AS char)", t1.WrapCastType("name"))
 
@@ -357,8 +357,8 @@ func TestDiscovery(t *testing.T) {
 	//assert.Equal(t, int64(6), t1.maxValue)
 
 	// Can't check estimated rows (depends on MySQL version etc)
-	assert.Equal(t, []string{"int"}, t1.pkMySQLTp)
-	assert.True(t, t1.PrimaryKeyIsAutoInc)
+	assert.Equal(t, []string{"int"}, t1.keyColumnsMySQLTp)
+	assert.True(t, t1.KeyIsAutoInc)
 	assert.Equal(t, 2, len(t1.Columns))
 }
 
@@ -381,7 +381,7 @@ func TestDiscoveryUInt(t *testing.T) {
 
 	assert.Equal(t, "t1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
-	assert.Equal(t, "id", t1.PrimaryKey[0])
+	assert.Equal(t, "id", t1.KeyColumns[0])
 
 	assert.Equal(t, "1", t1.minValue.String())
 	assert.Equal(t, "3", t1.maxValue.String())
@@ -392,12 +392,12 @@ func TestDiscoveryUInt(t *testing.T) {
 	//assert.Equal(t, uint64(6), t1.maxValue)
 
 	// Can't check estimated rows (depends on MySQL version etc)
-	assert.Equal(t, []string{"int unsigned"}, t1.pkMySQLTp)
-	assert.True(t, t1.PrimaryKeyIsAutoInc)
+	assert.Equal(t, []string{"int unsigned"}, t1.keyColumnsMySQLTp)
+	assert.True(t, t1.KeyIsAutoInc)
 	assert.Equal(t, 2, len(t1.Columns))
 }
 
-func TestDiscoveryNoPrimaryKeyOrNoTable(t *testing.T) {
+func TestDiscoveryNoKeyColumnsOrNoTable(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS t1`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL,
@@ -447,9 +447,9 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	t1 := NewTableInfo(db, "test", "balances")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
-	assert.True(t, t1.PrimaryKeyIsAutoInc)
-	assert.Equal(t, []string{"bigint"}, t1.pkMySQLTp)
-	assert.Equal(t, []string{"id"}, t1.PrimaryKey)
+	assert.True(t, t1.KeyIsAutoInc)
+	assert.Equal(t, []string{"bigint"}, t1.keyColumnsMySQLTp)
+	assert.Equal(t, []string{"id"}, t1.KeyColumns)
 	assert.Equal(t, "0", t1.minValue.String())
 	assert.Equal(t, "0", t1.maxValue.String())
 
@@ -496,9 +496,9 @@ func TestDiscoveryCompositeComparable(t *testing.T) {
 	t1 := NewTableInfo(db, "test", "compcomparable")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
-	assert.True(t, t1.PrimaryKeyIsAutoInc)
-	assert.Equal(t, []string{"int unsigned", "int"}, t1.pkMySQLTp)
-	assert.Equal(t, []string{"id", "age"}, t1.PrimaryKey)
+	assert.True(t, t1.KeyIsAutoInc)
+	assert.Equal(t, []string{"int unsigned", "int"}, t1.keyColumnsMySQLTp)
+	assert.Equal(t, []string{"id", "age"}, t1.KeyColumns)
 }
 
 func TestStatisticsUpdate(t *testing.T) {
@@ -515,18 +515,18 @@ func TestStatisticsUpdate(t *testing.T) {
 	runSQL(t, `insert into statsupdate values (1, 'a'), (2, 'b'), (3, 'c')`)
 
 	t1 := &TableInfo{
-		minValue:            newDatum(1, signedType),
-		maxValue:            newDatum(1000000, signedType),
-		EstimatedRows:       1000000, // avoid trivial chunker.
-		SchemaName:          "test",
-		TableName:           "statsupdate",
-		QuotedName:          "`test`.`statsupdate`",
-		PrimaryKey:          []string{"id"},
-		pkMySQLTp:           []string{"int"},
-		pkDatumTp:           []datumTp{signedType},
-		PrimaryKeyIsAutoInc: true,
-		Columns:             []string{"id", "name"},
-		db:                  db,
+		minValue:          newDatum(1, signedType),
+		maxValue:          newDatum(1000000, signedType),
+		EstimatedRows:     1000000, // avoid trivial chunker.
+		SchemaName:        "test",
+		TableName:         "statsupdate",
+		QuotedName:        "`test`.`statsupdate`",
+		KeyColumns:        []string{"id"},
+		keyColumnsMySQLTp: []string{"int"},
+		keyDatums:         []datumTp{signedType},
+		KeyIsAutoInc:      true,
+		Columns:           []string{"id", "name"},
+		db:                db,
 	}
 	t1.statisticsLastUpdated = time.Now()
 
@@ -536,7 +536,7 @@ func TestStatisticsUpdate(t *testing.T) {
 	t1.Close()
 }
 
-func TestPrimaryKeyValuesExtraction(t *testing.T) {
+func TestKeyColumnsValuesExtraction(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()

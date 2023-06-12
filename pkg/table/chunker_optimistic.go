@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -44,7 +43,7 @@ var _ Chunker = &chunkerOptimistic{}
 // When this mode is enabled, the chunkSize is "reset" to 1000 rows, so we know that
 // t.chunkSize is reliable. It is also expanded again based on feedback.
 func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
-	key := t.Ti.PrimaryKey[0]
+	key := t.Ti.KeyColumns[0]
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET %d",
 		key, t.Ti.QuotedName, key, key, t.chunkSize,
 	)
@@ -97,7 +96,6 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 	if !t.isOpen {
 		return nil, ErrTableNotOpen
 	}
-	key := t.Ti.PrimaryKey[0]
 
 	// If there is a minimum value, we attempt to apply
 	// the minimum value optimization.
@@ -105,14 +103,13 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		t.chunkPtr = t.Ti.minValue
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        key,
+			Key:        t.Ti.KeyColumns[0],
 			UpperBound: &Boundary{t.chunkPtr, false},
 		}, nil
 	}
 	if t.chunkPrefetchingEnabled {
 		return t.nextChunkByPrefetching()
 	}
-	incrementSize := t.chunkToIncrementSize() // a helper function better estimate this.
 
 	// Before we return a final open bounded chunk, we check if the statistics
 	// need updating, in which case we synchronously refresh them.
@@ -132,7 +129,7 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		t.finalChunkSent = true
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        key,
+			Key:        t.Ti.KeyColumns[0],
 			LowerBound: &Boundary{t.chunkPtr, true},
 		}, nil
 	}
@@ -142,11 +139,11 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 	// but not exceeding math.MaxInt64.
 
 	minVal := t.chunkPtr
-	maxVal := t.chunkPtr.Add(incrementSize)
+	maxVal := t.chunkPtr.Add(t.chunkSize)
 	t.chunkPtr = maxVal
 	return &Chunk{
 		ChunkSize:  t.chunkSize,
-		Key:        key,
+		Key:        t.Ti.KeyColumns[0],
 		LowerBound: &Boundary{minVal, true},
 		UpperBound: &Boundary{maxVal, false},
 	}, nil
@@ -178,7 +175,7 @@ func (t *chunkerOptimistic) OpenAtWatermark(cp string) error {
 		return err
 	}
 
-	chunk, err := NewChunkFromJSON(cp, t.Ti.pkMySQLTp[0])
+	chunk, err := NewChunkFromJSON(cp, t.Ti.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
@@ -323,7 +320,7 @@ applyQueuedChunks:
 }
 
 func (t *chunkerOptimistic) open() (err error) {
-	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp[0])
+	tp := mySQLTypeToDatumTp(t.Ti.keyColumnsMySQLTp[0])
 	if tp == unknownType {
 		return ErrUnsupportedPKType
 	}
@@ -333,7 +330,7 @@ func (t *chunkerOptimistic) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp[0])
+	t.chunkPtr = NewNilDatum(t.Ti.keyDatums[0])
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 
@@ -350,38 +347,6 @@ func (t *chunkerOptimistic) open() (err error) {
 
 func (t *chunkerOptimistic) IsRead() bool {
 	return t.finalChunkSent
-}
-
-func (t *chunkerOptimistic) chunkToIncrementSize() uint64 {
-	// already called under a mutex.
-	var increment = t.chunkSize
-
-	// Logical range is MaxValue-MinValue. If it matches close to estimated rows,
-	// then the increment will be the same as the chunk size. If it's higher or lower,
-	// then the increment will be smaller or larger.
-	logicalRange := t.logicalRange()
-
-	if t.Ti.PrimaryKeyIsAutoInc {
-		// There is a case when there are large "gaps" in the table because
-		// the difference between min<->max is larger than the estimated rows.
-		// Estimated rows is often wrong, and it could just be a large chunk deleted,
-		// which could get us in trouble with some large chunks. So for now if the estimatedRows
-		// is greater than 1K we don't expand the range. We have no idea if all these
-		// rows will show up together.
-		if t.Ti.EstimatedRows > trivialChunkerThreshold {
-			return increment
-		}
-	}
-	divideBy := float64(t.Ti.EstimatedRows) / float64(logicalRange)
-	return uint64(math.Ceil(float64(increment) / divideBy)) // ceil to guarantee at least 1 for progress.
-}
-
-func (t *chunkerOptimistic) logicalRange() uint64 {
-	if !t.Ti.maxValue.IsNil() && !t.Ti.minValue.IsNil() {
-		return t.Ti.maxValue.Range(t.Ti.minValue)
-	}
-	// For binary types, we can't really do anything useful yet:
-	return math.MaxUint64
 }
 
 func (t *chunkerOptimistic) updateChunkerTarget(newTarget uint64) {

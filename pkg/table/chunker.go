@@ -47,16 +47,16 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 		return nil, err
 	}
 
-	// Use a different chunker if the table has composite key
-	if len(t.PrimaryKey) > 1 {
-		return &chunkerComposite{
+	// We use the optimistic chunker for auto_increment columns
+	// because it's fairly stable to know where the values are.
+	if t.KeyIsAutoInc && len(t.KeyColumns) == 1 {
+		return &chunkerOptimistic{
 			Ti:            t,
 			ChunkerTarget: chunkerTarget,
 			logger:        logger,
 		}, nil
 	}
-
-	return &chunkerOptimistic{
+	return &chunkerComposite{
 		Ti:            t,
 		ChunkerTarget: chunkerTarget,
 		logger:        logger,

@@ -29,16 +29,17 @@ type chunkerComposite struct {
 	logger loggers.Advanced
 }
 
-var _ Chunker = &chunkerOptimistic{}
+var _ Chunker = &chunkerComposite{}
 
-// nextChunk uses prefetching instead of feedback to determine the chunk size.
-// For table with composite keys, only prefecting is supported.
+// nextChunk uses a query (aka prefetching) to determine the boundary of this chunk.
+// This method is slower, but works better if the table can not predictably be
+// chunked by just dividing the range between min and max values.
 func (t *chunkerComposite) nextChunk() (*Chunk, error) {
-	key := t.Ti.PrimaryKey[0]
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET %d",
-		key, t.Ti.QuotedName, key, key, t.chunkSize,
+	key := t.Ti.KeyColumns[0] // TODO: support all columns
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > %s ORDER BY %s LIMIT 1 OFFSET %d",
+		key, t.Ti.QuotedName, key, t.chunkPtr.String(), key, t.chunkSize,
 	)
-	rows, err := t.Ti.db.Query(query, t.chunkPtr.String())
+	rows, err := t.Ti.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,6 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	if !t.isOpen {
 		return nil, ErrTableNotOpen
 	}
-	key := t.Ti.PrimaryKey[0]
 
 	// If there is a minimum value, we attempt to apply
 	// the minimum value optimization.
@@ -87,7 +87,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 		t.chunkPtr = t.Ti.minValue
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        key,
+			Key:        t.Ti.KeyColumns[0],
 			UpperBound: &Boundary{t.chunkPtr, false},
 		}, nil
 	}
@@ -114,7 +114,7 @@ func (t *chunkerComposite) OpenAtWatermark(cp string) error {
 		return err
 	}
 
-	chunk, err := NewChunkFromJSON(cp, t.Ti.pkMySQLTp[0])
+	chunk, err := NewChunkFromJSON(cp, t.Ti.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ applyQueuedChunks:
 }
 
 func (t *chunkerComposite) open() (err error) {
-	tp := mySQLTypeToDatumTp(t.Ti.pkMySQLTp[0])
+	tp := mySQLTypeToDatumTp(t.Ti.keyColumnsMySQLTp[0])
 	if tp == unknownType {
 		return ErrUnsupportedPKType
 	}
@@ -269,7 +269,7 @@ func (t *chunkerComposite) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkPtr = NewNilDatum(t.Ti.pkDatumTp[0])
+	t.chunkPtr = NewNilDatum(t.Ti.keyDatums[0])
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 
