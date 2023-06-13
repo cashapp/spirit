@@ -658,9 +658,12 @@ func (r *Runner) checksum(ctx context.Context) error {
 		return err
 	}
 	if err := r.checker.Run(ctx); err != nil {
-		// Panic: this is really not expected to happen, and if it does
-		// we don't want cleanup to happen in Close() so we can inspect it.
-		panic(err)
+		// This is really not expected to happen. Previously we panic'ed here,
+		// but this prevented our automation from retrying the migration
+		// in gh-ost. After we return the error, our automation will call
+		// Close() which frees resources, and Close() no longer cleans
+		// up artifacts that are created by Run(), so we can still inspect it.
+		return err
 	}
 	r.logger.Info("checksum passed")
 

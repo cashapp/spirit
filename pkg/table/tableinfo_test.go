@@ -16,7 +16,7 @@ func TestChunkerBasic(t *testing.T) {
 	t1 := &TableInfo{
 		minValue:          newDatum(1, signedType),
 		maxValue:          newDatum(1000000, signedType),
-		EstimatedRows:     1000000, // avoid trivial chunker.
+		EstimatedRows:     1000000,
 		SchemaName:        "test",
 		TableName:         "t1",
 		QuotedName:        "`test`.`t1`",
@@ -71,7 +71,7 @@ func TestChunkerBasic(t *testing.T) {
 
 func TestOpenOnUnsupportedType(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
-	t1.EstimatedRows = 1000000 // avoid trivial chunker.
+	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"varchar"}
 	t1.KeyIsAutoInc = true
@@ -83,7 +83,7 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 
 func TestOpenOnBinaryType(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
-	t1.EstimatedRows = 1000000 // avoid trivial chunker.
+	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"varbinary"}
 	t1.keyDatums = []datumTp{binaryType}
@@ -96,7 +96,7 @@ func TestOpenOnBinaryType(t *testing.T) {
 
 func TestOpenOnNoMinMax(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
-	t1.EstimatedRows = 1000000 // avoid trivial chunker.
+	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"varbinary"}
 	t1.keyDatums = []datumTp{binaryType}
@@ -109,7 +109,7 @@ func TestOpenOnNoMinMax(t *testing.T) {
 
 func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
-	t1.EstimatedRows = 1000000 // avoid trivial chunker.
+	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"varbinary"}
 	t1.keyDatums = []datumTp{binaryType}
@@ -130,7 +130,7 @@ func TestLowWatermark(t *testing.T) {
 	t1 := newTableInfo4Test("test", "t1")
 	t1.minValue = newDatum(1, signedType)
 	t1.maxValue = newDatum(1000000, signedType)
-	t1.EstimatedRows = 1000000 // avoid trivial chunker.
+	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"bigint"}
 	t1.keyDatums = []datumTp{signedType}
@@ -517,7 +517,7 @@ func TestStatisticsUpdate(t *testing.T) {
 	t1 := &TableInfo{
 		minValue:          newDatum(1, signedType),
 		maxValue:          newDatum(1000000, signedType),
-		EstimatedRows:     1000000, // avoid trivial chunker.
+		EstimatedRows:     1000000,
 		SchemaName:        "test",
 		TableName:         "statsupdate",
 		QuotedName:        "`test`.`statsupdate`",

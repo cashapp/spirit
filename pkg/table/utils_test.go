@@ -71,3 +71,11 @@ func TestCastableTp(t *testing.T) {
 		assert.Equal(t, tp.expected, castableTp(tp.tp))
 	}
 }
+
+func TestQuoteCols(t *testing.T) {
+	cols := []string{"a", "b", "c"}
+	assert.Equal(t, "`a`, `b`, `c`", QuoteColumns(cols))
+
+	cols = []string{"a"}
+	assert.Equal(t, "`a`", QuoteColumns(cols))
+}

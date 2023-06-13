@@ -75,8 +75,9 @@ func removeZerofill(s string) string {
 }
 
 func QuoteColumns(cols []string) string {
+	q := make([]string, len(cols))
 	for i, col := range cols {
-		cols[i] = "`" + col + "`"
+		q[i] = "`" + col + "`"
 	}
-	return strings.Join(cols, ", ")
+	return strings.Join(q, ", ")
 }

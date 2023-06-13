@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	trivialChunkerThreshold      = 1000
 	lastChunkStatisticsThreshold = 10 * time.Second
 )
 

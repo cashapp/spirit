@@ -114,7 +114,7 @@ func (c *Client) OnRow(e *canal.RowsEvent) error {
 	for _, row := range e.Rows {
 		key := c.table.PrimaryKeyValues(row)
 		if len(key) == 0 {
-			return errors.New("no primary key found")
+			return fmt.Errorf("no primary key found for row: %#v", row)
 		}
 		atomic.AddInt64(&c.changesetRowsEventCount, 1)
 		// Important! We can only apply this optimization while in migrationStateCopyRows.
