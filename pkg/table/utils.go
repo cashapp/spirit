@@ -73,3 +73,11 @@ func removeEnumSetOpts(s string) string {
 func removeZerofill(s string) string {
 	return strings.Replace(s, " zerofill", "", -1)
 }
+
+func QuoteColumns(cols []string) string {
+	q := make([]string, len(cols))
+	for i, col := range cols {
+		q[i] = "`" + col + "`"
+	}
+	return strings.Join(q, ", ")
+}

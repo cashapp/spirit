@@ -113,6 +113,9 @@ func NewClientDefaultConfig() *ClientConfig {
 func (c *Client) OnRow(e *canal.RowsEvent) error {
 	for _, row := range e.Rows {
 		key := c.table.PrimaryKeyValues(row)
+		if len(key) == 0 {
+			return fmt.Errorf("no primary key found for row: %#v", row)
+		}
 		atomic.AddInt64(&c.changesetRowsEventCount, 1)
 		// Important! We can only apply this optimization while in migrationStateCopyRows.
 		// If we do it too early, we might miss updates in-between starting the subscription,
@@ -377,7 +380,7 @@ func (c *Client) createDeleteStmt(deleteKeys []string) string {
 	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
 			c.newTable.QuotedName,
-			strings.Join(c.newTable.PrimaryKey, ","),
+			table.QuoteColumns(c.table.KeyColumns),
 			c.pksToRowValueConstructor(deleteKeys),
 		)
 	}
@@ -392,7 +395,7 @@ func (c *Client) createReplaceStmt(replaceKeys []string) string {
 			utils.IntersectColumns(c.table, c.newTable),
 			utils.IntersectColumns(c.table, c.newTable),
 			c.table.QuotedName,
-			strings.Join(c.newTable.PrimaryKey, ","),
+			table.QuoteColumns(c.table.KeyColumns),
 			c.pksToRowValueConstructor(replaceKeys),
 		)
 	}

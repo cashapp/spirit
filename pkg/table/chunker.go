@@ -48,7 +48,8 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 	}
 
 	// Use a different chunker if the table has composite key
-	if len(t.PrimaryKey) > 1 {
+	// or the PRIMARY KEY is something like a VARBINARY.
+	if len(t.KeyColumns) > 1 || t.keyDatums[0] == binaryType {
 		return &chunkerComposite{
 			Ti:            t,
 			ChunkerTarget: chunkerTarget,

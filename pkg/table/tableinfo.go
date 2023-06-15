@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	trivialChunkerThreshold      = 1000
 	lastChunkStatisticsThreshold = 10 * time.Second
 )
 
@@ -31,14 +30,14 @@ type TableInfo struct {
 	SchemaName            string
 	TableName             string
 	QuotedName            string
-	PrimaryKey            []string
-	Columns               []string
-	pkMySQLTp             []string          // the MySQL type of pk
-	pkDatumTp             []datumTp         // the datum type of pk
-	PrimaryKeyIsAutoInc   bool              // if pk[0] is an auto_increment column
+	Columns               []string          // all the column names
+	columnsMySQLTps       map[string]string // map from column name to MySQL type
+	KeyColumns            []string          // the column names of the primaryKey
+	keyColumnsMySQLTp     []string          // the MySQL types of the primaryKey
+	KeyIsAutoInc          bool              // if pk[0] is an auto_increment column
+	keyDatums             []datumTp         // the datum type of pk
 	minValue              datum             // known minValue of pk[0] (using type of PK[0])
 	maxValue              datum             // known maxValue of pk[0] (using type of PK[0])
-	colTps                map[string]string // map from column name to MySQL type
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
 }
@@ -59,7 +58,7 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 // won't work correctly! Collations also affect chunking behavior in possibly
 // unsafe ways!
 func (t *TableInfo) isCompatibleWithChunker() error {
-	if mySQLTypeToDatumTp(t.pkMySQLTp[0]) == unknownType {
+	if mySQLTypeToDatumTp(t.keyColumnsMySQLTp[0]) == unknownType {
 		return ErrUnsupportedPKType
 	}
 	return nil
@@ -70,7 +69,7 @@ func (t *TableInfo) isCompatibleWithChunker() error {
 // position of primary key columns (there might be more than one).
 func (t *TableInfo) PrimaryKeyValues(row interface{}) []interface{} {
 	var pkCols []interface{}
-	for _, pCol := range t.PrimaryKey {
+	for _, pCol := range t.KeyColumns {
 		for i, col := range t.Columns {
 			if col == pCol {
 				pkCols = append(pkCols, row.([]interface{})[i])
@@ -127,14 +126,14 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 	}
 	defer rows.Close()
 	t.Columns = []string{}
-	t.colTps = make(map[string]string)
+	t.columnsMySQLTps = make(map[string]string)
 	for rows.Next() {
 		var col, tp string
 		if err := rows.Scan(&col, &tp); err != nil {
 			return err
 		}
 		t.Columns = append(t.Columns, col)
-		t.colTps[col] = tp
+		t.columnsMySQLTps[col] = tp
 	}
 	return nil
 }
@@ -150,18 +149,18 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 		return err
 	}
 	defer rows.Close()
-	t.PrimaryKey = []string{}
+	t.KeyColumns = []string{}
 	for rows.Next() {
 		var col string
 		if err := rows.Scan(&col); err != nil {
 			return err
 		}
-		t.PrimaryKey = append(t.PrimaryKey, col)
+		t.KeyColumns = append(t.KeyColumns, col)
 	}
-	if len(t.PrimaryKey) == 0 {
+	if len(t.KeyColumns) == 0 {
 		return errors.New("no primary key found (not supported)")
 	}
-	for i, col := range t.PrimaryKey {
+	for i, col := range t.KeyColumns {
 		// Get primary key type and auto_inc info.
 		query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
 		var extra, pkType string
@@ -170,17 +169,17 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 			return err
 		}
 		pkType = removeWidth(pkType)
-		t.pkMySQLTp = append(t.pkMySQLTp, pkType)
-		t.pkDatumTp = append(t.pkDatumTp, mySQLTypeToDatumTp(pkType))
+		t.keyColumnsMySQLTp = append(t.keyColumnsMySQLTp, pkType)
+		t.keyDatums = append(t.keyDatums, mySQLTypeToDatumTp(pkType))
 		if i == 0 {
-			t.PrimaryKeyIsAutoInc = (extra == "auto_increment")
+			t.KeyIsAutoInc = (extra == "auto_increment")
 		}
 	}
 	return nil
 }
 
 func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error {
-	for _, col := range t.PrimaryKey {
+	for _, col := range t.KeyColumns {
 		var colType string
 		query := "SELECT column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
 		err := t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&colType)
@@ -196,22 +195,24 @@ func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error
 
 // setMinMax is a separate function so it can be repeated continuously
 // Since if a schema migration takes 14 days, it could change.
+// It only really applies to KeyColumns[0], since across composite keys
+// there could be inter-dependencies between columns.
 func (t *TableInfo) setMinMax(ctx context.Context) error {
-	if t.pkDatumTp[0] == binaryType {
+	if t.keyDatums[0] == binaryType {
 		return nil // we don't min/max binary types for now.
 	}
-	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.PrimaryKey[0], t.PrimaryKey[0], t.QuotedName)
+	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.KeyColumns[0], t.KeyColumns[0], t.QuotedName)
 	var min, max string
 	err := t.db.QueryRowContext(ctx, query).Scan(&min, &max)
 	if err != nil {
 		return err
 	}
 
-	t.minValue, err = newDatumFromMySQL(min, t.pkMySQLTp[0])
+	t.minValue, err = newDatumFromMySQL(min, t.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
-	t.maxValue, err = newDatumFromMySQL(max, t.pkMySQLTp[0])
+	t.maxValue, err = newDatumFromMySQL(max, t.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
@@ -270,7 +271,7 @@ func (t *TableInfo) MaxValue() string {
 }
 
 func (t *TableInfo) WrapCastType(col string) string {
-	tp, ok := t.colTps[col] // the tp keeps the width in this context.
+	tp, ok := t.columnsMySQLTps[col] // the tp keeps the width in this context.
 	if !ok {
 		panic("column not found")
 	}

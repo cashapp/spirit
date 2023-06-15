@@ -414,12 +414,9 @@ func TestBadAlter(t *testing.T) {
 //   - There is no auto-increment so the chunker is allowed to expand each chunk
 //     based on estimated rows (which is low).
 //
-// In production cases, this should be even faster since the trivial chunker
-// will apply immediately if the row estimate is less than 1000 rows, but it's disabled for test.
-//
 // Only the key=8589934592 will fail to be converted. On my system this test
 // currently runs in 0.4 seconds which is "acceptable" for chunker performance.
-// The generated number of chunks should also be very low.
+// The generated number of chunks should also be very low because of prefetching.
 func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS lossychange2`)
 	table := `CREATE TABLE lossychange2 (
@@ -447,16 +444,12 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "Out of range value") // Error 1264: Out of range value for column 'id' at row 1
-	assert.True(t, m.copier.CopyChunksCount < 10)      // should be very low
+	assert.True(t, m.copier.CopyChunksCount < 500)     // should be very low
 	assert.NoError(t, m.Close())
 }
 
-// TestChangeDatatypeLossy3 has an auto-increment column which limits
-// the expansion of the chunk, *but* the trivial chunker is enabled.
-// Because the table is basically empty, the row estimate should be below
-// 1000, which should mean everything is processed as one chunk.
-// Additionally, the data type change is "lossy" but given the current
-// stored data set does not cause errors.
+// TestChangeDatatypeLossy3 has a data type change that is "lossy" but
+// given the current stored data set does not cause errors.
 func TestChangeDatatypeLossless(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS lossychange3`)
 	table := `CREATE TABLE lossychange3 (
@@ -483,14 +476,13 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
-	assert.NoError(t, err)                               // works because there are no violations.
-	assert.Equal(t, uint64(3), m.copier.CopyChunksCount) // always 3 chunks now
+	assert.NoError(t, err)                                // works because there are no violations.
+	assert.True(t, int64(m.copier.CopyChunksCount) < 500) // prefetch makes it copy fast.
 	assert.NoError(t, m.Close())
 }
 
 // TestChangeDatatypeLossyFailEarly tests a scenario where there is an error
-// immediately so the DDL should halt. Because there is an auto-increment,
-// and trivial chunking is disabled the chunker will not expand the range.
+// immediately so the DDL should halt.
 // So if it does try to exhaustively run the DDL it will take forever:
 // [1, 8589934592] / 1000 = 8589934.592 chunks
 
@@ -1195,7 +1187,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
-	assert.Equal(t, "id >= 1 AND id < 668", chunk.String())
+	assert.Equal(t, "id >= 1 AND id < 1001", chunk.String())
 
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
@@ -1215,7 +1207,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
-	assert.Equal(t, "id >= 668", chunk.String())
+	assert.Equal(t, "id >= 1001", chunk.String())
 
 	// Some data is inserted later, even though the last chunk is done.
 	// We still care to pick it up because it could be inserted during checkpoint.

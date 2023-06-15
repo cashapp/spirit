@@ -208,7 +208,7 @@ func (c *Copier) SetThrottler(throttler throttler.Throttler) {
 }
 
 func (c *Copier) getCopyStats() (uint64, uint64, float64) {
-	if c.table.PrimaryKeyIsAutoInc {
+	if c.table.KeyIsAutoInc {
 		// If the table has an autoinc column we use a different estimation method,
 		// which tends to be more accurate. We use the maxValue as the estimated rows,
 		// and the "logical copied rows" (which is the sum of the chunk sizes) as the
@@ -258,7 +258,7 @@ func (c *Copier) estimateRowsPerSecondLoop(ctx context.Context) {
 	// If it's an auto-inc key we use the "logical copy rows", because the estimate
 	// will be based on the max value of the auto-inc column.
 	prevRowsCount := atomic.LoadUint64(&c.CopyRowsCount)
-	if c.table.PrimaryKeyIsAutoInc {
+	if c.table.KeyIsAutoInc {
 		prevRowsCount = atomic.LoadUint64(&c.CopyRowsLogicalCount)
 	}
 	ticker := time.NewTicker(copyEstimateInterval)
@@ -272,7 +272,7 @@ func (c *Copier) estimateRowsPerSecondLoop(ctx context.Context) {
 				return
 			}
 			newRowsCount := atomic.LoadUint64(&c.CopyRowsCount)
-			if c.table.PrimaryKeyIsAutoInc {
+			if c.table.KeyIsAutoInc {
 				newRowsCount = atomic.LoadUint64(&c.CopyRowsLogicalCount)
 			}
 			rowsPerInterval := float64(newRowsCount - prevRowsCount)
