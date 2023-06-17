@@ -8,11 +8,11 @@ All chunkers support "dynamic chunking" which is our way of saying that from a c
 
 Our thoughts are that spirit should be aggressive in copying, but there should only be minimal elevation in p99 response times. If you consider that a table regularly has DML queries that take 1-5ms, then it is reasonable to assume a chunk-time of 500ms will elevate some query to 505ms. Assuming this contention is limited, it may only be observed by the pMax and not the p99. It is usually application-dependent how much of a latency hit is acceptable. Our belief is that 500ms is on the high-end of acceptable for defaults, and users will typically lower it rather than increase it. We limit the maximum chunk time to 5s because it is unlikely that users can tolerate larger than a 5s latency hit for a single query on an OLTP system. Since we also adjust various lock wait timeouts based on the assumption that chunks are about this size, increasing beyond 5s would require additional tuning.
 
-Chunking becomes a complicated problem because data can have an even distribution, and some tables have composite or strange data types for PRIMARY KEYs. We have chosen to solve the chunking problem by not using a one-size-fits-all approach, but rather an interface that has two current implementations: `composite` and `optimistic`.
+Chunking becomes a complicated problem because data can have an uneven distribution, and some tables have composite or strange data types for PRIMARY KEYs. We have chosen to solve the chunking problem by not using a one-size-fits-all approach, but rather an interface that has two current implementations: `composite` and `optimistic`.
 
 ## Composite Chunker
 
-The composite chunker is our newest chunker, and it is selected any time the `PRIMARY KEY` consists of more than 1 column or the `PRIMARY KEY` is binary. In future, we may make it the default **unless** the table has an `AUTO_INCREMENT` single-column `PRIMARY KEY`.
+The composite chunker is our newest chunker, and it is selected **unless** the table has an `AUTO_INCREMENT` single-column `PRIMARY KEY`.
 
 Its implementation is very similar to how the chunker in gh-ost works:
 - A `SELECT` statement is performed to find the exact PK value of the row that is `chunkSize` larger than the current chunk pointer:
@@ -27,7 +27,7 @@ Many of our use-cases have `auto_increment` `PRIMARY KEY`s, so despite the compo
 
 ## Optimistic Chunker
 
-The optimistic chunker was our first chunker, and it's still used by default.
+The optimistic chunker was our first chunker, and it's ideal for one of our main use case: `AUTO_INCREMENT` `PRIMARY KEY`s.
 
 Its basic implementation is as follows:
 - Find the min/max of the `PRIMARY KEY` column.
@@ -45,7 +45,6 @@ To deal with large gaps, the optimistic chunker also supports a special "prefetc
 
 The following are known issues:
 
-* We intend to make the composite chunker the default unless the table has an `AUTO_INCREMENT` single-column `PRIMARY KEY`.
 * The composite chunker was named as such because we realized one of the main deficiencies of the optimistic chunker is _composite PRIMARY KEYs_. Despite its name, the composite chunker only chunks on the first part of the `PRIMARY KEY`. We intend to address this feature in the future.
 * Neither of the chunkers support chunking on anything other than the `PRIMARY KEY`. For our purposes, this is usually acceptable but we may have to revisit this in the future.
 * Not specifically a limitation of chunking, but some optimizations in spirit require that the `PRIMARY KEY` not have collations. Thus, we explicitly disallow `VARCHAR` primary keys in the chunker. The optimizations are very useful, which makes this a complex problem to fix. But it also appears to be the most common incompatibility issue with spirit, so we may have to reconsider this at some point.
