@@ -18,7 +18,7 @@ func TestChunk2String(t *testing.T) {
 			Inclusive: false,
 		},
 	}
-	assert.Equal(t, "id >= 100 AND id < 200", chunk.String())
+	assert.Equal(t, "`id` >= 100 AND `id` < 200", chunk.String())
 	chunk = &Chunk{
 		Key: "id",
 		LowerBound: &Boundary{
@@ -26,7 +26,7 @@ func TestChunk2String(t *testing.T) {
 			Inclusive: false,
 		},
 	}
-	assert.Equal(t, "id > 100", chunk.String())
+	assert.Equal(t, "`id` > 100", chunk.String())
 	chunk = &Chunk{
 		Key: "id",
 		UpperBound: &Boundary{
@@ -34,7 +34,7 @@ func TestChunk2String(t *testing.T) {
 			Inclusive: true,
 		},
 	}
-	assert.Equal(t, "id <= 200", chunk.String())
+	assert.Equal(t, "`id` <= 200", chunk.String())
 
 	// Empty chunks are possible with the trivial chunker.
 	chunk = &Chunk{
