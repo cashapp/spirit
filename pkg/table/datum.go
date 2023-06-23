@@ -37,7 +37,7 @@ func newDatum(val interface{}, tp datumTp) datum {
 	var err error
 	if tp == signedType {
 		// We expect the value to be an int64, but it could be an int.
-		// Anything else we convert it
+		// Anything else we attempt to convert it
 		switch v := val.(type) {
 		case int64:
 			// do nothing
@@ -49,7 +49,7 @@ func newDatum(val interface{}, tp datumTp) datum {
 				panic("could not convert datum to int64")
 			}
 		}
-	} else if tp == unsignedType || tp == binaryType {
+	} else if tp == unsignedType {
 		// We expect uint64, but it could be uint.
 		// We convert anything else.
 		switch v := val.(type) {
@@ -77,8 +77,10 @@ func datumValFromString(val string, tp datumTp) (interface{}, error) {
 			return nil, err
 		}
 		return i, nil
+	} else if tp == unsignedType {
+		return strconv.ParseUint(val, 10, 64)
 	}
-	return strconv.ParseUint(val, 10, 64)
+	return val, nil
 }
 
 func newDatumFromMySQL(val string, mysqlTp string) (datum, error) {
@@ -129,6 +131,9 @@ func (d datum) MinValue() datum {
 }
 
 func (d datum) Add(addVal uint64) datum {
+	if d.tp == binaryType {
+		panic("not supported on binary type")
+	}
 	ret := d
 	if d.tp == signedType {
 		returnVal := d.val.(int64) + int64(addVal)
@@ -148,6 +153,9 @@ func (d datum) Add(addVal uint64) datum {
 
 // Range returns the diff between 2 datums as an uint64.
 func (d datum) Range(d2 datum) uint64 {
+	if d.tp == binaryType {
+		panic("not supported on binary type")
+	}
 	if d.tp == signedType {
 		return uint64(d.val.(int64) - d2.val.(int64))
 	}
@@ -156,7 +164,7 @@ func (d datum) Range(d2 datum) uint64 {
 
 func (d datum) String() string {
 	if d.tp == binaryType {
-		return fmt.Sprintf("0x%X", d.val)
+		return "\"" + mysqlRealEscapeString(d.val.(string)) + "\""
 	}
 	return fmt.Sprintf("%v", d.val)
 }
@@ -166,6 +174,9 @@ func (d datum) IsNil() bool {
 }
 
 func (d datum) GreaterThanOrEqual(d2 datum) bool {
+	if d.tp == binaryType {
+		panic("not supported on binary type")
+	}
 	if d.tp == signedType {
 		return d.val.(int64) >= d2.val.(int64)
 	}

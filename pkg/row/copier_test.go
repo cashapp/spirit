@@ -72,8 +72,9 @@ func TestCopier(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	// Verify that testMetricsSink.Send was called 2 times
-	assert.Equal(t, 2, testMetricsSink.called)
+	// Verify that testMetricsSink.Send was called >0 times
+	// It will be 1 with the composite chunker, 3 with optimistic.
+	assert.True(t, testMetricsSink.called > 0)
 }
 
 func TestThrottler(t *testing.T) {

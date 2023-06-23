@@ -40,14 +40,14 @@ func (c *Chunk) String() string {
 		if !c.LowerBound.Inclusive {
 			operator = OpGreaterThan
 		}
-		conds = append(conds, fmt.Sprintf("%s %s %v", c.Key, operator, c.LowerBound.Value))
+		conds = append(conds, fmt.Sprintf("`%s` %s %s", c.Key, operator, c.LowerBound.Value))
 	}
 	if c.UpperBound != nil {
 		operator := OpLessEqual
 		if !c.UpperBound.Inclusive {
 			operator = OpLessThan
 		}
-		conds = append(conds, fmt.Sprintf("%s %s %v", c.Key, operator, c.UpperBound.Value))
+		conds = append(conds, fmt.Sprintf("`%s` %s %s", c.Key, operator, c.UpperBound.Value))
 	}
 	if c.LowerBound == nil && c.UpperBound == nil {
 		conds = append(conds, "1=1")

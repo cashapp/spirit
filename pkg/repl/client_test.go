@@ -114,11 +114,11 @@ func TestReplClientComplex(t *testing.T) {
 	// Read from the copier so that the key is below the watermark
 	chk, err := copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, "a < 1", chk.String())
+	assert.Equal(t, "`a` < 1", chk.String())
 	// read again
 	chk, err = copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, "a >= 1 AND a < 1001", chk.String())
+	assert.Equal(t, "`a` >= 1 AND `a` < 1001", chk.String())
 
 	// Now if we delete below 1001 we should see 10 deltas accumulate
 	runSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 560")

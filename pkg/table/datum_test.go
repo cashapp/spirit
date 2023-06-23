@@ -42,7 +42,5 @@ func TestDatum(t *testing.T) {
 
 	// Test binary type.
 	binary := newDatum("0", binaryType)
-	assert.Equal(t, "0x0", binary.String())
-	binary = binary.Add(1000)
-	assert.Equal(t, "0x3E8", binary.String())
+	assert.Equal(t, `"0"`, binary.String())
 }

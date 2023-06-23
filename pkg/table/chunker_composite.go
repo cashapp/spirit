@@ -36,9 +36,17 @@ var _ Chunker = &chunkerComposite{}
 // chunked by just dividing the range between min and max values.
 func (t *chunkerComposite) nextChunk() (*Chunk, error) {
 	key := t.Ti.KeyColumns[0] // TODO: support all columns
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s > %s ORDER BY %s LIMIT 1 OFFSET %d",
-		key, t.Ti.QuotedName, key, t.chunkPtr.String(), key, t.chunkSize,
-	)
+	var query string
+	if t.chunkPtr.IsNil() {
+		// We are just starting the read.
+		query = fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1 OFFSET %d",
+			key, t.Ti.QuotedName, key, t.chunkSize,
+		)
+	} else {
+		query = fmt.Sprintf("SELECT %s FROM %s WHERE %s > %s ORDER BY %s LIMIT 1 OFFSET %d",
+			key, t.Ti.QuotedName, key, t.chunkPtr.String(), key, t.chunkSize,
+		)
+	}
 	rows, err := t.Ti.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -46,24 +54,35 @@ func (t *chunkerComposite) nextChunk() (*Chunk, error) {
 	defer rows.Close()
 	if rows.Next() {
 		minVal := t.chunkPtr
-		var upperVal int64
+		var upperVal string
 		err = rows.Scan(&upperVal)
 		if err != nil {
 			return nil, err
 		}
-		maxVal := newDatum(upperVal, t.chunkPtr.tp)
-		t.chunkPtr = maxVal
-
+		lowerBoundary := &Boundary{minVal, true}
+		if t.chunkPtr.IsNil() {
+			lowerBoundary = nil
+		}
+		upperBoundary := &Boundary{newDatum(upperVal, t.chunkPtr.tp), false}
+		t.chunkPtr = upperBoundary.Value
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
 			Key:        key,
-			LowerBound: &Boundary{minVal, true},
-			UpperBound: &Boundary{maxVal, false},
+			LowerBound: lowerBoundary,
+			UpperBound: upperBoundary,
 		}, nil
 	}
 	// If there were no rows, it means we are indeed
 	// on the final chunk.
 	t.finalChunkSent = true
+	// If the chunkPtr is nil, it means this is our first
+	// and our last chunk (special case for small tables)
+	if t.chunkPtr.IsNil() {
+		return &Chunk{
+			ChunkSize: t.chunkSize,
+			Key:       key,
+		}, nil
+	}
 	return &Chunk{
 		ChunkSize:  t.chunkSize,
 		Key:        key,
@@ -79,17 +98,6 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	}
 	if !t.isOpen {
 		return nil, ErrTableNotOpen
-	}
-
-	// If there is a minimum value, we attempt to apply
-	// the minimum value optimization.
-	if t.chunkPtr.IsNil() {
-		t.chunkPtr = t.Ti.minValue
-		return &Chunk{
-			ChunkSize:  t.chunkSize,
-			Key:        t.Ti.KeyColumns[0],
-			UpperBound: &Boundary{t.chunkPtr, false},
-		}, nil
 	}
 	return t.nextChunk()
 }
@@ -330,6 +338,9 @@ func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 	}
 	if t.finalChunkSent {
 		return false // we're done, so everything is below.
+	}
+	if t.Ti.keyDatums[0] == binaryType {
+		return false // we don't know how to key above binary right now.
 	}
 	keyDatum := newDatum(key, t.chunkPtr.tp)
 	return keyDatum.GreaterThanOrEqual(t.chunkPtr)

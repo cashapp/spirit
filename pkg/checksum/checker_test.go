@@ -63,7 +63,7 @@ func TestBasicChecksum(t *testing.T) {
 	assert.Nil(t, checker.recentValue)
 	assert.Equal(t, "TBD", checker.RecentValue())
 	assert.NoError(t, checker.Run(context.Background()))
-	assert.Equal(t, "1", checker.RecentValue())
+	assert.Equal(t, "TBD", checker.RecentValue()) // still TBD because its a 1 and done chunker.
 }
 
 func TestBasicValidation(t *testing.T) {
