@@ -1805,3 +1805,48 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	// All done!
 }
+
+func TestPartitionedTable(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS part1, _part1_new`)
+	table := `CREATE TABLE part1 (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			partition_id smallint(6) NOT NULL,
+			created_at timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+			updated_at timestamp(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+			initiated_at timestamp(3) NULL DEFAULT NULL,
+			version int(11) NOT NULL DEFAULT '0',
+			type varchar(50) DEFAULT NULL,
+			token varchar(255) DEFAULT NULL,
+			PRIMARY KEY (id,partition_id),
+			UNIQUE KEY idx_token (token,partition_id)
+		  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC
+		  /*!50100 PARTITION BY LIST (partition_id)
+		  (PARTITION p0 VALUES IN (0) ENGINE = InnoDB,
+		   PARTITION p1 VALUES IN (1) ENGINE = InnoDB,
+		   PARTITION p2 VALUES IN (2) ENGINE = InnoDB,
+		   PARTITION p3 VALUES IN (3) ENGINE = InnoDB,
+		   PARTITION p4 VALUES IN (4) ENGINE = InnoDB,
+		   PARTITION p5 VALUES IN (5) ENGINE = InnoDB,
+		   PARTITION p6 VALUES IN (6) ENGINE = InnoDB,
+		   PARTITION p7 VALUES IN (7) ENGINE = InnoDB) */`
+	runSQL(t, table)
+	runSQL(t, `insert into part1 values (1, 1, NOW(), NOW(), NOW(), 1, 'type', 'token'),
+	(1, 2, NOW(), NOW(), NOW(), 1, 'type', 'token'),
+	(1, 3, NOW(), NOW(), NOW(), 1, 'type', 'token2')`)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "part1",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)                         // everything is specified.
+	assert.NoError(t, m.Run(context.Background())) // should work.
+	assert.NoError(t, m.Close())
+}
