@@ -1830,9 +1830,7 @@ func TestPartitionedTable(t *testing.T) {
 		   PARTITION p6 VALUES IN (6) ENGINE = InnoDB,
 		   PARTITION p7 VALUES IN (7) ENGINE = InnoDB) */`
 	runSQL(t, table)
-	runSQL(t, `insert into part1 values (1, 1, NOW(), NOW(), NOW(), 1, 'type', 'token'),
-	(1, 2, NOW(), NOW(), NOW(), 1, 'type', 'token'),
-	(1, 3, NOW(), NOW(), NOW(), 1, 'type', 'token2')`)
+	runSQL(t, `insert into part1 values (1, 1, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 2, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 3, NOW(), NOW(), NOW(), 1, 'type', 'token2')`) //nolint: dupword
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
