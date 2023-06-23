@@ -31,18 +31,26 @@ type chunkerComposite struct {
 
 var _ Chunker = &chunkerComposite{}
 
-// nextChunk uses a query (aka prefetching) to determine the boundary of this chunk.
-// This method is slower, but works better if the table can not predictably be
-// chunked by just dividing the range between min and max values.
-func (t *chunkerComposite) nextChunk() (*Chunk, error) {
-	key := t.Ti.KeyColumns[0] // TODO: support all columns
-	var query string
-	if t.chunkPtr.IsNil() {
-		// We are just starting the read.
-		query = fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1 OFFSET %d",
-			key, t.Ti.QuotedName, key, t.chunkSize,
-		)
-	} else {
+// Next in the composite chunker uses a query (aka prefetching) to determine the
+// boundary of this chunk. This method is slower, but works better when the
+// table can not predictably be chunked by just dividing the range between min and max values.
+// as with auto_increment PRIMARY KEYs. This is the same method used by gh-ost.
+func (t *chunkerComposite) Next() (*Chunk, error) {
+	t.Lock()
+	defer t.Unlock()
+	if t.IsRead() {
+		return nil, ErrTableIsRead
+	}
+	if !t.isOpen {
+		return nil, ErrTableNotOpen
+	}
+	key := t.Ti.KeyColumns[0]
+	// Assume first chunk. If this is not the first chunk,
+	// we have to add a >key lower bound.
+	query := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1 OFFSET %d",
+		key, t.Ti.QuotedName, key, t.chunkSize,
+	)
+	if !t.chunkPtr.IsNil() {
 		query = fmt.Sprintf("SELECT %s FROM %s WHERE %s > %s ORDER BY %s LIMIT 1 OFFSET %d",
 			key, t.Ti.QuotedName, key, t.chunkPtr.String(), key, t.chunkSize,
 		)
@@ -61,7 +69,7 @@ func (t *chunkerComposite) nextChunk() (*Chunk, error) {
 		}
 		lowerBoundary := &Boundary{minVal, true}
 		if t.chunkPtr.IsNil() {
-			lowerBoundary = nil
+			lowerBoundary = nil // first chunk
 		}
 		upperBoundary := &Boundary{newDatum(upperVal, t.chunkPtr.tp), false}
 		t.chunkPtr = upperBoundary.Value
@@ -72,34 +80,27 @@ func (t *chunkerComposite) nextChunk() (*Chunk, error) {
 			UpperBound: upperBoundary,
 		}, nil
 	}
-	// If there were no rows, it means we are indeed
-	// on the final chunk.
+	// Handle the case that there were no rows.
+	// This means that < chunkSize rows remain in the table
+	// and we processing the final chunk.
 	t.finalChunkSent = true
-	// If the chunkPtr is nil, it means this is our first
-	// and our last chunk (special case for small tables)
+	// In the special case that chunkPtr is nil this means
+	// we are processing the first *and* last chunk. i.e.
+	// the table has less than chunkSize rows in it, so we
+	// return a single chunk with no boundaries.
 	if t.chunkPtr.IsNil() {
 		return &Chunk{
 			ChunkSize: t.chunkSize,
 			Key:       key,
 		}, nil
 	}
+	// Otherwise we return a final chunk with a lower bound
+	// and an open ended upper bound.
 	return &Chunk{
 		ChunkSize:  t.chunkSize,
 		Key:        key,
 		LowerBound: &Boundary{t.chunkPtr, true},
 	}, nil
-}
-
-func (t *chunkerComposite) Next() (*Chunk, error) {
-	t.Lock()
-	defer t.Unlock()
-	if t.IsRead() {
-		return nil, ErrTableIsRead
-	}
-	if !t.isOpen {
-		return nil, ErrTableNotOpen
-	}
-	return t.nextChunk()
 }
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
@@ -111,18 +112,17 @@ func (t *chunkerComposite) Open() (err error) {
 	return t.open()
 }
 
-func (t *chunkerComposite) OpenAtWatermark(cp string) error {
+// OpenAtWatermark opens a table for the resume-from-checkpoint use case.
+// This will set the chunkPtr to a known safe value that is contained within
+// the checkpoint
+func (t *chunkerComposite) OpenAtWatermark(checkpnt string) error {
 	t.Lock()
 	defer t.Unlock()
 
-	// Open the table first.
-	// This will reset the chunk pointer, but we'll set it before the mutex
-	// is released.
 	if err := t.open(); err != nil {
 		return err
 	}
-
-	chunk, err := NewChunkFromJSON(cp, t.Ti.keyColumnsMySQLTp[0])
+	chunk, err := NewChunkFromJSON(checkpnt, t.Ti.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (t *chunkerComposite) Feedback(chunk *Chunk, d time.Duration) {
 	// Add feedback to the list.
 	t.chunkTimingInfo = append(t.chunkTimingInfo, d)
 
-	// We have enough feedback to re-evaluate the chunk size.
+	// If we have enough feedback, re-evaluate the chunk size.
 	if len(t.chunkTimingInfo) > 10 {
 		t.updateChunkerTarget(t.calculateNewTargetChunkSize())
 	}
@@ -280,15 +280,6 @@ func (t *chunkerComposite) open() (err error) {
 	t.chunkPtr = NewNilDatum(t.Ti.keyDatums[0])
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
-
-	// Make sure min/max value are always specified
-	// To simplify the code in NextChunk funcs.
-	if t.Ti.minValue.IsNil() {
-		t.Ti.minValue = t.chunkPtr.MinValue()
-	}
-	if t.Ti.maxValue.IsNil() {
-		t.Ti.maxValue = t.chunkPtr.MaxValue()
-	}
 	return nil
 }
 
