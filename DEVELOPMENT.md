@@ -2,25 +2,26 @@
 Spirit uses [hermit](https://cashapp.github.io/hermit/usage/get-started/) to enforce tool versions across environments.
 Install hermit in your machine, and it will make sure you are using the correct version of all tools.
 
-
 ## Running tests
 
-#### Install dbdeployer
-_TODO: Add support for hermit package_
-
-We use https://github.com/datacharmer/dbdeployer to run different versions of MySQL and run tests against those versions.
+The tests require a MySQL server to run. If you have MySQL installed locally, you can provide it as an environment variable:
 
 ```bash
- # Install and setup
-curl -s https://raw.githubusercontent.com/datacharmer/dbdeployer/master/scripts/dbdeployer-install.sh | bash
-dbdeployer init
-dbdeployer deploy single 8.0 --force --port 8030
+MYSQL_DSN="root:mypassword@tcp(127.0.0.1:3306)/test" go test -v ./...
 ```
 
+### Install dbdeployer
+
+We use (and recommend) [dbdeployer](https://github.com/datacharmer/dbdeployer) for running the tests against multiple MySQL versions at once. For example, with MySQL 8.0.32 installed from dbdeployer:
+
 ```bash
+# deploy 8.0.32
+dbdeployer deploy single 8.0.32
 # Running tests
-MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8030)/test" go test -v ./...
+MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8032)/test" go test -v ./...
 ```
+
+If the `MYSQL_DSN` is not specified, it currently defaults to `msandbox:msandbox@tcp(127.0.0.1:8030)/test`. This may change in the future.
 
 ## Running linter
 
