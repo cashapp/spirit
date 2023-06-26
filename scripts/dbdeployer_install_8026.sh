@@ -7,6 +7,7 @@ go install github.com/datacharmer/dbdeployer@latest
 
 dbdeployer init
 
+dbdeployer downloads list
 dbdeployer downloads get mysql-8.0.26-linux-glibc2.17-x86_64-minimal.tar.xz
 dbdeployer unpack mysql-8.0.26-linux-glibc2.17-x86_64-minimal.tar.xz
 
