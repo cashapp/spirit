@@ -1,4 +1,4 @@
-name: MySQL 8.0.23 (Aurora version)
+name: MySQL 8.0.26 (Aurora version)
 on:
   push:
     branches: [ main ]
