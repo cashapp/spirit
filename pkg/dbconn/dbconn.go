@@ -18,9 +18,9 @@ const (
 )
 
 var (
-	maxRetries            = 5
-	innodbLockWaitTimeout = 3 // usually fine, since it's a lock on a row.
-	mdlLockWaitTimeout    = 5 // safer to make slightly longer.
+	innodbLockWaitTimeout = 3  // usually fine, since it's a lock on a row.
+	mdlLockWaitTimeout    = 5  // safer to make slightly longer.
+	MaxRetries            = 10 // each retry extends both lock timeouts by 1 second.
 )
 
 func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
@@ -61,7 +61,7 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 	var trx *sql.Tx
 	var rowsAffected int64
 RETRYLOOP:
-	for i := 0; i < maxRetries; i++ {
+	for i := 0; i < MaxRetries; i++ {
 		// Start a transaction
 		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
 			backoff(i)
