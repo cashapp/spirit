@@ -265,9 +265,9 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 	return nil
 }
 
-// MaxValue as a string
-func (t *TableInfo) MaxValue() string {
-	return fmt.Sprintf("%v", t.maxValue)
+// MaxValue as a datum
+func (t *TableInfo) MaxValue() datum {
+	return t.maxValue
 }
 
 func (t *TableInfo) WrapCastType(col string) string {
