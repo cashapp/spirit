@@ -21,6 +21,7 @@ var (
 	innodbLockWaitTimeout = 3  // usually fine, since it's a lock on a row.
 	mdlLockWaitTimeout    = 5  // safer to make slightly longer.
 	MaxRetries            = 10 // each retry extends both lock timeouts by 1 second.
+	maximumLockTime       = 10 // safety measure incase we make changes: don't allow any lock longer than this
 )
 
 func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
@@ -43,11 +44,11 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", innodbLockWaitTimeout+retryNumber)
+	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", utils.BoundaryCheck(innodbLockWaitTimeout+retryNumber, maximumLockTime))
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", mdlLockWaitTimeout+retryNumber)
+	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", utils.BoundaryCheck(mdlLockWaitTimeout+retryNumber, maximumLockTime))
 	if err != nil {
 		return err
 	}
@@ -114,6 +115,12 @@ RETRYLOOP:
 				// might exist in the table and needs to be copied.
 				if code == "1062" && ignoreDupKeyWarnings {
 					continue // ignore duplicate key warnings
+				} else if code == "3170" {
+					// ER_CAPACITY_EXCEEDED
+					// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
+					// Range optimization was not done for this query."
+					// i.e. the query still executes it just doesn't optimize perfectly
+					continue
 				} else {
 					utils.ErrInErr(trx.Rollback())
 					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)

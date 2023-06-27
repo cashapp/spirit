@@ -165,6 +165,13 @@ func (c *Checker) Run(ctx context.Context) error {
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
+
+	// Assert that the change set is empty. This should always
+	// be the case because we are under a lock.
+	if c.feed.GetDeltaLen() > 0 {
+		return errors.New("the changeset is not empty, can not start checksum")
+	}
+
 	// Create a set of connections which can be used to checksum
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
@@ -173,6 +180,13 @@ func (c *Checker) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	// Assert that the change set is still empty.
+	// It should always be empty while we are still under the lock.
+	if c.feed.GetDeltaLen() > 0 {
+		return errors.New("the changeset is not empty, can not run checksum")
+	}
+
 	// We can now unlock the table before starting the checksumming.
 	if err = serverLock.Close(); err != nil {
 		return err

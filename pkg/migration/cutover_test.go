@@ -97,6 +97,11 @@ func TestMDLLockFails(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
+	maxCutoverRetries = 2
+	defer func() {
+		maxCutoverRetries = 100
+	}()
+
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
 	logger := logrus.New()
