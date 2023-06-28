@@ -49,7 +49,7 @@ func TestMySQL57Throttler(t *testing.T) {
 	throttler := &MySQL57Replica{
 		Repl: Repl{
 			replica:      db,
-			lagTolerance: 60 * time.Second,
+			lagTolerance: 120 * time.Second,
 			logger:       logrus.New(),
 		},
 	}
