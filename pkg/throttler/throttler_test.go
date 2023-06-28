@@ -55,7 +55,7 @@ func TestMySQL57Throttler(t *testing.T) {
 	}
 	assert.NoError(t, throttler.Open())
 	assert.False(t, throttler.IsThrottled())
-	throttler.currentLagInMs = 100000
+	throttler.currentLagInMs = 1500000
 	assert.True(t, throttler.IsThrottled())
 
 	// BlockWait until it catches up, but it should expire
