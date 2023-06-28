@@ -69,3 +69,10 @@ func UnhashKey(key string) string {
 // but because it's already in an error path, there's not much to do.
 func ErrInErr(_ error) {
 }
+
+func BoundaryCheck(val, max int) int {
+	if val > max {
+		return max
+	}
+	return val
+}

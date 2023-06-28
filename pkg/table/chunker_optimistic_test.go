@@ -41,6 +41,9 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
 
 	assert.NoError(t, chunker.Open())
+	assert.Error(t, chunker.Open())                  // can't open twice.
+	assert.True(t, chunker.KeyAboveHighWatermark(1)) // we haven't started copying.
+
 	_, err := chunker.Next()
 	assert.NoError(t, err)
 

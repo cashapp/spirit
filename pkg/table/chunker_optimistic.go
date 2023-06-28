@@ -384,7 +384,7 @@ func (t *chunkerOptimistic) calculateNewTargetChunkSize() uint64 {
 	// - We are already at the max chunk size
 	// - This new target wants to go higher
 	// - our current p90 is only a fraction of our target time
-	if t.chunkSize == MaxDynamicRowSize && newTargetRows > MaxDynamicRowSize && (p90 < targetTime*5) {
+	if t.chunkSize == MaxDynamicRowSize && newTargetRows > MaxDynamicRowSize && (p90*5 < targetTime) {
 		t.logger.Warnf("dynamic chunking is not working as expected: target-time=%s p90-time=%s new-target-rows=%d max-dynamic-row-size=%d",
 			time.Duration(targetTime), time.Duration(p90), uint64(newTargetRows), MaxDynamicRowSize,
 		)

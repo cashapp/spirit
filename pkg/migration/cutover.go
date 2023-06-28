@@ -22,8 +22,8 @@ type CutOver struct {
 	logger   loggers.Advanced
 }
 
-const (
-	maxRetries = 5
+var (
+	maxCutoverRetries = 100
 )
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
@@ -46,11 +46,15 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
-	for i := 0; i < maxRetries; i++ {
+	for i := 0; i < maxCutoverRetries; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxRetries)
+		// We use maxCutoverRetries as our retrycount, but nested
+		// within c.cutover() it will also have a retry for the specific operation
+		// of acquiring the table lock. This can be considered as the difference between
+		// statement retry (acquiring lock) and full-task retry (cutover).
+		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxCutoverRetries)
 		if err = c.cutover(ctx); err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())
 			continue

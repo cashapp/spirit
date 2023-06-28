@@ -30,7 +30,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 	if err != nil {
 		return nil, err // could not change timeout.
 	}
-	for i := 0; i < maxRetries; i++ {
+	for i := 0; i < MaxRetries; i++ {
 		// In gh-ost they lock the _old table name as well.
 		// this might prevent a weird case that we don't handle yet.
 		// instead, we DROP IF EXISTS just before the rename, which
