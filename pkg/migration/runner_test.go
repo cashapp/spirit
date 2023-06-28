@@ -1993,11 +1993,14 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.Equal(t, "10", m.table.MaxValue().String())
 	assert.Equal(t, "1002", m.newTable.MaxValue().String())
 
-	// flush the replication changes (should cause breakage)
+	// flush the replication changes
+	// if the bug exists, this would cause the breakage.
 	assert.NoError(t, m.replClient.Flush(ctx))
 	// start the copier.
 	assert.NoError(t, m.copier.Run(ctx))
-	// the checksum runs in prepare for cutover. It *should* fail.
+	// the checksum runs in prepare for cutover.
+	// previously it would fail, but it should work as long as the resumeFromCheckpoint()
+	// correctly finds the high watermark.
 	err = m.checksum(ctx)
 	assert.NoError(t, err)
 }
