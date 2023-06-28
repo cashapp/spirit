@@ -41,7 +41,7 @@ func TestTableLockFail(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	maxRetries = 1
+	MaxRetries = 1
 	mdlLockWaitTimeout = 1
 
 	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")

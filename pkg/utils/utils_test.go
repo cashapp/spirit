@@ -46,3 +46,8 @@ func TestHashAndUnhashKey(t *testing.T) {
 	unhashed = UnhashKey(hashed)
 	assert.Equal(t, "'1234'", unhashed)
 }
+
+func TestBoundaryCheck(t *testing.T) {
+	assert.Equal(t, 10, BoundaryCheck(10, 11))
+	assert.Equal(t, 11, BoundaryCheck(15, 11))
+}

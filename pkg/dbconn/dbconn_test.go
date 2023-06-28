@@ -124,7 +124,7 @@ func TestRetryableTrx(t *testing.T) {
 
 	// Same again, but make the retry unsuccessful
 	innodbLockWaitTimeout = 1
-	maxRetries = 2
+	MaxRetries = 2
 	trx, err = db.Begin()
 	assert.NoError(t, err)
 	wg.Add(1)

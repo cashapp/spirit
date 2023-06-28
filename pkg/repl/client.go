@@ -25,8 +25,14 @@ import (
 
 const (
 	binlogTrivialThreshold = 10000
-	DefaultBatchSize       = 10000
-	flushThreads           = 16
+	// DefaultBatchSize is the number of rows in each batched REPLACE/DELETE statement.
+	// Larger is better, but we need to keep the run-time of the statement well below
+	// dbconn.maximumLockTime so that it doesn't prevent copy-row tasks from failing.
+	// Since on some of our Aurora tables with out-of-cache workloads only copy ~300 rows per second,
+	// we probably shouldn't set this any larger than about 1K. It will also use
+	// multiple-flush-threads, which should help it group commit and still be fast.
+	DefaultBatchSize = 1000
+	flushThreads     = 16
 )
 
 type Client struct {
