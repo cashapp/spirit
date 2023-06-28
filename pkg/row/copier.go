@@ -103,7 +103,7 @@ func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config 
 		return c, err
 	}
 	// Overwrite the previously attached chunker with one at a specific watermark.
-	if err := c.chunker.OpenAtWatermark(lowWatermark); err != nil {
+	if err := c.chunker.OpenAtWatermark(lowWatermark, newTable.MaxValue()); err != nil {
 		return c, err
 	}
 	c.isOpen = true
@@ -214,7 +214,7 @@ func (c *Copier) getCopyStats() (uint64, uint64, float64) {
 		// and the "logical copied rows" (which is the sum of the chunk sizes) as the
 		// rows copied so far.
 		copyRows := atomic.LoadUint64(&c.CopyRowsLogicalCount)
-		maxValue, err := strconv.ParseUint(c.table.MaxValue(), 10, 64)
+		maxValue, err := strconv.ParseUint(c.table.MaxValue().String(), 10, 64)
 		if err != nil {
 			maxValue = c.table.EstimatedRows
 		}

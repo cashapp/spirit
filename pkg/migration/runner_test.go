@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/metrics"
 
 	"github.com/go-sql-driver/mysql"
@@ -1730,8 +1731,7 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, m.dropOldTable(context.TODO()))
 
-	// migration.Run usually calls m.Migrate() here.
-	// Which does the following before calling copyRows:
+	// runner.Run usually does the following before calling copyRows:
 	// So we proceed with the initial steps.
 	assert.NoError(t, m.createNewTable(context.TODO()))
 	assert.NoError(t, m.alterNewTable(context.TODO()))
@@ -1740,7 +1740,7 @@ func TestE2ERogueValues(t *testing.T) {
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
-		BatchSize:   10000,
+		BatchSize:   repl.DefaultBatchSize,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -1847,4 +1847,160 @@ func TestPartitionedTable(t *testing.T) {
 	assert.NoError(t, err)                         // everything is specified.
 	assert.NoError(t, m.Run(context.Background())) // should work.
 	assert.NoError(t, m.Close())
+}
+
+// TestResumeFromCheckpointPhantom tests that there is not a phantom row issue
+// when resuming from checkpoint. i.e. consider the following scenario:
+// 1) A new row is inserted at the end of the table, and the copier copies it.. but the low watermark never advances past this point
+// 2) The row is then deleted after it’s been copied (but the binary log doesn't get to this point)
+// 3) A resume occurs
+// 4) The insert and delete tracking ignore the row because it’s above the high watermark.
+// 5) The INSERT..SELECT only inserts new rows, it doesn't delete non-conflicting existing rows.
+// This leaves a broken state because the _new table has a row that should have been deleted.
+//
+// The fix for this is simple:
+// - When resuming from checkpoint, we need to initialize the high watermark from a SELECT MAX(key) FROM the _new table.
+// - If this is done correctly, then on resume the DELETE will no longer be ignored.
+func TestResumeFromCheckpointPhantom(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS phantomtest, _phantomtest_old, _phantomtest_chkpnt`)
+	tbl := `CREATE TABLE phantomtest (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	// Insert dummy data.
+	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
+	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
+
+	m, err := NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         16,
+		Table:           "phantomtest",
+		Alter:           "ENGINE=InnoDB",
+		TargetChunkTime: 100 * time.Millisecond,
+	})
+	assert.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Do the initial setup.
+	m.db, err = dbconn.New(dsn())
+	assert.NoError(t, err)
+	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	assert.NoError(t, m.table.SetInfo(ctx))
+	assert.NoError(t, m.createNewTable(ctx))
+	assert.NoError(t, m.alterNewTable(ctx))
+	assert.NoError(t, m.createCheckpointTable(ctx))
+	logger := logrus.New()
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   repl.DefaultBatchSize,
+	})
+	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
+		Concurrency:     m.migration.Threads,
+		TargetChunkTime: m.migration.TargetChunkTime,
+		FinalChecksum:   m.migration.Checksum,
+		Throttler:       &throttler.Noop{},
+		Logger:          m.logger,
+		MetricsSink:     &metrics.NoopSink{},
+	})
+	assert.NoError(t, err)
+	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+	err = m.replClient.Run()
+	assert.NoError(t, err)
+
+	// Now we are ready to start copying rows.
+	// Instead of calling m.copyRows() we will step through it manually.
+	// Since we want to checkpoint after a few chunks.
+
+	m.copier.StartTime = time.Now()
+	m.setCurrentState(stateCopyRows)
+	assert.Equal(t, "copyRows", m.getCurrentState().String())
+
+	// Open
+	assert.NoError(t, m.copier.Open4Test())
+
+	// first chunk.
+	chunk, err := m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.Equal(t, "`id` < 1", chunk.String())
+	err = m.copier.CopyChunk(ctx, chunk)
+	assert.NoError(t, err)
+
+	// second chunk
+	chunk, err = m.copier.Next4Test()
+	assert.NoError(t, err)
+	assert.Equal(t, "`id` >= 1 AND `id` < 1001", chunk.String())
+	err = m.copier.CopyChunk(ctx, chunk)
+	assert.NoError(t, err)
+
+	// now we insert a row in the range of the third chunk
+	runSQL(t, "INSERT INTO phantomtest (id, pad) VALUES (1002, RANDOM_BYTES(1024))")
+
+	// we copy it but we don't feedback it (a hack)
+	runSQL(t, "INSERT INTO _phantomtest_new (id, pad) SELECT * FROM phantomtest WHERE id = 1002")
+
+	// delete the row (but not from the _new table)
+	// when it gets to recopy it will not be there.
+	runSQL(t, "DELETE FROM phantomtest WHERE id = 1002")
+
+	// then we save the checkpoint without the feedback.
+	assert.NoError(t, m.dumpCheckpoint(ctx))
+	// assert there is a checkpoint
+	var rowCount int
+	err = m.db.QueryRow(`SELECT count(*) from _phantomtest_chkpnt`).Scan(&rowCount)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, rowCount)
+
+	// kill it.
+	cancel()
+	assert.NoError(t, m.Close())
+
+	// Resume the migration using and apply all of the replication
+	// changes before starting the copier.
+	ctx = context.Background()
+	m, err = NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         16,
+		Table:           "phantomtest",
+		Alter:           "ENGINE=InnoDB",
+		TargetChunkTime: 100 * time.Millisecond,
+		Checksum:        true,
+	})
+	assert.NoError(t, err)
+	m.db, err = dbconn.New(dsn())
+	assert.NoError(t, err)
+	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	assert.NoError(t, m.table.SetInfo(ctx))
+	// check we can resume from checkpoint.
+	assert.NoError(t, m.resumeFromCheckpoint(ctx))
+	// setup callbacks.
+	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
+	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+
+	// doublecheck that the highPtr is 1002 in the _new table and not in the original table.
+	assert.Equal(t, "10", m.table.MaxValue().String())
+	assert.Equal(t, "1002", m.newTable.MaxValue().String())
+
+	// flush the replication changes
+	// if the bug exists, this would cause the breakage.
+	assert.NoError(t, m.replClient.Flush(ctx))
+	// start the copier.
+	assert.NoError(t, m.copier.Run(ctx))
+	// the checksum runs in prepare for cutover.
+	// previously it would fail, but it should work as long as the resumeFromCheckpoint()
+	// correctly finds the high watermark.
+	err = m.checksum(ctx)
+	assert.NoError(t, err)
 }

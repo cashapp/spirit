@@ -11,11 +11,12 @@ import (
 
 type chunkerComposite struct {
 	sync.Mutex
-	Ti             *TableInfo
-	chunkSize      uint64
-	chunkPtr       datum
-	finalChunkSent bool
-	isOpen         bool
+	Ti                *TableInfo
+	chunkSize         uint64
+	chunkPtr          datum
+	checkpointHighPtr datum // the high watermark detected on restore
+	finalChunkSent    bool
+	isOpen            bool
 
 	// Dynamic Chunking is time based instead of row based.
 	// It uses *time* to determine the target chunk size.
@@ -115,13 +116,14 @@ func (t *chunkerComposite) Open() (err error) {
 // OpenAtWatermark opens a table for the resume-from-checkpoint use case.
 // This will set the chunkPtr to a known safe value that is contained within
 // the checkpoint
-func (t *chunkerComposite) OpenAtWatermark(checkpnt string) error {
+func (t *chunkerComposite) OpenAtWatermark(checkpnt string, highPtr datum) error {
 	t.Lock()
 	defer t.Unlock()
 
 	if err := t.open(); err != nil {
 		return err
 	}
+	t.checkpointHighPtr = highPtr // set the high pointer.
 	chunk, err := NewChunkFromJSON(checkpnt, t.Ti.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
@@ -334,5 +336,12 @@ func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 		return false // we don't know how to key above binary right now.
 	}
 	keyDatum := newDatum(key, t.chunkPtr.tp)
+	// If there is a checkpoint high pointer, first verify that
+	// the key is above it. If it's not above it, we return FALSE
+	// before we check the chunkPtr. This helps prevent a phantom
+	// row issue.
+	if !t.checkpointHighPtr.IsNil() && t.checkpointHighPtr.GreaterThanOrEqual(keyDatum) {
+		return false
+	}
 	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
 }

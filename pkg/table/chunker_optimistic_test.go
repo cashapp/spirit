@@ -235,7 +235,7 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	chunker2, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
 	t2.Columns = []string{"id", "name"}
-	assert.NoError(t, chunker2.OpenAtWatermark(watermark))
+	assert.NoError(t, chunker2.OpenAtWatermark(watermark, NewNilDatum(signedType)))
 
 	// The pointer goes to the lowerbound.value.
 	// It could equally go to the upperbound.value but then
