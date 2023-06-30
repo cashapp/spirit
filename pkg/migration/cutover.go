@@ -23,7 +23,7 @@ type CutOver struct {
 }
 
 var (
-	maxCutoverRetries = 100
+	maxCutoverRetries = 5
 )
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,

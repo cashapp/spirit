@@ -26,7 +26,7 @@ type TableLock struct {
 // and acquire the lock again.
 func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
-	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", mdlLockWaitTimeout)
+	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", MdlLockWaitTimeout)
 	if err != nil {
 		return nil, err // could not change timeout.
 	}
@@ -35,7 +35,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, logge
 		// this might prevent a weird case that we don't handle yet.
 		// instead, we DROP IF EXISTS just before the rename, which
 		// has a brief race.
-		logger.Warnf("trying to acquire table lock, timeout: %d", mdlLockWaitTimeout)
+		logger.Warnf("trying to acquire table lock, timeout: %d", MdlLockWaitTimeout)
 		// TODO: We acquire a READ LOCK which I believe is sufficient (just need to prevent modifications to table).
 		// Ghost however, acquires a WRITE LOCK. We can't do that because the slowly arriving
 		// changes in BlockWait() will block because they won't be able to read the source table.
