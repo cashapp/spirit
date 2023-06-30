@@ -18,10 +18,10 @@ const (
 )
 
 var (
-	innodbLockWaitTimeout = 3   // usually fine, since it's a lock on a row.
-	mdlLockWaitTimeout    = 120 // safer to make slightly longer.
-	MaxRetries            = 10  // each retry extends both lock timeouts by 1 second.
-	maximumLockTime       = 120 // safety measure incase we make changes: don't allow any lock longer than this
+	innodbLockWaitTimeout = 3  // usually fine, since it's a lock on a row.
+	MdlLockWaitTimeout    = 50 // safer to make slightly longer.
+	MaxRetries            = 10 // each retry extends both lock timeouts by 1 second.
+	maximumLockTime       = 60 // safety measure incase we make changes: don't allow any lock longer than this
 )
 
 func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
@@ -48,7 +48,7 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", utils.BoundaryCheck(mdlLockWaitTimeout+retryNumber, maximumLockTime))
+	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", utils.BoundaryCheck(MdlLockWaitTimeout+retryNumber, maximumLockTime))
 	if err != nil {
 		return err
 	}

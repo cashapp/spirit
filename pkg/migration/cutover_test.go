@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
+	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
@@ -98,8 +99,9 @@ func TestMDLLockFails(t *testing.T) {
 	assert.NoError(t, err)
 
 	maxCutoverRetries = 2
+	dbconn.MdlLockWaitTimeout = 1
 	defer func() {
-		maxCutoverRetries = 100
+		maxCutoverRetries = 5
 	}()
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")

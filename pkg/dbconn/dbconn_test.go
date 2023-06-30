@@ -58,7 +58,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 	// Check the timeouts are shorter
 	mysqlVar, err = getVariable(trx, "lock_wait_timeout", true)
 	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(mdlLockWaitTimeout), mysqlVar)
+	assert.Equal(t, fmt.Sprint(MdlLockWaitTimeout), mysqlVar)
 	mysqlVar, err = getVariable(trx, "innodb_lock_wait_timeout", true)
 	assert.NoError(t, err)
 	assert.Equal(t, fmt.Sprint(innodbLockWaitTimeout), mysqlVar)
@@ -68,7 +68,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 	assert.NoError(t, err)
 	mysqlVar, err = getVariable(trx, "lock_wait_timeout", true)
 	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(mdlLockWaitTimeout+2), mysqlVar)
+	assert.Equal(t, fmt.Sprint(MdlLockWaitTimeout+2), mysqlVar)
 	mysqlVar, err = getVariable(trx, "innodb_lock_wait_timeout", true)
 	assert.NoError(t, err)
 	assert.Equal(t, fmt.Sprint(innodbLockWaitTimeout+2), mysqlVar)
