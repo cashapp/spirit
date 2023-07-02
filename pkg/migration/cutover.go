@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/siddontang/loggers"
 
@@ -15,32 +16,38 @@ import (
 )
 
 type CutOver struct {
-	db       *sql.DB
-	table    *table.TableInfo
-	newTable *table.TableInfo
-	feed     *repl.Client
-	logger   loggers.Advanced
+	db              *sql.DB
+	table           *table.TableInfo
+	newTable        *table.TableInfo
+	feed            *repl.Client
+	lockWaitTimeout int // seconds
+	logger          loggers.Advanced
 }
 
 var (
 	maxCutoverRetries = 100
+	defaultLockWait   = 50 * time.Second
 )
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, lockWaitTimeout time.Duration, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
 	if table == nil || newTable == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
+	if lockWaitTimeout == 0 {
+		lockWaitTimeout = defaultLockWait
+	}
 	return &CutOver{
-		db:       db,
-		table:    table,
-		newTable: newTable,
-		feed:     feed,
-		logger:   logger,
+		db:              db,
+		table:           table,
+		newTable:        newTable,
+		feed:            feed,
+		lockWaitTimeout: int(lockWaitTimeout.Seconds()),
+		logger:          logger,
 	}, nil
 }
 
@@ -75,7 +82,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	}
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.lockWaitTimeout, c.logger)
 	if err != nil {
 		return err
 	}

@@ -23,23 +23,25 @@ import (
 
 type Checker struct {
 	sync.Mutex
-	table       *table.TableInfo
-	newTable    *table.TableInfo
-	concurrency int
-	feed        *repl.Client
-	db          *sql.DB
-	trxPool     *dbconn.TrxPool
-	isInvalid   bool
-	chunker     table.Chunker
-	StartTime   time.Time
-	ExecTime    time.Duration
-	recentValue interface{} // used for status
-	logger      loggers.Advanced
+	table           *table.TableInfo
+	newTable        *table.TableInfo
+	concurrency     int
+	feed            *repl.Client
+	db              *sql.DB
+	trxPool         *dbconn.TrxPool
+	isInvalid       bool
+	chunker         table.Chunker
+	StartTime       time.Time
+	ExecTime        time.Duration
+	lockWaitTimeout int         // seconds
+	recentValue     interface{} // used for status
+	logger          loggers.Advanced
 }
 
 type CheckerConfig struct {
 	Concurrency     int
 	TargetChunkTime time.Duration
+	LockWaitTimeout time.Duration
 	Logger          loggers.Advanced
 }
 
@@ -59,18 +61,22 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
+	if config.LockWaitTimeout == 0 {
+		config.LockWaitTimeout = time.Second * 50
+	}
 	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.Logger)
 	if err != nil {
 		return nil, err
 	}
 	checksum := &Checker{
-		table:       tbl,
-		newTable:    newTable,
-		concurrency: config.Concurrency,
-		db:          db,
-		feed:        feed,
-		chunker:     chunker,
-		logger:      config.Logger,
+		table:           tbl,
+		newTable:        newTable,
+		concurrency:     config.Concurrency,
+		db:              db,
+		feed:            feed,
+		chunker:         chunker,
+		lockWaitTimeout: int(config.LockWaitTimeout.Seconds()),
+		logger:          config.Logger,
 	}
 	return checksum, nil
 }
@@ -146,7 +152,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.lockWaitTimeout, c.logger)
 	if err != nil {
 		return err
 	}
