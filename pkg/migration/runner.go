@@ -75,6 +75,7 @@ func (s migrationState) String() string {
 type Runner struct {
 	migration       *Migration
 	db              *sql.DB
+	dbConfig        *dbconn.DBConfig
 	replica         *sql.DB
 	table           *table.TableInfo
 	newTable        *table.TableInfo
@@ -162,6 +163,8 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	if err := r.db.Ping(); err != nil {
 		return err
 	}
+	r.dbConfig = dbconn.NewDBConfig()
+	r.dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
 
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -220,7 +223,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.migration.LockWaitTimeout, r.logger)
+	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
 	if err != nil {
 		return err
 	}
@@ -267,7 +270,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateAnalyzeTable)
 	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", stmt)
-	if err := dbconn.DBExec(ctx, r.db, stmt); err != nil {
+	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, stmt); err != nil {
 		return err
 	}
 
@@ -652,7 +655,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		LockWaitTimeout: r.migration.LockWaitTimeout,
+		DBConfig:        r.dbConfig,
 		Logger:          r.logger,
 	})
 	if err != nil {

@@ -242,10 +242,8 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	runSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT IGNORE INTO lock2t1 VALUES (1, 2, 3)")
 
-	dbconn.MaxRetries = 2
-	defer func() {
-		dbconn.MaxRetries = 10
-	}()
+	config := dbconn.NewDBConfig()
+	config.MaxRetries = 2
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)

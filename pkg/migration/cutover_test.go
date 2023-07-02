@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
+	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +58,7 @@ func TestCutOver(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1new, feed, defaultLockWait, logger)
+	cutover, err := NewCutOver(db, t1, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -97,10 +98,9 @@ func TestMDLLockFails(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	maxCutoverRetries = 2
-	defer func() {
-		maxCutoverRetries = 100
-	}()
+	config := dbconn.NewDBConfig()
+	config.MaxRetries = 2
+	config.LockWaitTimeout = 1
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
@@ -115,7 +115,7 @@ func TestMDLLockFails(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1new, feed, defaultLockWait, logger)
+	cutover, err := NewCutOver(db, t1, t1new, feed, config, logger)
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -139,7 +139,7 @@ func TestInvalidOptions(t *testing.T) {
 	logger := logrus.New()
 
 	// Invalid options
-	_, err = NewCutOver(db, nil, nil, nil, defaultLockWait, logger)
+	_, err = NewCutOver(db, nil, nil, nil, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
@@ -150,6 +150,6 @@ func TestInvalidOptions(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	_, err = NewCutOver(db, nil, t1new, feed, defaultLockWait, logger)
+	_, err = NewCutOver(db, nil, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 }

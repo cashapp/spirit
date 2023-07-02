@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/siddontang/loggers"
 
@@ -16,44 +15,36 @@ import (
 )
 
 type CutOver struct {
-	db              *sql.DB
-	table           *table.TableInfo
-	newTable        *table.TableInfo
-	feed            *repl.Client
-	lockWaitTimeout int // seconds
-	logger          loggers.Advanced
+	db       *sql.DB
+	table    *table.TableInfo
+	newTable *table.TableInfo
+	feed     *repl.Client
+	dbConfig *dbconn.DBConfig
+	logger   loggers.Advanced
 }
-
-var (
-	maxCutoverRetries = 100
-	defaultLockWait   = 50 * time.Second
-)
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, lockWaitTimeout time.Duration, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
 	if table == nil || newTable == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
-	if lockWaitTimeout == 0 {
-		lockWaitTimeout = defaultLockWait
-	}
 	return &CutOver{
-		db:              db,
-		table:           table,
-		newTable:        newTable,
-		feed:            feed,
-		lockWaitTimeout: int(lockWaitTimeout.Seconds()),
-		logger:          logger,
+		db:       db,
+		table:    table,
+		newTable: newTable,
+		feed:     feed,
+		dbConfig: dbConfig,
+		logger:   logger,
 	}, nil
 }
 
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
-	for i := 0; i < maxCutoverRetries; i++ {
+	for i := 0; i < c.dbConfig.MaxRetries; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -61,7 +52,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 		// within c.cutover() it will also have a retry for the specific operation
 		// of acquiring the table lock. This can be considered as the difference between
 		// statement retry (acquiring lock) and full-task retry (cutover).
-		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, maxCutoverRetries)
+		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, c.dbConfig.MaxRetries)
 		if err = c.cutover(ctx); err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())
 			continue
@@ -82,7 +73,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 	}
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.lockWaitTimeout, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -114,7 +105,7 @@ func (c *CutOver) cutover(ctx context.Context) error {
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName, oldQuotedName,
 			c.newTable.QuotedName, c.table.QuotedName)
-		return dbconn.DBExec(errGrpCtx, c.db, query)
+		return dbconn.DBExec(errGrpCtx, c.db, c.dbConfig, query)
 	})
 	// We can now unlock the table to allow the rename to go through.
 	// Include a ROLLBACK before returning because of MDL.
