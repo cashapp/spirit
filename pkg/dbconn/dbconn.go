@@ -25,7 +25,7 @@ type DBConfig struct {
 
 func NewDBConfig() *DBConfig {
 	return &DBConfig{
-		LockWaitTimeout:       60,
+		LockWaitTimeout:       30,
 		InnodbLockWaitTimeout: 3,
 		MaxRetries:            5,
 	}
