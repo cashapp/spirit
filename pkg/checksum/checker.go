@@ -34,12 +34,14 @@ type Checker struct {
 	StartTime   time.Time
 	ExecTime    time.Duration
 	recentValue interface{} // used for status
+	dbConfig    *dbconn.DBConfig
 	logger      loggers.Advanced
 }
 
 type CheckerConfig struct {
 	Concurrency     int
 	TargetChunkTime time.Duration
+	DBConfig        *dbconn.DBConfig
 	Logger          loggers.Advanced
 }
 
@@ -47,6 +49,7 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 	return &CheckerConfig{
 		Concurrency:     4,
 		TargetChunkTime: 1000 * time.Millisecond,
+		DBConfig:        dbconn.NewDBConfig(),
 		Logger:          logrus.New(),
 	}
 }
@@ -59,6 +62,9 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
+	if config.DBConfig == nil {
+		config.DBConfig = dbconn.NewDBConfig()
+	}
 	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.Logger)
 	if err != nil {
 		return nil, err
@@ -70,6 +76,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		db:          db,
 		feed:        feed,
 		chunker:     chunker,
+		dbConfig:    config.DBConfig,
 		logger:      config.Logger,
 	}
 	return checksum, nil
@@ -146,7 +153,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -176,7 +183,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.trxPool, err = dbconn.NewTrxPool(ctx, c.db, c.concurrency)
+	c.trxPool, err = dbconn.NewTrxPool(ctx, c.db, c.concurrency, c.dbConfig)
 	if err != nil {
 		return err
 	}

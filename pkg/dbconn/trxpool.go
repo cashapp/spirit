@@ -20,7 +20,7 @@ type TrxPool struct {
 
 // NewTrxPool creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation.
-func NewTrxPool(ctx context.Context, db *sql.DB, count int) (*TrxPool, error) {
+func NewTrxPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*TrxPool, error) {
 	checksumTxns := make([]*sql.Tx, 0, count)
 	for i := 0; i < count; i++ {
 		trx, _ := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
@@ -29,7 +29,7 @@ func NewTrxPool(ctx context.Context, db *sql.DB, count int) (*TrxPool, error) {
 			return nil, err
 		}
 		// Set SQL mode, charset, etc.
-		if err := standardizeTrx(ctx, trx, i); err != nil {
+		if err := standardizeTrx(ctx, trx, config); err != nil {
 			return nil, err
 		}
 		checksumTxns = append(checksumTxns, trx)

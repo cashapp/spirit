@@ -17,14 +17,21 @@ const (
 	errDeadlock        = 1213
 )
 
-var (
-	innodbLockWaitTimeout = 3  // usually fine, since it's a lock on a row.
-	MdlLockWaitTimeout    = 50 // safer to make slightly longer.
-	MaxRetries            = 10 // each retry extends both lock timeouts by 1 second.
-	maximumLockTime       = 60 // safety measure incase we make changes: don't allow any lock longer than this
-)
+type DBConfig struct {
+	LockWaitTimeout       int
+	InnodbLockWaitTimeout int
+	MaxRetries            int
+}
 
-func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
+func NewDBConfig() *DBConfig {
+	return &DBConfig{
+		LockWaitTimeout:       30,
+		InnodbLockWaitTimeout: 3,
+		MaxRetries:            5,
+	}
+}
+
+func standardizeTrx(ctx context.Context, trx *sql.Tx, config *DBConfig) error {
 	_, err := trx.ExecContext(ctx, "SET time_zone='+00:00'")
 	if err != nil {
 		return err
@@ -44,11 +51,11 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", utils.BoundaryCheck(innodbLockWaitTimeout+retryNumber, maximumLockTime))
+	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", config.InnodbLockWaitTimeout)
 	if err != nil {
 		return err
 	}
-	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", utils.BoundaryCheck(MdlLockWaitTimeout+retryNumber, maximumLockTime))
+	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", config.LockWaitTimeout)
 	if err != nil {
 		return err
 	}
@@ -57,19 +64,19 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx, retryNumber int) error {
 
 // RetryableTransaction retries all statements in a transaction, retrying if a statement
 // errors, or there is a deadlock. It will retry up to maxRetries times.
-func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings bool, stmts ...string) (int64, error) {
+func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings bool, config *DBConfig, stmts ...string) (int64, error) {
 	var err error
 	var trx *sql.Tx
 	var rowsAffected int64
 RETRYLOOP:
-	for i := 0; i < MaxRetries; i++ {
+	for i := 0; i < config.MaxRetries; i++ {
 		// Start a transaction
 		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
 			backoff(i)
 			continue RETRYLOOP // retry
 		}
 		// Standardize it.
-		if err = standardizeTrx(ctx, trx, i); err != nil {
+		if err = standardizeTrx(ctx, trx, config); err != nil {
 			utils.ErrInErr(trx.Rollback()) // Rollback
 			backoff(i)
 			continue RETRYLOOP // retry
@@ -159,12 +166,12 @@ func backoff(i int) {
 
 // DBExec is like db.Exec but sets the lock timeout to low in advance.
 // Does not require retry, or return a result.
-func DBExec(ctx context.Context, db *sql.DB, query string) error {
+func DBExec(ctx context.Context, db *sql.DB, config *DBConfig, query string) error {
 	trx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return err
 	}
-	if err := standardizeTrx(ctx, trx, 0); err != nil {
+	if err := standardizeTrx(ctx, trx, config); err != nil {
 		return err
 	}
 	_, err = trx.ExecContext(ctx, query)

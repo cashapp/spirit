@@ -369,7 +369,7 @@ func (c *Client) flush(ctx context.Context) error {
 	for _, stmt := range stmts {
 		s := stmt
 		g.Go(func() error {
-			_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, s)
+			_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s)
 			return err
 		})
 	}

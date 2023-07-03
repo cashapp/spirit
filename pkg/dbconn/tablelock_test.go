@@ -15,21 +15,22 @@ func TestTableLock(t *testing.T) {
 	db, err := New(dsn())
 	assert.NoError(t, err)
 	defer db.Close()
-
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.testlock")
+	config := NewDBConfig()
+	config.LockWaitTimeout = 2
+	err = DBExec(context.Background(), db, config, "DROP TABLE IF EXISTS test.testlock")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = DBExec(context.Background(), db, config, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
-	lock1, err := NewTableLock(context.Background(), db, tbl, logrus.New())
+	lock1, err := NewTableLock(context.Background(), db, tbl, config, logrus.New())
 	assert.NoError(t, err)
 
 	// Try to acquire a table that is already locked, should pass *because*
 	// table locks are actually READ locks. We do this so copies can still occur,
 	// only writes are blocked.
-	lock2, err := NewTableLock(context.Background(), db, tbl, logrus.New())
+	lock2, err := NewTableLock(context.Background(), db, tbl, config, logrus.New())
 	assert.NoError(t, err)
 
 	assert.NoError(t, lock1.Close())
@@ -41,12 +42,13 @@ func TestTableLockFail(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	MaxRetries = 1
-	MdlLockWaitTimeout = 1
+	config := NewDBConfig()
+	config.MaxRetries = 1
+	config.LockWaitTimeout = 1
 
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")
+	err = DBExec(context.Background(), db, config, "DROP TABLE IF EXISTS test.testlockfail")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = DBExec(context.Background(), db, config, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	// We acquire an exclusive lock first, so the tablelock should fail.
@@ -65,6 +67,6 @@ func TestTableLockFail(t *testing.T) {
 	wg.Wait()
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
-	_, err = NewTableLock(context.Background(), db, tbl, logrus.New())
+	_, err = NewTableLock(context.Background(), db, tbl, config, logrus.New())
 	assert.Error(t, err)
 }

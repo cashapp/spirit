@@ -131,7 +131,7 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
-	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, query); err != nil {
+	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, dbconn.NewDBConfig(), query); err != nil {
 		return err
 	}
 	atomic.AddUint64(&c.CopyRowsCount, uint64(affectedRows))
