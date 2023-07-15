@@ -82,7 +82,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	return checksum, nil
 }
 
-func (c *Checker) checksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
+func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
 	startTime := time.Now()
 	trx, err := trxPool.Get()
 	if err != nil {
@@ -153,7 +153,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func (c *Checker) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.checksumChunk(c.trxPool, chunk); err != nil {
+			if err := c.ChecksumChunk(c.trxPool, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}

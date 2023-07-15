@@ -76,6 +76,130 @@ func TestCutOver(t *testing.T) {
 	assert.Equal(t, 2, count)
 }
 
+func TestCutOverGhostAlgorithm(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS cutoverghostt1, _cutoverghostt1_new, _cutoverghostt1_old, _cutoverghostt1_chkpnt`)
+	tbl := `CREATE TABLE cutoverghostt1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, tbl)
+	tbl = `CREATE TABLE _cutoverghostt1_new (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, tbl)
+	runSQL(t, `CREATE TABLE _cutoverghostt1_chkpnt (a int)`) // for binlog advancement
+
+	// The structure is the same, but insert 2 rows in t1 so
+	// we can differentiate after the cutover.
+	runSQL(t, `INSERT INTO cutoverghostt1 VALUES (1, 2), (2,2)`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "cutoverghostt1")
+	err = t1.SetInfo(context.Background())
+	assert.NoError(t, err)
+	t1new := table.NewTableInfo(db, "test", "_cutoverghostt1_new")
+	logger := logrus.New()
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	// the feed must be started.
+	assert.NoError(t, feed.Run())
+	// manually assign gh-ost cutover.
+	cutover := &CutOver{
+		db:        db,
+		table:     t1,
+		newTable:  t1new,
+		feed:      feed,
+		dbConfig:  dbconn.NewDBConfig(),
+		algorithm: Ghost,
+		logger:    logger,
+	}
+	err = cutover.Run(context.Background())
+	assert.NoError(t, err)
+
+	// Verify that t1 has no rows (its lost because we only did cutover, not copy-rows)
+	// and t1_old has 2 row.
+	// Verify that t2 has one row.
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM cutoverghostt1").Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, count)
+	err = db.QueryRow("SELECT COUNT(*) FROM _cutoverghostt1_old").Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
+func TestCutOverFacebookAlgorithm(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS cutoverfacebookt1, _cutoverfacebookt1_new, _cutoverfacebookt1_old, _cutoverfacebookt1_chkpnt`)
+	tbl := `CREATE TABLE cutoverfacebookt1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, tbl)
+	tbl = `CREATE TABLE _cutoverfacebookt1_new (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, tbl)
+	runSQL(t, `CREATE TABLE _cutoverfacebookt1_chkpnt (a int)`) // for binlog advancement
+
+	// The structure is the same, but insert 2 rows in t1 so
+	// we can differentiate after the cutover.
+	runSQL(t, `INSERT INTO cutoverfacebookt1 VALUES (1, 2), (2,2)`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "cutoverfacebookt1")
+	err = t1.SetInfo(context.Background())
+	assert.NoError(t, err)
+	t1new := table.NewTableInfo(db, "test", "_cutoverfacebookt1_new")
+	logger := logrus.New()
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	// the feed must be started.
+	assert.NoError(t, feed.Run())
+	// manually assign facebook cutover.
+	cutover := &CutOver{
+		db:        db,
+		table:     t1,
+		newTable:  t1new,
+		feed:      feed,
+		dbConfig:  dbconn.NewDBConfig(),
+		algorithm: Facebook,
+		logger:    logger,
+	}
+	err = cutover.Run(context.Background())
+	assert.NoError(t, err)
+
+	// Verify that t1 has no rows (its lost because we only did cutover, not copy-rows)
+	// and t1_old has 2 row.
+	// Verify that t2 has one row.
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM cutoverfacebookt1").Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 0, count)
+	err = db.QueryRow("SELECT COUNT(*) FROM _cutoverfacebookt1_old").Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, count)
+}
+
 func TestMDLLockFails(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_new, _mdllocks_old, _mdllocks_chkpnt`)
 	tbl := `CREATE TABLE mdllocks (

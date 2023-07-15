@@ -3,6 +3,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/siddontang/loggers"
 
@@ -24,7 +25,7 @@ type TableLock struct {
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
-func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
+func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, writeLock bool, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
 	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", config.LockWaitTimeout)
 	if err != nil {
@@ -36,10 +37,11 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 		// instead, we DROP IF EXISTS just before the rename, which
 		// has a brief race.
 		logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
-		// TODO: We acquire a READ LOCK which I believe is sufficient (just need to prevent modifications to table).
-		// Ghost however, acquires a WRITE LOCK. We can't do that because the slowly arriving
-		// changes in BlockWait() will block because they won't be able to read the source table.
-		_, err = lockTxn.ExecContext(ctx, "LOCK TABLES "+table.QuotedName+" READ")
+		lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
+		if writeLock {
+			lockStmt = "LOCK TABLES " + table.QuotedName + " WRITE, " + fmt.Sprintf("_%s_new", table.TableName) + " WRITE, " + fmt.Sprintf("_%s_old", table.TableName) + " WRITE"
+		}
+		_, err = lockTxn.ExecContext(ctx, lockStmt)
 		if err != nil {
 			// See if the error is retryable, many are
 			_, myerr := my.Error(err)
@@ -63,6 +65,21 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 	// Return the last error
 	utils.ErrInErr(lockTxn.Rollback())
 	return nil, err
+}
+
+// ExecUnderLock executes a set of statements under a table lock.
+func (s *TableLock) ExecUnderLock(ctx context.Context, stmts []string) error {
+	for _, stmt := range stmts {
+		if stmt == "" {
+			continue
+		}
+		s.logger.Infof("executing statement under table lock: %s", stmt)
+		_, err := s.lockTxn.ExecContext(ctx, stmt)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the table lock

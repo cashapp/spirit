@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -68,4 +69,13 @@ func UnhashKey(key string) string {
 // inside of an already error path. Not catching the error makes linters unhappy,
 // but because it's already in an error path, there's not much to do.
 func ErrInErr(_ error) {
+}
+
+// IsMySQL8 returns true if we can positively identify this as mysql 8
+func IsMySQL8(db *sql.DB) bool {
+	var version string
+	if err := db.QueryRow("select substr(version(), 1, 1)").Scan(&version); err != nil {
+		return false // can't tell
+	}
+	return version == "8"
 }

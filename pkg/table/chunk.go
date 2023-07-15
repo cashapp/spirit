@@ -17,7 +17,7 @@ type Chunk struct {
 
 // Boundary is used by chunk for lower or upper boundary
 type Boundary struct {
-	Value     datum
+	Value     Datum
 	Inclusive bool
 }
 

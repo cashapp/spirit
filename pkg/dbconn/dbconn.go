@@ -177,3 +177,24 @@ func DBExec(ctx context.Context, db *sql.DB, config *DBConfig, query string) err
 	_, err = trx.ExecContext(ctx, query)
 	return err
 }
+
+// BeginStandardTrx is like db.BeginTx but it does the lock setting changes in advance,
+// and as a bonus returns the connection id.
+func BeginStandardTrx(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Tx, int, error) {
+	trx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	// standardize it.
+	err = standardizeTrx(ctx, trx, config)
+	if err != nil {
+		return nil, 0, err
+	}
+	// get the connection id.
+	var connectionID int
+	err = trx.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return trx, connectionID, nil
+}

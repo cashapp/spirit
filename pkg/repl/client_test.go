@@ -168,7 +168,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	client.SetPos(&mysql.Position{
+	client.SetPos(mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
 	})

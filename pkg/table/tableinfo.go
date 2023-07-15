@@ -36,8 +36,8 @@ type TableInfo struct {
 	keyColumnsMySQLTp     []string          // the MySQL types of the primaryKey
 	KeyIsAutoInc          bool              // if pk[0] is an auto_increment column
 	keyDatums             []datumTp         // the datum type of pk
-	minValue              datum             // known minValue of pk[0] (using type of PK[0])
-	maxValue              datum             // known maxValue of pk[0] (using type of PK[0])
+	minValue              Datum             // known minValue of pk[0] (using type of PK[0])
+	maxValue              Datum             // known maxValue of pk[0] (using type of PK[0])
 	statisticsLastUpdated time.Time
 	statisticsLock        sync.Mutex
 }
@@ -266,7 +266,7 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 }
 
 // MaxValue as a datum
-func (t *TableInfo) MaxValue() datum {
+func (t *TableInfo) MaxValue() Datum {
 	return t.maxValue
 }
 

@@ -13,8 +13,8 @@ type chunkerComposite struct {
 	sync.Mutex
 	Ti                *TableInfo
 	chunkSize         uint64
-	chunkPtr          datum
-	checkpointHighPtr datum // the high watermark detected on restore
+	chunkPtr          Datum
+	checkpointHighPtr Datum // the high watermark detected on restore
 	finalChunkSent    bool
 	isOpen            bool
 
@@ -72,7 +72,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 		if t.chunkPtr.IsNil() {
 			lowerBoundary = nil // first chunk
 		}
-		upperBoundary := &Boundary{newDatum(upperVal, t.chunkPtr.tp), false}
+		upperBoundary := &Boundary{newDatum(upperVal, t.chunkPtr.Tp), false}
 		t.chunkPtr = upperBoundary.Value
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
@@ -116,7 +116,7 @@ func (t *chunkerComposite) Open() (err error) {
 // OpenAtWatermark opens a table for the resume-from-checkpoint use case.
 // This will set the chunkPtr to a known safe value that is contained within
 // the checkpoint
-func (t *chunkerComposite) OpenAtWatermark(checkpnt string, highPtr datum) error {
+func (t *chunkerComposite) OpenAtWatermark(checkpnt string, highPtr Datum) error {
 	t.Lock()
 	defer t.Unlock()
 
@@ -335,7 +335,7 @@ func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 	if t.Ti.keyDatums[0] == binaryType {
 		return false // we don't know how to key above binary right now.
 	}
-	keyDatum := newDatum(key, t.chunkPtr.tp)
+	keyDatum := newDatum(key, t.chunkPtr.Tp)
 	// If there is a checkpoint high pointer, first verify that
 	// the key is above it. If it's not above it, we return FALSE
 	// before we check the chunkPtr. This helps prevent a phantom
