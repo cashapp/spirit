@@ -7,8 +7,6 @@ output:
 linters:
   enable-all: true
   disable:
-    - tagalign
-    - depguard
     - musttag
     - nonamedreturns
     - exhaustruct
