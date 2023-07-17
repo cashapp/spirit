@@ -91,7 +91,7 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 
 Writing a new data migration tool is scary, since bugs have real consequences (data loss). These are the main problems we anticipate:
 
-1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable. We believe we've managed to mitigate the other risks up until cut-over with the introduction of a checksum feature, which is enabled by default.
+1. The cut-over algorithm in MySQL 5.7 causes a brief "table not found" error. This is because we have switched to using the Facebook-style 2-step cutover, and not gh-ost's atomic cutover. We discovered data loss in gh-ost's algorithm. In MySQL 8.0 we use a rename-under-lock algorithm, which is safe for all cases.
 2. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
 3. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
 

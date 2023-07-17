@@ -29,10 +29,10 @@ func (a CutoverAlgorithm) String() string {
 	switch a {
 	case RenameUnderLock:
 		return "rename-under-lock"
-	case Facebook:
-		return "facebook"
+	case Ghost:
+		return "gh-ost"
 	default:
-		return "gh-ost atomic cutover"
+		return "facebook"
 	}
 }
 
@@ -92,16 +92,16 @@ func (c *CutOver) Run(ctx context.Context) error {
 			return err
 		}
 		// We use maxCutoverRetries as our retrycount, but nested
-		// within c.cutoverMySQLX() it may also have a retry for the specific statement
+		// within c.algorithmX() it may also have a retry for the specific statement
 		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, c.dbConfig.MaxRetries)
 		c.logger.Infof("Using cutover algorithm: %s", c.algorithm.String())
 		switch c.algorithm {
 		case RenameUnderLock:
 			err = c.algorithmRenameUnderLock(ctx)
-		case Facebook:
-			err = c.algorithmFacebook(ctx)
+		case Ghost:
+			err = c.algorithmGhost(ctx)
 		default:
-			err = c.algorithmGhostAtomicRename(ctx)
+			err = c.algorithmFacebook(ctx)
 		}
 		if err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())
@@ -204,7 +204,7 @@ func (c *CutOver) algorithmFacebook(ctx context.Context) error {
 	return err
 }
 
-// algorithmGhostAtomicRename is the gh-ost cutover algorithm
+// algorithmGhost is the gh-ost cutover algorithm
 // as defined at https://github.com/github/gh-ost/issues/82
 // To my knowledge, this algorithm can cause data-loss:
 //   - in between the UNLOCK and RENAME TABLE some statements may be permitted to insert.
@@ -216,7 +216,7 @@ func (c *CutOver) algorithmFacebook(ctx context.Context) error {
 //     (run a migration)
 //   - I have been able to reproduce this in both gh-ost and spirit, so it does
 //     not appear to be an implementation bug.
-func (c *CutOver) algorithmGhostAtomicRename(ctx context.Context) error {
+func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	// LOCK the source table in a trx and start to flush final changes.
 	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
 	if err != nil {
