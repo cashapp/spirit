@@ -288,11 +288,11 @@ func TestCopierValidation(t *testing.T) {
 }
 
 func TestETA(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS testeta1, testeta2, _testeta1_new, _testeta2_new")
+	runSQL(t, "DROP TABLE IF EXISTS testeta1, testeta2, _testeta1_xnew, _testeta2_xnew")
 	runSQL(t, "CREATE TABLE testeta1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE testeta2 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _testeta1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _testeta2_new (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _testeta1_xnew (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _testeta2_xnew (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
 	// high max value
 	runSQL(t, "INSERT IGNORE INTO testeta2 VALUES (10000, 2, 3)")
 
@@ -303,9 +303,9 @@ func TestETA(t *testing.T) {
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 	t2 := table.NewTableInfo(db, "test", "testeta2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
-	t1new := table.NewTableInfo(db, "test", "_testeta1_new")
+	t1new := table.NewTableInfo(db, "test", "_testeta1_xnew")
 	assert.NoError(t, t1new.SetInfo(context.TODO()))
-	t2new := table.NewTableInfo(db, "test", "_testeta2_new")
+	t2new := table.NewTableInfo(db, "test", "_testeta2_xnew")
 	assert.NoError(t, t2new.SetInfo(context.TODO()))
 
 	t1.EstimatedRows = 1000
@@ -352,18 +352,18 @@ func TestETA(t *testing.T) {
 }
 
 func TestCopierFromCheckpoint(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS copierchkpt1, _copierchkpt1_new")
+	runSQL(t, "DROP TABLE IF EXISTS copierchkpt1, _copierchkpt1_xnew")
 	runSQL(t, "CREATE TABLE copierchkpt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _copierchkpt1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _copierchkpt1_xnew (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT INTO copierchkpt1 VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8), (7, 8, 9), (8, 9, 10), (9, 10, 11), (10, 11, 12)")
-	runSQL(t, "INSERT INTO _copierchkpt1_new VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
+	runSQL(t, "INSERT INTO _copierchkpt1_xnew VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "copierchkpt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t1new := table.NewTableInfo(db, "test", "_copierchkpt1_new")
+	t1new := table.NewTableInfo(db, "test", "_copierchkpt1_xnew")
 	assert.NoError(t, t1new.SetInfo(context.TODO()))
 
 	lowWatermark := `{"Key":"a","ChunkSize":1,"LowerBound":{"Value":3,"Inclusive":true},"UpperBound":{"Value":4,"Inclusive":false}}`
@@ -373,7 +373,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 
 	// Verify that t1new has 10 rows
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM _copierchkpt1_new").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM _copierchkpt1_xnew").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 10, count)
 }
