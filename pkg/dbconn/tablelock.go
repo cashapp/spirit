@@ -3,7 +3,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"strings"
 
 	"github.com/siddontang/loggers"
 
@@ -25,11 +25,15 @@ type TableLock struct {
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
-func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, writeLock bool, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
+func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, specificLocks []string, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
 	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", config.LockWaitTimeout)
 	if err != nil {
 		return nil, err // could not change timeout.
+	}
+	lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
+	if len(specificLocks) > 0 {
+		lockStmt = "LOCK TABLES " + strings.Join(specificLocks, ", ")
 	}
 	for i := 0; i < config.MaxRetries; i++ {
 		// In gh-ost they lock the _old table name as well.
@@ -37,10 +41,6 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 		// instead, we DROP IF EXISTS just before the rename, which
 		// has a brief race.
 		logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
-		lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
-		if writeLock {
-			lockStmt = "LOCK TABLES " + table.QuotedName + " WRITE, " + fmt.Sprintf("_%s_new", table.TableName) + " WRITE, " + fmt.Sprintf("_%s_old", table.TableName) + " WRITE"
-		}
 		_, err = lockTxn.ExecContext(ctx, lockStmt)
 		if err != nil {
 			// See if the error is retryable, many are

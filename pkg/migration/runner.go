@@ -452,7 +452,7 @@ func (r *Runner) dropCheckpoint(ctx context.Context) error {
 }
 
 func (r *Runner) createNewTable(ctx context.Context) error {
-	newName := fmt.Sprintf("_%s_new", r.table.TableName)
+	newName := fmt.Sprintf("_%s_xnew", r.table.TableName)
 	if len(newName) > 64 {
 		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", r.table.TableName)
 	}
@@ -660,7 +660,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// The objects for these are not available until we confirm
 	// tables exist and we
-	newName := fmt.Sprintf("_%s_new", r.table.TableName)
+	newName := fmt.Sprintf("_%s_xnew", r.table.TableName)
 	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 
 	// Make sure we can read from the new table.

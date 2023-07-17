@@ -29,10 +29,10 @@ func (a CutoverAlgorithm) String() string {
 	switch a {
 	case RenameUnderLock:
 		return "rename-under-lock"
-	case Ghost:
-		return "gh-ost"
-	default:
+	case Facebook:
 		return "facebook"
+	default:
+		return "gh-ost"
 	}
 }
 
@@ -75,15 +75,17 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 }
 
 func (c *CutOver) Run(ctx context.Context) error {
-	// Create the "magic" (aka sentry table in the source), which
-	// is really the same as the old table.
-	err := c.createSentryTable(ctx)
-	if err != nil {
-		return err
-	}
+	var err error
 	for i := 0; i < c.dbConfig.MaxRetries; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		// Create the "magic" (aka sentry table in the source), which
+		// is really the same as the old table.
+		// This should be done at the start of each loop.
+		err = c.createSentryTable(ctx)
+		if err != nil {
+			return err
 		}
 		// Try and catch up before we attempt the cutover.
 		// since we will need to catch up again with the lock held
@@ -98,10 +100,10 @@ func (c *CutOver) Run(ctx context.Context) error {
 		switch c.algorithm {
 		case RenameUnderLock:
 			err = c.algorithmRenameUnderLock(ctx)
-		case Ghost:
-			err = c.algorithmGhost(ctx)
-		default:
+		case Facebook:
 			err = c.algorithmFacebook(ctx)
+		default:
+			err = c.algorithmGhost(ctx)
 		}
 		if err != nil {
 			c.logger.Warnf("cutover failed. err: %s", err.Error())
@@ -120,7 +122,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " WRITE", c.newTable.QuotedName + " WRITE", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -148,7 +150,7 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 // safer than gh-ost's algorithm, so for 5.7 I intend to switch to it
 // in the future.
 func (c *CutOver) algorithmFacebook(ctx context.Context) error {
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " WRITE", c.newTable.QuotedName + " WRITE", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -164,7 +166,7 @@ func (c *CutOver) algorithmFacebook(ctx context.Context) error {
 	}
 	// We rename the tables (separate connection), and then release the server lock.
 	// There will be a brief period of stray updates we can flush, and then we can
-	// rename the _new table to the original table name.
+	// rename the _xnew table to the original table name.
 	trx, _, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig)
 	if err != nil {
 		return err
@@ -206,19 +208,9 @@ func (c *CutOver) algorithmFacebook(ctx context.Context) error {
 
 // algorithmGhost is the gh-ost cutover algorithm
 // as defined at https://github.com/github/gh-ost/issues/82
-// To my knowledge, this algorithm can cause data-loss:
-//   - in between the UNLOCK and RENAME TABLE some statements may be permitted to insert.
-//   - gh-ost relies on an undocumented behavior of MySQL such that the RENAME will take
-//     precedence over the inserts (this makes sense from MySQL's perspective to prevent
-//     lock starvation).
-//   - With a high throughput of inserts, I have been able to reproduce this. i.e.
-//     ./finch ../../benchmarks/xfer/setup.yaml
-//     (run a migration)
-//   - I have been able to reproduce this in both gh-ost and spirit, so it does
-//     not appear to be an implementation bug.
 func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	// LOCK the source table in a trx and start to flush final changes.
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " READ", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -239,9 +231,8 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 		_, err = trx.ExecContext(errGrpCtx, query)
 		return err
 	})
-	// Flush all changes exhaustively. Because this is under a lock,
-	// no new changes can arrive.
-	if err := c.feed.FlushUnderLock(ctx, serverLock); err != nil {
+	// Flush all changes exhaustively.
+	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
 	// These are safety measures to ensure that there are no pending changes.

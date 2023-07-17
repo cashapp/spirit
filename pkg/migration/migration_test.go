@@ -24,7 +24,7 @@ func sleep() {
 }
 
 func TestE2ENullAlterEmpty(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_xnew`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -49,7 +49,7 @@ func TestE2ENullAlterEmpty(t *testing.T) {
 }
 
 func TestMissingAlter(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_xnew`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -75,7 +75,7 @@ func TestMissingAlter(t *testing.T) {
 }
 
 func TestBadDatabaseCredentials(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_xnew`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -101,7 +101,7 @@ func TestBadDatabaseCredentials(t *testing.T) {
 }
 
 func TestE2ENullAlter1Row(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_xnew`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
@@ -131,7 +131,7 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	if replicaDSN == "" {
 		t.Skip("skipping replica tests because REPLICA_DSN not set")
 	}
-	runSQL(t, `DROP TABLE IF EXISTS replicatest, _replicatest_new`)
+	runSQL(t, `DROP TABLE IF EXISTS replicatest, _replicatest_xnew`)
 	table := `CREATE TABLE replicatest (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
