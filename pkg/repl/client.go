@@ -44,8 +44,8 @@ type Client struct {
 
 	binlogChangeset      map[string]bool // bool is deleted
 	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off.
-	binlogPosSynced      *mysql.Position // safely written to new table
-	binlogPosInMemory    *mysql.Position // available in the binlog binlogChangeset
+	binlogPosSynced      mysql.Position  // safely written to new table
+	binlogPosInMemory    mysql.Position  // available in the binlog binlogChangeset
 	lastLogFileName      string          // last log file name we've seen in a rotation event
 
 	canal *canal.Canal
@@ -171,23 +171,28 @@ func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
 }
 
 // SetPos is used for resuming from a checkpoint.
-func (c *Client) SetPos(pos *mysql.Position) {
+func (c *Client) SetPos(pos mysql.Position) {
 	c.Lock()
 	defer c.Unlock()
 	c.binlogPosSynced = pos
 }
 
-func (c *Client) GetBinlogApplyPosition() *mysql.Position {
+func (c *Client) AllChangesFlushed() bool {
 	c.Lock()
 	defer c.Unlock()
 
+	return c.binlogPosInMemory.Compare(c.binlogPosSynced) == 0
+}
+
+func (c *Client) GetBinlogApplyPosition() mysql.Position {
+	c.Lock()
+	defer c.Unlock()
 	return c.binlogPosSynced
 }
 
 func (c *Client) GetDeltaLen() int {
 	c.Lock()
 	defer c.Unlock()
-
 	return len(c.binlogChangeset) + int(c.binlogChangesetDelta)
 }
 
@@ -201,14 +206,14 @@ func (c *Client) pksToRowValueConstructor(d []string) string {
 	return strings.Join(pkValues, ",")
 }
 
-func (c *Client) getCurrentBinlogPosition() (*mysql.Position, error) {
+func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	var binlogFile, fake string
 	var binlogPos uint32
 	err := c.db.QueryRow("SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
 	if err != nil {
-		return nil, err
+		return mysql.Position{}, err
 	}
-	return &mysql.Position{
+	return mysql.Position{
 		Name: binlogFile,
 		Pos:  binlogPos,
 	}, nil
@@ -232,7 +237,7 @@ func (c *Client) Run() (err error) {
 	c.canal.SetEventHandler(c)
 	// All we need to do synchronously is get a position before
 	// the table migration starts. Then we can start copying data.
-	if c.binlogPosSynced == nil {
+	if c.binlogPosSynced.Name == "" {
 		c.binlogPosSynced, err = c.getCurrentBinlogPosition()
 		if err != nil {
 			return errors.New("failed to get binlog position, check binary is enabled")
@@ -287,7 +292,7 @@ func (c *Client) binlogPositionIsImpossible() bool {
 func (c *Client) startCanal() {
 	// Start canal as a routine
 	c.logger.Debugf("starting binary log subscription. log-file: %s log-pos: %d", c.binlogPosSynced.Name, c.binlogPosSynced.Pos)
-	if err := c.canal.RunFrom(*c.binlogPosSynced); err != nil {
+	if err := c.canal.RunFrom(c.binlogPosSynced); err != nil {
 		// Canal has failed! In future we might be able to reconnect and resume
 		// if canal does not do so itself. For now, we just fail the migration
 		// since we can resume from checkpoint anyway.
@@ -313,17 +318,24 @@ func (c *Client) Close() {
 func (c *Client) updatePosInMemory(pos uint32) {
 	c.Lock()
 	defer c.Unlock()
-	c.binlogPosInMemory = &mysql.Position{
+	c.binlogPosInMemory = mysql.Position{
 		Name: c.lastLogFileName,
 		Pos:  pos,
 	}
 }
 
+// FlushUnderLock is a final flush under an exclusive lock using the connection
+// that holds a write lock.
+func (c *Client) FlushUnderLock(ctx context.Context, lock *dbconn.TableLock) error {
+	return c.flush(ctx, true, lock)
+}
+
 // flush is the internal version of Flush() and performs one flush loop.
-func (c *Client) flush(ctx context.Context) error {
+// it can be either a regular flush or under a lock.
+func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
 	c.Lock()
 	setToFlush := c.binlogChangeset
-	posOfFlush := *c.binlogPosInMemory        // copy the value, not the pointer
+	posOfFlush := c.binlogPosInMemory         // copy the value, not the pointer
 	c.binlogChangeset = make(map[string]bool) // set new value
 	c.Unlock()                                // unlock immediately so others can write to the changeset
 	// The changeset delta is because the status output is based on len(binlogChangeset)
@@ -360,24 +372,32 @@ func (c *Client) flush(ctx context.Context) error {
 	stmts = append(stmts, c.createDeleteStmt(deleteKeys))
 	stmts = append(stmts, c.createReplaceStmt(replaceKeys))
 
-	// Execute the statements in parallel up to 16 threads.
-	// They should not conflict and order should not matter
-	// because they come from a consistent view of a map,
-	// which is distinct keys.
-	g, errGrpCtx := errgroup.WithContext(ctx)
-	g.SetLimit(flushThreads)
-	for _, stmt := range stmts {
-		s := stmt
-		g.Go(func() error {
-			_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s)
-			return err
-		})
+	var err error
+	if underLock {
+		// Execute under lock means it is a final flush
+		// We need to use the lock connection to do this
+		// so there is no parallelism.
+		err = lock.ExecUnderLock(ctx, stmts)
+	} else {
+		// Execute the statements in parallel up to 16 threads.
+		// They should not conflict and order should not matter
+		// because they come from a consistent view of a map,
+		// which is distinct keys.
+		g, errGrpCtx := errgroup.WithContext(ctx)
+		g.SetLimit(flushThreads)
+		for _, stmt := range stmts {
+			s := stmt
+			g.Go(func() error {
+				_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s)
+				return err
+			})
+		}
+		// wait for all work to finish
+		err = g.Wait()
 	}
-	// wait for all work to finish
-	err := g.Wait()
 	// Update the synced binlog position to the posOfFlush
 	// uses a mutex.
-	c.SetPos(&posOfFlush)
+	c.SetPos(posOfFlush)
 	return err
 }
 
@@ -414,7 +434,7 @@ func (c *Client) Flush(ctx context.Context) error {
 	c.logger.Info("starting to flush changeset")
 	for {
 		// Repeat in a loop until the changeset length is trivial
-		if err := c.flush(ctx); err != nil {
+		if err := c.flush(ctx, false, nil); err != nil {
 			return err
 		}
 		// Wait for canal to catch up before determining if the changeset
@@ -423,9 +443,10 @@ func (c *Client) Flush(ctx context.Context) error {
 			return err
 		}
 		c.Lock()
-		changetSetLen := len(c.binlogChangeset)
+		changeSetLen := len(c.binlogChangeset)
 		c.Unlock()
-		if changetSetLen < binlogTrivialThreshold {
+
+		if changeSetLen < binlogTrivialThreshold {
 			break
 		}
 	}
@@ -463,7 +484,7 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 			// The periodic flush does not respect the throttler since we want to advance the binlog position
 			// we allow this to run, and then expect that if it is under load the throttler
 			// will kick in and slow down the copy-rows.
-			if err := c.flush(ctx); err != nil {
+			if err := c.flush(ctx, false, nil); err != nil {
 				c.logger.Errorf("error flushing binary log: %v", err)
 			}
 			c.periodicFlushLock.Unlock()
@@ -472,9 +493,10 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 	}
 }
 
-// BlockWait blocks until the canal has caught up to the current binlog position.
+// BlockWait blocks until the *canal position* has caught up to the current binlog position.
 // There is a built-in func in canal to do this, but it calls FLUSH BINARY LOGS,
-// which requires additional permissions.
+// which requires additional permissions. This DOES NOT ensure that this position
+// has been applied to the database.
 func (c *Client) BlockWait(ctx context.Context) error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {

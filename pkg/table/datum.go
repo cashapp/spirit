@@ -15,10 +15,10 @@ const (
 	binaryType
 )
 
-// datum could be a binary string, uint64 or int64.
-type datum struct {
-	val interface{}
-	tp  datumTp // signed, unsigned, binary
+// Datum could be a binary string, uint64 or int64.
+type Datum struct {
+	Val interface{}
+	Tp  datumTp // signed, unsigned, binary
 }
 
 func mySQLTypeToDatumTp(mysqlTp string) datumTp {
@@ -33,7 +33,7 @@ func mySQLTypeToDatumTp(mysqlTp string) datumTp {
 	return unknownType
 }
 
-func newDatum(val interface{}, tp datumTp) datum {
+func newDatum(val interface{}, tp datumTp) Datum {
 	var err error
 	if tp == signedType {
 		// We expect the value to be an int64, but it could be an int.
@@ -64,9 +64,9 @@ func newDatum(val interface{}, tp datumTp) datum {
 			}
 		}
 	}
-	return datum{
-		val: val,
-		tp:  tp,
+	return Datum{
+		Val: val,
+		Tp:  tp,
 	}
 }
 
@@ -83,102 +83,102 @@ func datumValFromString(val string, tp datumTp) (interface{}, error) {
 	return val, nil
 }
 
-func newDatumFromMySQL(val string, mysqlTp string) (datum, error) {
+func newDatumFromMySQL(val string, mysqlTp string) (Datum, error) {
 	// Figure out the matching simplified type (signed, unsigned, binary)
 	// We also have to simplify the value to the type.
 	tp := mySQLTypeToDatumTp(mysqlTp)
 	sVal, err := datumValFromString(val, tp)
 	if err != nil {
-		return datum{}, err
+		return Datum{}, err
 	}
-	return datum{
-		val: sVal,
-		tp:  tp,
+	return Datum{
+		Val: sVal,
+		Tp:  tp,
 	}, nil
 }
 
-func NewNilDatum(tp datumTp) datum {
-	return datum{
-		val: nil,
-		tp:  tp,
+func NewNilDatum(tp datumTp) Datum {
+	return Datum{
+		Val: nil,
+		Tp:  tp,
 	}
 }
 
-func (d datum) MaxValue() datum {
-	if d.tp == signedType {
-		return datum{
-			val: int64(math.MaxInt64),
-			tp:  signedType,
+func (d Datum) MaxValue() Datum {
+	if d.Tp == signedType {
+		return Datum{
+			Val: int64(math.MaxInt64),
+			Tp:  signedType,
 		}
 	}
-	return datum{
-		val: uint64(math.MaxUint64),
-		tp:  d.tp,
+	return Datum{
+		Val: uint64(math.MaxUint64),
+		Tp:  d.Tp,
 	}
 }
 
-func (d datum) MinValue() datum {
-	if d.tp == signedType {
-		return datum{
-			val: int64(math.MinInt64),
-			tp:  signedType,
+func (d Datum) MinValue() Datum {
+	if d.Tp == signedType {
+		return Datum{
+			Val: int64(math.MinInt64),
+			Tp:  signedType,
 		}
 	}
-	return datum{
-		val: uint64(0),
-		tp:  d.tp,
+	return Datum{
+		Val: uint64(0),
+		Tp:  d.Tp,
 	}
 }
 
-func (d datum) Add(addVal uint64) datum {
-	if d.tp == binaryType {
+func (d Datum) Add(addVal uint64) Datum {
+	if d.Tp == binaryType {
 		panic("not supported on binary type")
 	}
 	ret := d
-	if d.tp == signedType {
-		returnVal := d.val.(int64) + int64(addVal)
-		if returnVal < d.val.(int64) {
+	if d.Tp == signedType {
+		returnVal := d.Val.(int64) + int64(addVal)
+		if returnVal < d.Val.(int64) {
 			returnVal = int64(math.MaxInt64) // overflow
 		}
-		ret.val = returnVal
+		ret.Val = returnVal
 		return ret
 	}
-	returnVal := d.val.(uint64) + addVal
-	if returnVal < d.val.(uint64) {
+	returnVal := d.Val.(uint64) + addVal
+	if returnVal < d.Val.(uint64) {
 		returnVal = uint64(math.MaxUint64) // overflow
 	}
-	ret.val = returnVal
+	ret.Val = returnVal
 	return ret
 }
 
 // Range returns the diff between 2 datums as an uint64.
-func (d datum) Range(d2 datum) uint64 {
-	if d.tp == binaryType {
+func (d Datum) Range(d2 Datum) uint64 {
+	if d.Tp == binaryType {
 		panic("not supported on binary type")
 	}
-	if d.tp == signedType {
-		return uint64(d.val.(int64) - d2.val.(int64))
+	if d.Tp == signedType {
+		return uint64(d.Val.(int64) - d2.Val.(int64))
 	}
-	return d.val.(uint64) - d2.val.(uint64)
+	return d.Val.(uint64) - d2.Val.(uint64)
 }
 
-func (d datum) String() string {
-	if d.tp == binaryType {
-		return "\"" + mysqlRealEscapeString(d.val.(string)) + "\""
+func (d Datum) String() string {
+	if d.Tp == binaryType {
+		return "\"" + mysqlRealEscapeString(d.Val.(string)) + "\""
 	}
-	return fmt.Sprintf("%v", d.val)
+	return fmt.Sprintf("%v", d.Val)
 }
 
-func (d datum) IsNil() bool {
-	return d.val == nil
+func (d Datum) IsNil() bool {
+	return d.Val == nil
 }
 
-func (d datum) GreaterThanOrEqual(d2 datum) bool {
-	if d.tp == binaryType {
+func (d Datum) GreaterThanOrEqual(d2 Datum) bool {
+	if d.Tp == binaryType {
 		panic("not supported on binary type")
 	}
-	if d.tp == signedType {
-		return d.val.(int64) >= d2.val.(int64)
+	if d.Tp == signedType {
+		return d.Val.(int64) >= d2.Val.(int64)
 	}
-	return d.val.(uint64) >= d2.val.(uint64)
+	return d.Val.(uint64) >= d2.Val.(uint64)
 }

@@ -1,4 +1,4 @@
-name: MySQL 8.0.32 (with replicas)
+name: MySQL 8.0.33 (with replicas)
 on:
   push:
     branches: [ main ]
@@ -17,4 +17,4 @@ jobs:
         run: scripts/dbdeployer_install_8.sh
 
       - name: Test
-        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:22233)/test" REPLICA_DSN="msandbox:msandbox@tcp(127.0.0.1:22234)/test" go test -v ./...
+        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:22334)/test" REPLICA_DSN="msandbox:msandbox@tcp(127.0.0.1:22335)/test" go test -v ./...

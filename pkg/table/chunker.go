@@ -30,7 +30,7 @@ const (
 
 type Chunker interface {
 	Open() error
-	OpenAtWatermark(string, datum) error
+	OpenAtWatermark(string, Datum) error
 	IsRead() bool
 	Close() error
 	Next() (*Chunk, error)

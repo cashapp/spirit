@@ -86,7 +86,7 @@ func TestBadDatabaseCredentials(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	migration.Host = "missinghostname"
+	migration.Host = "127.0.0.1:9999"
 	migration.Username = cfg.User
 	migration.Password = cfg.Passwd
 	migration.Database = cfg.DBName
@@ -96,8 +96,8 @@ func TestBadDatabaseCredentials(t *testing.T) {
 	migration.Alter = "ENGINE=InnoDB"
 
 	err = migration.Run()
-	assert.Error(t, err)                                   // bad database credentials
-	assert.ErrorContains(t, err, "lookup missinghostname") // could be no host or temporary resolution failure.
+	assert.Error(t, err)                                        // bad database credentials
+	assert.ErrorContains(t, err, "connect: connection refused") // could be no host or temporary resolution failure.
 }
 
 func TestE2ENullAlter1Row(t *testing.T) {

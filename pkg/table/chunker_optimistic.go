@@ -14,8 +14,8 @@ type chunkerOptimistic struct {
 	sync.Mutex
 	Ti                *TableInfo
 	chunkSize         uint64
-	chunkPtr          datum
-	checkpointHighPtr datum // the high watermark detected on restore
+	chunkPtr          Datum
+	checkpointHighPtr Datum // the high watermark detected on restore
 	finalChunkSent    bool
 	isOpen            bool
 
@@ -60,7 +60,7 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		maxVal := newDatum(upperVal, t.chunkPtr.tp)
+		maxVal := newDatum(upperVal, t.chunkPtr.Tp)
 		t.chunkPtr = maxVal
 
 		// If the difference between min and max is less than
@@ -165,7 +165,7 @@ func (t *chunkerOptimistic) setDynamicChunking(newValue bool) {
 	t.disableDynamicChunker = !newValue
 }
 
-func (t *chunkerOptimistic) OpenAtWatermark(cp string, highPtr datum) error {
+func (t *chunkerOptimistic) OpenAtWatermark(cp string, highPtr Datum) error {
 	t.Lock()
 	defer t.Unlock()
 
@@ -407,7 +407,7 @@ func (t *chunkerOptimistic) KeyAboveHighWatermark(key interface{}) bool {
 	if t.finalChunkSent {
 		return false // we're done, so everything is below.
 	}
-	keyDatum := newDatum(key, t.chunkPtr.tp)
+	keyDatum := newDatum(key, t.chunkPtr.Tp)
 
 	// If there is a checkpoint high pointer, first verify that
 	// the key is above it. If it's not above it, we return FALSE
