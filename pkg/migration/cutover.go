@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/siddontang/loggers"
@@ -13,7 +14,6 @@ import (
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/utils"
-	"golang.org/x/sync/errgroup"
 )
 
 type CutoverAlgorithm int
@@ -162,16 +162,18 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	}
 	// Start the rename operation, it's OK it will block inside
 	// of this go-routine.
-	g, errGrpCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
-		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
+	var wg sync.WaitGroup
+	oldQuotedName := fmt.Sprintf("`%s`.`_%s_old`", c.table.SchemaName, c.table.TableName)
+	var renameErr error
+	wg.Add(1)
+	go func() {
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName, oldQuotedName,
 			c.newTable.QuotedName, c.table.QuotedName)
-		_, err = trx.ExecContext(errGrpCtx, query)
-		return err
-	})
+		_, renameErr = trx.ExecContext(ctx, query)
+		wg.Done()
+	}()
+
 	// Check that the rename connection is alive and blocked in SHOW PROCESSLIST
 	// If this is TRUE then c10 can DROP TABLE tbl_old and then UNLOCK TABLES.
 	// If it is not TRUE, it will wait here, since we can't release the server
@@ -187,10 +189,8 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 		return err
 	}
 	// Wait for the rename to complete from C20
-	if err := g.Wait(); err != nil {
-		return err // rename not successful.
-	}
-	return nil
+	wg.Wait()
+	return renameErr
 }
 
 func (c *CutOver) checkProcesslistForID(ctx context.Context, id int) error {
