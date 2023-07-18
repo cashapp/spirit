@@ -189,9 +189,9 @@ func TestMDLLockFails(t *testing.T) {
 
 	// Start the cutover. It will retry in a loop and fail
 	// after about 15 seconds (3 sec timeout * 5 retries)
+	// or in 5.7 it might fail because it can't find the RENAME in the processlist.
 	err = cutover.Run(context.Background())
-	assert.ErrorContains(t, err, "Lock wait timeout exceeded; try restarting transaction")
-
+	assert.Error(t, err)
 	assert.NoError(t, trx.Rollback())
 }
 

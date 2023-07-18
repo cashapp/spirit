@@ -21,7 +21,7 @@ SELECT pk FROM table WHERE pk > chunkPointer ORDER BY pk LIMIT 1 OFFSET {chunkSi
 ```
 - An `INSERT .. SELECT` statement is run on the table to copy between the last chunk pointer and the new value.
 
-The composite chunker is very good at dividing the chunks up equally, since sparing a brief race condition each chunk will match exactly the `chunkSize` value. The only downside is that it becomes a little bit wasteful when you have an `auto_increment` `PRIMARY KEY`s and rarely delete data. In this case, you waste the initial `SELECT` statement, since the client could easily calculate the next chunk pointer by adding `chunkSize` to the previous chunk pointer.
+The composite chunker is very good at dividing the chunks up equally, since sparing a brief race condition each chunk will match exactly the `chunkSize` value. The main downside is that it becomes a little bit wasteful when you have an `auto_increment` `PRIMARY KEY`s and rarely delete data. In this case, you waste the initial `SELECT` statement, since the client could easily calculate the next chunk pointer by adding `chunkSize` to the previous chunk pointer. A second issue is that the composite chunker always returns `FALSE` for the KeyAboveHighWatermark optimization. It is possible that it could be implemented correctly in future, but for code-simplicity we have chosen not to for now.
 
 Many of our use-cases have `auto_increment` `PRIMARY KEY`s, so despite the composite chunker also being able to support non-composite `PRIMARY KEY`s, we have no plans to switch to it entirely.
 
