@@ -153,7 +153,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{}, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
