@@ -24,13 +24,13 @@ func TestTableLock(t *testing.T) {
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
-	lock1, err := NewTableLock(context.Background(), db, tbl, []string{}, config, logrus.New())
+	lock1, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
 	assert.NoError(t, err)
 
 	// Try to acquire a table that is already locked, should pass *because*
 	// table locks are actually READ locks. We do this so copies can still occur,
 	// only writes are blocked.
-	lock2, err := NewTableLock(context.Background(), db, tbl, []string{}, config, logrus.New())
+	lock2, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
 	assert.NoError(t, err)
 
 	assert.NoError(t, lock1.Close())
@@ -67,6 +67,6 @@ func TestTableLockFail(t *testing.T) {
 	wg.Wait()
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
-	_, err = NewTableLock(context.Background(), db, tbl, []string{}, config, logrus.New())
+	_, err = NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
 	assert.Error(t, err)
 }

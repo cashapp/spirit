@@ -22,15 +22,12 @@ const (
 	Undefined       CutoverAlgorithm = iota
 	RenameUnderLock                  // MySQL 8.0 only (best option)
 	Ghost                            // As close to gh-ost as possible
-	Facebook                         // Has a table not found race, but simpler than gh-ost.
 )
 
 func (a CutoverAlgorithm) String() string {
 	switch a {
 	case RenameUnderLock:
 		return "rename-under-lock"
-	case Facebook:
-		return "facebook"
 	default:
 		return "gh-ost"
 	}
@@ -40,9 +37,8 @@ type CutOver struct {
 	db        *sql.DB
 	table     *table.TableInfo
 	newTable  *table.TableInfo
-	sentry    *table.TableInfo // same as _old table.
 	feed      *repl.Client
-	algorithm CutoverAlgorithm // RenameUnderLock, Ghost, Facebook
+	algorithm CutoverAlgorithm // RenameUnderLock, Ghost
 	dbConfig  *dbconn.DBConfig
 	logger    loggers.Advanced
 }
@@ -80,13 +76,6 @@ func (c *CutOver) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		// Create the "magic" (aka sentry table in the source), which
-		// is really the same as the old table.
-		// This should be done at the start of each loop.
-		err = c.createSentryTable(ctx)
-		if err != nil {
-			return err
-		}
 		// Try and catch up before we attempt the cutover.
 		// since we will need to catch up again with the lock held
 		// and we want to minimize that.
@@ -100,8 +89,6 @@ func (c *CutOver) Run(ctx context.Context) error {
 		switch c.algorithm {
 		case RenameUnderLock:
 			err = c.algorithmRenameUnderLock(ctx)
-		case Facebook:
-			err = c.algorithmFacebook(ctx)
 		default:
 			err = c.algorithmGhost(ctx)
 		}
@@ -122,7 +109,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " WRITE", c.newTable.QuotedName + " WRITE", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -136,101 +123,24 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	if c.feed.GetDeltaLen() > 0 {
 		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
 	}
-	dropSentryTable := fmt.Sprintf("DROP TABLE IF EXISTS %s", c.sentry.QuotedName)
+	oldName := fmt.Sprintf("_%s_old", c.table.TableName)
+	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
-		c.table.QuotedName, c.sentry.QuotedName,
+		c.table.QuotedName, oldQuotedName,
 		c.newTable.QuotedName, c.table.QuotedName,
 	)
-	return serverLock.ExecUnderLock(ctx, []string{dropSentryTable, renameStatement})
-}
-
-// algorithmFacebook implements the two-step cutover algorithm as defined
-// by Facebook's online schema change tool. It has a non-ideal limitation
-// where a table does not exist error might be returned, but it looks
-// safer than gh-ost's algorithm, so for 5.7 I intend to switch to it
-// in the future.
-func (c *CutOver) algorithmFacebook(ctx context.Context) error {
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " WRITE", c.newTable.QuotedName + " WRITE", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
-	if err != nil {
-		return err
-	}
-	defer serverLock.Close()
-	if err := c.feed.FlushUnderLock(ctx, serverLock); err != nil {
-		return err
-	}
-	if !c.feed.AllChangesFlushed() {
-		return errors.New("not all changes flushed, final flush might be broken")
-	}
-	if c.feed.GetDeltaLen() > 0 {
-		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
-	}
-	// We rename the tables (separate connection), and then release the server lock.
-	// There will be a brief period of stray updates we can flush, and then we can
-	// rename the _xnew table to the original table name.
-	trx, _, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig)
-	if err != nil {
-		return err
-	}
-	g, errGrpCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		query := fmt.Sprintf("RENAME TABLE %s TO %s",
-			c.table.QuotedName, c.sentry.QuotedName,
-		)
-		_, err = trx.ExecContext(errGrpCtx, query)
-		return err
-	})
-	// drop the sentry table.
-	dropSentryTable := fmt.Sprintf("DROP TABLE IF EXISTS %s", c.sentry.QuotedName)
-	if err := serverLock.ExecUnderLock(ctx, []string{dropSentryTable}); err != nil {
-		return err
-	}
-	// Release the lock
-	if err = serverLock.Close(); err != nil {
-		return err
-	}
-	// Ensure the rename succeeded
-	if err := g.Wait(); err != nil {
-		return err // rename not successful.
-	}
-	// We now have a brief period where stray updates can occur
-	// Users are receiving table not found errors during this time.
-	if err := c.feed.Flush(ctx); err != nil {
-		return err // could not flush?
-	}
-	// We now do the final rename. It should be quick because nobody
-	// Can query the table right now.
-	query := fmt.Sprintf("RENAME TABLE %s TO %s",
-		c.newTable.QuotedName, c.table.QuotedName,
-	)
-	_, err = dbconn.RetryableTransaction(ctx, c.db, false, c.dbConfig, query)
-	return err
+	return serverLock.ExecUnderLock(ctx, []string{renameStatement})
 }
 
 // algorithmGhost is the gh-ost cutover algorithm
 // as defined at https://github.com/github/gh-ost/issues/82
 func (c *CutOver) algorithmGhost(ctx context.Context) error {
-	// LOCK the source table in a trx and start to flush final changes.
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, []string{c.table.QuotedName + " READ", c.sentry.QuotedName + " WRITE"}, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
 	defer serverLock.Close()
-	// Start the RENAME TABLE trx. This connection is
-	// described as C20 in the gh-ost docs.
-	trx, connectionID, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig)
-	if err != nil {
-		return err
-	}
-	// Start the rename operation, it's OK it will block inside
-	// of this go-routine.
-	g, errGrpCtx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
-			c.table.QuotedName, c.sentry.QuotedName,
-			c.newTable.QuotedName, c.table.QuotedName)
-		_, err = trx.ExecContext(errGrpCtx, query)
-		return err
-	})
+
 	// Flush all changes exhaustively.
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
@@ -244,17 +154,35 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if c.feed.GetDeltaLen() > 0 {
 		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
 	}
+	// Start the RENAME TABLE trx. This connection is
+	// described as C20 in the gh-ost docs.
+	trx, connectionID, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig)
+	if err != nil {
+		return err
+	}
+	// Start the rename operation, it's OK it will block inside
+	// of this go-routine.
+	g, errGrpCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		oldName := fmt.Sprintf("_%s_old", c.table.TableName)
+		oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
+		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
+			c.table.QuotedName, oldQuotedName,
+			c.newTable.QuotedName, c.table.QuotedName)
+		_, err = trx.ExecContext(errGrpCtx, query)
+		return err
+	})
 	// Check that the rename connection is alive and blocked in SHOW PROCESSLIST
 	// If this is TRUE then c10 can DROP TABLE tbl_old and then UNLOCK TABLES.
+	// If it is not TRUE, it will wait here, since we can't release the server
+	// lock until it has started.
 	if err := c.checkProcesslistForID(ctx, connectionID); err != nil {
 		return err
 	}
-	// From connection C10 we can now DROP the sentry table.
-	// Then again from C10 we can release the server lock.
-	dropStmt := fmt.Sprintf("DROP TABLE %s", c.sentry.QuotedName)
-	if err = serverLock.ExecUnderLock(ctx, []string{dropStmt}); err != nil {
-		return err
-	}
+	// In gh-ost they then DROP the sentry table here from C10.
+	// We do not need to do this because we only acquired a table
+	// lock on the original table, not on the original + sentry table.
+	// From C10 we can release the server lock.
 	if err = serverLock.Close(); err != nil {
 		return err
 	}
@@ -265,24 +193,10 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	return nil
 }
 
-func (c *CutOver) createSentryTable(ctx context.Context) error {
-	sentryName := fmt.Sprintf("_%s_old", c.table.TableName)
-	_, err := c.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", sentryName))
-	if err != nil {
-		return err
-	}
-	_, err = c.db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %s (a int not null primary key)", sentryName))
-	if err != nil {
-		return err
-	}
-	c.sentry = table.NewTableInfo(c.db, c.table.SchemaName, sentryName)
-	return c.sentry.SetInfo(ctx)
-}
-
 func (c *CutOver) checkProcesslistForID(ctx context.Context, id int) error {
 	var state string
-	// try up to 100 times. This can be racey
-	for i := 0; i < 100; i++ {
+	// try up to 10 times. This can be racey
+	for i := 0; i < 10; i++ {
 		err := c.db.QueryRowContext(ctx, "SELECT state FROM information_schema.processlist WHERE id = ? AND state = 'Waiting for table metadata lock'", id).Scan(&state)
 		if err != nil {
 			c.logger.Warnf("error checking processlist for id %d. Err: %s State: %s", id, err.Error(), state)

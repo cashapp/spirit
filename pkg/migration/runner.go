@@ -241,7 +241,9 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// in a racey way. If there was a delete inserted in that
 	// race, it will report an error incorrectly.
 	if err := r.postCutoverCheck(ctx); err != nil {
-		return err
+		// Don't return the error because our automation
+		// will retry the migration (but it's already happened)
+		r.logger.Errorf("post-cutover check failed: %v", err)
 	}
 
 	checksumTime := time.Duration(0)
@@ -452,7 +454,7 @@ func (r *Runner) dropCheckpoint(ctx context.Context) error {
 }
 
 func (r *Runner) createNewTable(ctx context.Context) error {
-	newName := fmt.Sprintf("_%s_xnew", r.table.TableName)
+	newName := fmt.Sprintf("_%s_new", r.table.TableName)
 	if len(newName) > 64 {
 		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", r.table.TableName)
 	}
@@ -660,7 +662,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// The objects for these are not available until we confirm
 	// tables exist and we
-	newName := fmt.Sprintf("_%s_xnew", r.table.TableName)
+	newName := fmt.Sprintf("_%s_new", r.table.TableName)
 	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 
 	// Make sure we can read from the new table.
