@@ -22,7 +22,7 @@ import (
 )
 
 func TestVarcharNonBinaryComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_new`)
 	table := `CREATE TABLE nonbinarycompatt1 (
 		uuid varchar(40) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -47,7 +47,7 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 }
 
 func TestVarbinary(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_new`)
 	table := `CREATE TABLE varbinaryt1 (
 		uuid varbinary(40) NOT NULL,
 		name varchar(255) NOT NULL,
@@ -74,7 +74,7 @@ func TestVarbinary(t *testing.T) {
 
 // TestDataFromBadSqlMode tests that data previously inserted like 0000-00-00 can still be migrated.
 func TestDataFromBadSqlMode(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_new`)
 	table := `CREATE TABLE badsqlt1 (
 		id int not null primary key auto_increment,
 		d date NOT NULL,
@@ -620,7 +620,7 @@ func TestCheckpoint(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_xnew, _cpt1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_new, _cpt1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
@@ -783,7 +783,7 @@ func TestCheckpointRestore(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt2, _cpt2_xnew, _cpt2_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt2, _cpt2_new, _cpt2_chkpnt`)
 	runSQL(t, tbl)
 
 	r, err := NewRunner(&Migration{
@@ -852,7 +852,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_xnew, _cpt1difft1_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_new, _cpt1difft1_chkpnt`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
 	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
@@ -972,7 +972,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into e2et1 (id1, id2) values (1,1),(2,1),(3,1),(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),
 	(11,1),(12,1),(13,1),(14,1),(15,1),(16,1),(17,1),(18,1),(19,1),(20,1),(21,1),(22,1),(23,1),(24,1),(25,1),(26,1),
@@ -1179,7 +1179,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2et2, _e2et2_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS e2et2, _e2et2_new`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into e2et2 (id) values (1)`)
 	runSQL(t, `insert into e2et2 (id) values (2)`)
@@ -1308,9 +1308,9 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 }
 
 // TestForRemainingTableArtifacts tests that the _{name}_old table is left after
-// the migration is complete, but no _chkpnt or _xnew table.
+// the migration is complete, but no _chkpnt or _new table.
 func TestForRemainingTableArtifacts(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_xnew, _remainingtbl_old, _remainingtbl_chkpnt`)
+	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
 		id INT NOT NULL PRIMARY KEY,
 		name varchar(255) NOT NULL
@@ -1333,7 +1333,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
-	// but no _remainingtbl_xnew table or _remainingtbl_chkpnt table.
+	// but no _remainingtbl_new table or _remainingtbl_chkpnt table.
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
@@ -1344,7 +1344,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 }
 
 func TestDropColumn(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_new`)
 	table := `CREATE TABLE dropcol (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		a varchar(255) NOT NULL,
@@ -1611,7 +1611,7 @@ func TestE2ERogueValues(t *testing.T) {
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2erogue, _e2erogue_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS e2erogue, _e2erogue_new`)
 	runSQL(t, tbl)
 	runSQL(t, `insert into e2erogue values ("1 \". ",1),("2 \". ",1),("3 \". ",1),("4 \". ",1),("5 \". ",1),("6 \". ",1),("7 \". ",1),("8 \". ",1),("9 \". ",1),("10 \". ",1),("11 \". ",1),("12 \". ",1),("13 \". ",1),("14 \". ",1),("15 \". ",1),("16 \". ",1),
 	("17 \". ",1),("18 \". ",1),("19 \". ",1),("'20 \". ",1),("21 \". ",1),("22 \". ",1),("23 \". ",1),("24 \". ",1),("25 \". ",1),("26 \". ",1),("27 \". ",1),("28 \". ",1),("29 \". ",1),("30 \". ",1),("31 \". ",1),
@@ -1801,7 +1801,7 @@ func TestE2ERogueValues(t *testing.T) {
 }
 
 func TestPartitionedTable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS part1, _part1_xnew`)
+	runSQL(t, `DROP TABLE IF EXISTS part1, _part1_new`)
 	table := `CREATE TABLE part1 (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			partition_id smallint(6) NOT NULL,
@@ -1850,10 +1850,10 @@ func TestPartitionedTable(t *testing.T) {
 // 3) A resume occurs
 // 4) The insert and delete tracking ignore the row because it’s above the high watermark.
 // 5) The INSERT..SELECT only inserts new rows, it doesn't delete non-conflicting existing rows.
-// This leaves a broken state because the _xnew table has a row that should have been deleted.
+// This leaves a broken state because the _new table has a row that should have been deleted.
 //
 // The fix for this is simple:
-// - When resuming from checkpoint, we need to initialize the high watermark from a SELECT MAX(key) FROM the _xnew table.
+// - When resuming from checkpoint, we need to initialize the high watermark from a SELECT MAX(key) FROM the _new table.
 // - If this is done correctly, then on resume the DELETE will no longer be ignored.
 func TestResumeFromCheckpointPhantom(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS phantomtest, _phantomtest_old, _phantomtest_chkpnt`)
@@ -1940,9 +1940,9 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	runSQL(t, "INSERT INTO phantomtest (id, pad) VALUES (1002, RANDOM_BYTES(1024))")
 
 	// we copy it but we don't feedback it (a hack)
-	runSQL(t, "INSERT INTO _phantomtest_xnew (id, pad) SELECT * FROM phantomtest WHERE id = 1002")
+	runSQL(t, "INSERT INTO _phantomtest_new (id, pad) SELECT * FROM phantomtest WHERE id = 1002")
 
-	// delete the row (but not from the _xnew table)
+	// delete the row (but not from the _new table)
 	// when it gets to recopy it will not be there.
 	runSQL(t, "DELETE FROM phantomtest WHERE id = 1002")
 
@@ -1983,7 +1983,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
 
-	// doublecheck that the highPtr is 1002 in the _xnew table and not in the original table.
+	// doublecheck that the highPtr is 1002 in the _new table and not in the original table.
 	assert.Equal(t, "10", m.table.MaxValue().String())
 	assert.Equal(t, "1002", m.newTable.MaxValue().String())
 
