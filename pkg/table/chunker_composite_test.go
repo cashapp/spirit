@@ -183,7 +183,6 @@ func TestCompositeLowWatermark(t *testing.T) {
 	assert.Error(t, err)
 
 	assert.Equal(t, StartingChunkSize, int(chunker.chunkSize))
-	assert.True(t, chunker.KeyAboveHighWatermark(1000)) // when ptr is nil everything is above.
 	chunk, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "`pk` < 1008", chunk.String()) // first chunk
@@ -200,8 +199,6 @@ func TestCompositeLowWatermark(t *testing.T) {
 	assert.Equal(t, "`pk` >= 1008 AND `pk` < 2032", chunk.String())
 	chunker.Feedback(chunk, time.Second)
 	assert.Equal(t, 100, int(chunker.chunkSize)) // usually requires 10 feedbacks, but changed because >5x target
-	assert.False(t, chunker.KeyAboveHighWatermark(2000))
-	assert.True(t, chunker.KeyAboveHighWatermark(3000))
 
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)

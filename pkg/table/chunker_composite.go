@@ -324,24 +324,5 @@ func (t *chunkerComposite) calculateNewTargetChunkSize() uint64 {
 }
 
 func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
-	t.Lock()
-	defer t.Unlock()
-	if t.chunkPtr.IsNil() {
-		return true // every key is above because we haven't started copying.
-	}
-	if t.finalChunkSent {
-		return false // we're done, so everything is below.
-	}
-	if t.Ti.keyDatums[0] == binaryType {
-		return false // we don't know how to key above binary right now.
-	}
-	keyDatum := newDatum(key, t.chunkPtr.Tp)
-	// If there is a checkpoint high pointer, first verify that
-	// the key is above it. If it's not above it, we return FALSE
-	// before we check the chunkPtr. This helps prevent a phantom
-	// row issue.
-	if !t.checkpointHighPtr.IsNil() && t.checkpointHighPtr.GreaterThanOrEqual(keyDatum) {
-		return false
-	}
-	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
+	return false
 }

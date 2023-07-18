@@ -1130,15 +1130,12 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// Now insert some data.
-	// This will be ignored by the binlog subscription.
-	// Because it's ahead of the high watermark.
 	runSQL(t, `insert into e2et1 (id1, id2) values (1002, 2)`)
-	assert.True(t, m.copier.KeyAboveHighWatermark(1002))
 
-	// Give it a chance, since we need to read from the binary log to populate this
-	// Even though we expect nothing.
+	// The composite chunker does not support keyAboveHighWatermark
+	// so it will show up as a delta.
 	sleep() // plenty
-	assert.Equal(t, 0, m.replClient.GetDeltaLen())
+	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	// Second chunk
 	chunk, err = m.copier.Next4Test()
@@ -1150,20 +1147,17 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
 	runSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
-	assert.False(t, m.copier.KeyAboveHighWatermark(5))
 	sleep() // wait for binlog
-	assert.Equal(t, 1, m.replClient.GetDeltaLen())
+	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	runSQL(t, `delete from e2et1 where id1 = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
 	sleep() // wait for binlog
-	assert.Equal(t, 2, m.replClient.GetDeltaLen())
+	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Some data is inserted later, even though the last chunk is done.
 	// We still care to pick it up because it could be inserted during checkpoint.
 	runSQL(t, `insert into e2et1 (id1, id2) values (5000, 1)`)
-	// the pointer should be at maxint64 for safety. this ensures
-	// that any keyAboveHighWatermark checks return false
 	assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
 
 	// Now that copy rows is done, we flush the changeset until trivial.
