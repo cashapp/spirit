@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/squareup/spirit/pkg/metrics"
+	"github.com/squareup/spirit/pkg/utils"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/siddontang/go-log/loggers"
@@ -308,6 +309,11 @@ func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		Threads:         r.migration.Threads,
 		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
+		// For the pre-run checks we don't have a DB connection yet.
+		// Instead we check the credentials provided.
+		Host:     r.migration.Host,
+		Username: r.migration.Username,
+		Password: r.migration.Password,
 	}, r.logger, scope)
 }
 
@@ -490,6 +496,13 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 }
 
 func (r *Runner) postCutoverCheck(ctx context.Context) error {
+	// We don't need to post-cutover check in MySQL 8.0
+	// because the cutover algorithm does not depend on undocumented MySQL behavior;
+	// it's quite straight forward to lock under rename.
+	if utils.IsMySQL8(r.db) {
+		return nil
+	}
+	// else; MySQL 5.7
 	r.logger.Infof("immediately checking last 100 rows of old table to new table for differences")
 	oldTable := table.NewTableInfo(r.db, r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
 	if err := oldTable.SetInfo(ctx); err != nil {
@@ -653,7 +666,13 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
-	return r.db.Close()
+	if r.db != nil {
+		err := r.db.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {

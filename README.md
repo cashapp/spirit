@@ -3,7 +3,7 @@
 Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
 
 It works very similar to gh-ost except:
-- It only supports MySQL 5.7 and MySQL 8.0 (it is anticipated only 8.0 will be supported once Aurora v2 reaches end of life)
+- It only supports MySQL 8.0
 - It is multi-threaded in both the row-copying and the binlog applying phase
 - It supports resume-from-checkpoint
 
@@ -57,7 +57,6 @@ Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying t
 ## Performance
 
 Our internal goal for Spirit is to be able to migrate a 10TiB table in under 5 days. We believe we are able to achieve this in most-cases, but it depends on:
-- The version of MySQL used (5.7 is much worse due to `innodb_autoinc_lock_mode=1` being the default).
 - How many secondary indexes the table has.
 - How many active changes are being made to the table.
 - The `threads` and `target-chunk-time` that is used.
@@ -91,9 +90,9 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 
 Writing a new data migration tool is scary, since bugs have real consequences (data loss). These are the main problems we anticipate:
 
-1. The cut-over algorithm is not as battle tested as gh-ost's. We have studied it in detail, and believe it's comparable. We believe we've managed to mitigate the other risks up until cut-over with the introduction of a checksum feature, which is enabled by default.
-2. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
-3. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
+1. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
+2. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
 
 ## Development
+
 See [DEVELOPMENT.md](DEVELOPMENT.md).

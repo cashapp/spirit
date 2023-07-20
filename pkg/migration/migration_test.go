@@ -43,6 +43,7 @@ func TestE2ENullAlterEmpty(t *testing.T) {
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
+	migration.SkipPreRunChecks = true
 
 	err = migration.Run()
 	assert.NoError(t, err)
@@ -68,6 +69,7 @@ func TestMissingAlter(t *testing.T) {
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = ""
+	migration.SkipPreRunChecks = true
 
 	err = migration.Run()
 	assert.Error(t, err) // missing alter
@@ -94,6 +96,7 @@ func TestBadDatabaseCredentials(t *testing.T) {
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
+	migration.SkipPreRunChecks = true
 
 	err = migration.Run()
 	assert.Error(t, err)                                        // bad database credentials
@@ -121,6 +124,7 @@ func TestE2ENullAlter1Row(t *testing.T) {
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
+	migration.SkipPreRunChecks = true
 
 	err = migration.Run()
 	assert.NoError(t, err)
@@ -152,6 +156,7 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	migration.Alter = "ENGINE=InnoDB"
 	migration.ReplicaDSN = replicaDSN
 	migration.ReplicaMaxLag = 10 * time.Second
+	migration.SkipPreRunChecks = true
 
 	err = migration.Run()
 	assert.NoError(t, err)
