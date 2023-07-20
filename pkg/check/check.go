@@ -17,11 +17,12 @@ type ScopeFlag uint8
 
 const (
 	ScopeNone        ScopeFlag = 0
-	ScopePreflight   ScopeFlag = 1 << 0
-	ScopePostSetup   ScopeFlag = 1 << 1
-	ScopeCutover     ScopeFlag = 1 << 2
-	ScopePostCutover ScopeFlag = 1 << 3
-	ScopeTesting     ScopeFlag = 1 << 4
+	ScopePreRun      ScopeFlag = 1 << 0
+	ScopePreflight   ScopeFlag = 1 << 1
+	ScopePostSetup   ScopeFlag = 1 << 2
+	ScopeCutover     ScopeFlag = 1 << 3
+	ScopePostCutover ScopeFlag = 1 << 4
+	ScopeTesting     ScopeFlag = 1 << 5
 )
 
 type Resources struct {
@@ -32,6 +33,11 @@ type Resources struct {
 	TargetChunkTime time.Duration
 	Threads         int
 	ReplicaMaxLag   time.Duration
+	// The following resources are only used by the
+	// pre-run checks
+	Host     string
+	Username string
+	Password string
 }
 
 type check struct {

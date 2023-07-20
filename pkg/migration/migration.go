@@ -4,6 +4,8 @@ package migration
 import (
 	"context"
 	"time"
+
+	"github.com/squareup/spirit/pkg/check"
 )
 
 type Migration struct {
@@ -20,6 +22,7 @@ type Migration struct {
 	ReplicaDSN        string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
 	ReplicaMaxLag     time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
 	LockWaitTimeout   time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
+	SkipPreRunChecks  bool          `name:"i-understand-mysql57-is-not-supported" hidden:"" default:"false"`
 }
 
 func (m *Migration) Run() error {
@@ -28,6 +31,15 @@ func (m *Migration) Run() error {
 		return err
 	}
 	defer migration.Close()
+	if !m.SkipPreRunChecks {
+		// The main pre-run check is the MySQL version, and we insist on MySQL 8.0
+		// This is because we plan to remove 5.7 support in the very near feature,
+		// and don't want to claim support for it only to lift the rug out from
+		// under users so quickly after release.
+		if err := migration.runChecks(context.TODO(), check.ScopePreRun); err != nil {
+			return err
+		}
+	}
 	if err := migration.Run(context.TODO()); err != nil {
 		return err
 	}
