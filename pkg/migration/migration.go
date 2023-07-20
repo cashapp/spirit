@@ -22,7 +22,7 @@ type Migration struct {
 	ReplicaDSN        string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
 	ReplicaMaxLag     time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
 	LockWaitTimeout   time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
-	SkipPreRunChecks  bool          `name:"skip-pre-run-checks" hidden:"" default:"false"`
+	SkipPreRunChecks  bool          `name:"i-understand-mysql57-is-not-supported" hidden:"" default:"false"`
 }
 
 func (m *Migration) Run() error {
