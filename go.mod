@@ -5,7 +5,6 @@ go 1.19
 require (
 	github.com/alecthomas/kong v0.7.1
 	github.com/go-mysql-org/go-mysql v1.6.1-0.20230116021724-c4a17aa5b49f
-	github.com/go-mysql/errors v0.0.0-20180603193453-03314bea68e0
 	github.com/go-sql-driver/mysql v1.7.0
 	github.com/pingcap/tidb/parser v0.0.0-20230122061550-1e0956d5ba41
 	github.com/siddontang/go-log v0.0.0-20190221022429-1e957dd83bed
