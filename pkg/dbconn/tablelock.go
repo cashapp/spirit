@@ -7,8 +7,6 @@ import (
 
 	"github.com/siddontang/loggers"
 
-	my "github.com/go-mysql/errors"
-
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/utils"
 )
@@ -47,8 +45,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 		_, err = lockTxn.ExecContext(ctx, lockStmt)
 		if err != nil {
 			// See if the error is retryable, many are
-			_, myerr := my.Error(err)
-			if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout {
+			if canRetryError(err) {
 				logger.Warnf("failed trying to acquire table lock, backing off and retrying: %v", err)
 				backoff(i)
 				continue

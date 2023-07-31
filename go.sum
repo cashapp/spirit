@@ -17,8 +17,6 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/go-mysql-org/go-mysql v1.6.1-0.20230116021724-c4a17aa5b49f h1:VfKtnjUp2EUBAv6acJhcIdg2H2ZqvpyDWCk3KRQi+PI=
 github.com/go-mysql-org/go-mysql v1.6.1-0.20230116021724-c4a17aa5b49f/go.mod h1:9cRWLtuXNKhamUPMkrDVzBhaomGvqLRLtBiyjvjc4pk=
-github.com/go-mysql/errors v0.0.0-20180603193453-03314bea68e0 h1:meiLwrW6ukHHehydhoDxVHdQKQe7TFgEpH0A0hHBAWs=
-github.com/go-mysql/errors v0.0.0-20180603193453-03314bea68e0/go.mod h1:ZH8V0509n2OSZLMYTMHzcy4hqUB+rG8ghK1zsP4i5gE=
 github.com/go-sql-driver/mysql v1.5.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/go-sql-driver/mysql v1.6.0/go.mod h1:DCzpHaOWr8IXmIStZouvnhqoel9Qv2LBy8hT2VhHyBg=
 github.com/go-sql-driver/mysql v1.7.0 h1:ueSltNNllEqE3qcWBTD0iQd3IpL/6U+mJxLkazJ7YPc=

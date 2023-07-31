@@ -8,13 +8,17 @@ import (
 	"math/rand"
 	"time"
 
-	my "github.com/go-mysql/errors"
+	"github.com/go-sql-driver/mysql"
 	"github.com/squareup/spirit/pkg/utils"
 )
 
 const (
 	errLockWaitTimeout = 1205
 	errDeadlock        = 1213
+	errCannotConnect   = 2003
+	errConnLost        = 2013
+	errReadOnly        = 1290
+	errQueryKilled     = 1836
 )
 
 type DBConfig struct {
@@ -62,6 +66,25 @@ func standardizeTrx(ctx context.Context, trx *sql.Tx, config *DBConfig) error {
 	return nil
 }
 
+// canRetryError looks at the MySQL error and decides if it is considered
+// a permanent failure or not. For simplicity a "retryable" error means
+// rollback the transaction and start the transaction again.
+// This is because it gets complicated in cases where the statement could
+// succeed but then there is a deadlock later on.
+func canRetryError(err error) bool {
+	var errNumber uint16
+	if val, ok := err.(*mysql.MySQLError); ok {
+		errNumber = val.Number
+	}
+	switch errNumber {
+	case errLockWaitTimeout, errDeadlock, errCannotConnect,
+		errConnLost, errReadOnly, errQueryKilled:
+		return true
+	default:
+		return false
+	}
+}
+
 // RetryableTransaction retries all statements in a transaction, retrying if a statement
 // errors, or there is a deadlock. It will retry up to maxRetries times.
 func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings bool, config *DBConfig, stmts ...string) (int64, error) {
@@ -86,14 +109,9 @@ RETRYLOOP:
 			if stmt == "" {
 				continue
 			}
-			// For simplicity a "retryable" error means rollback the transaction and start the transaction again,
-			// not just retry the statement. This is because it gets complicated in cases where the statement could
-			// succeed but then there is a deadlock later on. The myerror library also doesn't differentiate between
-			// retryable (new transaction) and retryable (same transaction)
 			var res sql.Result
 			if res, err = trx.ExecContext(ctx, stmt); err != nil {
-				_, myerr := my.Error(err)
-				if my.CanRetry(myerr) || my.MySQLErrorCode(err) == errLockWaitTimeout || my.MySQLErrorCode(err) == errDeadlock {
+				if canRetryError(err) {
 					utils.ErrInErr(trx.Rollback()) // Rollback
 					backoff(i)
 					continue RETRYLOOP // retry
