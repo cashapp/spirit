@@ -11,6 +11,7 @@ import (
 type Chunk struct {
 	Key        string
 	ChunkSize  uint64
+	Query      string
 	LowerBound *Boundary
 	UpperBound *Boundary
 }
@@ -34,6 +35,9 @@ const (
 // String strigifies a chunk into a fragment what can be used in a WHERE clause.
 // i.e. pk > 100 and pk < 200
 func (c *Chunk) String() string {
+	if c.Query != "" {
+		return c.Query
+	}
 	var conds []string
 	if c.LowerBound != nil {
 		operator := OpGreaterEqual
