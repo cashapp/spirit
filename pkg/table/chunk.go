@@ -9,7 +9,7 @@ import (
 // Chunk is returned by chunk.Next()
 // Applications can use it to iterate over the rows.
 type Chunk struct {
-	Key        string
+	Key        []string
 	ChunkSize  uint64
 	LowerBound *Boundary
 	UpperBound *Boundary
@@ -17,7 +17,7 @@ type Chunk struct {
 
 // Boundary is used by chunk for lower or upper boundary
 type Boundary struct {
-	Value     Datum
+	Value     []Datum
 	Inclusive bool
 }
 
@@ -40,14 +40,16 @@ func (c *Chunk) String() string {
 		if !c.LowerBound.Inclusive {
 			operator = OpGreaterThan
 		}
-		conds = append(conds, fmt.Sprintf("`%s` %s %s", c.Key, operator, c.LowerBound.Value))
+		str := expandRowConstructorComparison(c.Key, operator, c.LowerBound.Value)
+		conds = append(conds, str)
 	}
 	if c.UpperBound != nil {
 		operator := OpLessEqual
 		if !c.UpperBound.Inclusive {
 			operator = OpLessThan
 		}
-		conds = append(conds, fmt.Sprintf("`%s` %s %s", c.Key, operator, c.UpperBound.Value))
+		str := expandRowConstructorComparison(c.Key, operator, c.UpperBound.Value)
+		conds = append(conds, str)
 	}
 	if c.LowerBound == nil && c.UpperBound == nil {
 		conds = append(conds, "1=1")
@@ -56,43 +58,75 @@ func (c *Chunk) String() string {
 }
 
 func (c *Chunk) JSON() string {
-	return fmt.Sprintf(`{"Key":"%s","ChunkSize":%d,"LowerBound":%s,"UpperBound":%s}`,
-		c.Key,
+	return fmt.Sprintf(`{"Key":["%s"],"ChunkSize":%d,"LowerBound":%s,"UpperBound":%s}`,
+		strings.Join(c.Key, `","`),
 		c.ChunkSize,
 		c.LowerBound.JSON(),
 		c.UpperBound.JSON(),
 	)
 }
 
+// JSON encodes a boundary as JSON. The values are represented as strings,
+// to avoid JSON float behavior. See Issue #125
 func (b *Boundary) JSON() string {
-	// encode values as strings otherwise we get JSON floats
-	// which can corrupt larger values. Issue #125
-	return fmt.Sprintf(`{"Value": "%s","Inclusive":%t}`, b.Value, b.Inclusive)
+	vals := make([]string, len(b.Value))
+	for i, v := range b.Value {
+		vals[i] = fmt.Sprintf(`"%s"`, v)
+	}
+	return fmt.Sprintf(`{"Value": [%s],"Inclusive":%t}`, strings.Join(vals, ","), b.Inclusive)
+}
+
+// comparesTo returns true if the boundaries are the same.
+// It is used to compare two boundaries, such as if
+// a.Upper == b.Lower. For this reason it does not compare
+// the operator (inclusive or not)!
+func (b *Boundary) comparesTo(b2 *Boundary) bool {
+	if len(b.Value) != len(b2.Value) {
+		return false
+	}
+	for i := range b.Value {
+		if b.Value[i].Tp != b2.Value[i].Tp {
+			return false
+		}
+		if b.Value[i].Val != b2.Value[i].Val {
+			return false
+		}
+	}
+	return true
 }
 
 type JSONChunk struct {
-	Key        string
+	Key        []string
 	ChunkSize  uint64
 	LowerBound JSONBoundary
 	UpperBound JSONBoundary
 }
 
 type JSONBoundary struct {
-	Value     interface{}
+	Value     []string
 	Inclusive bool
 }
 
-func NewChunkFromJSON(jsonStr string, tp string) (*Chunk, error) {
+func jsonStrings2Datums(ti *TableInfo, keys []string, vals []string) ([]Datum, error) {
+	datums := make([]Datum, len(keys))
+	for i, str := range vals {
+		tp := ti.datumTp(keys[i])
+		datums[i] = newDatum(fmt.Sprint(str), tp)
+	}
+	return datums, nil
+}
+
+func newChunkFromJSON(ti *TableInfo, jsonStr string) (*Chunk, error) {
 	var chunk JSONChunk
 	err := json.Unmarshal([]byte(jsonStr), &chunk)
 	if err != nil {
 		return nil, err
 	}
-	lowerVal, err := newDatumFromMySQL(fmt.Sprint(chunk.LowerBound.Value), tp)
+	lowerVals, err := jsonStrings2Datums(ti, chunk.Key, chunk.LowerBound.Value)
 	if err != nil {
 		return nil, err
 	}
-	upperVal, err := newDatumFromMySQL(fmt.Sprint(chunk.UpperBound.Value), tp)
+	upperVals, err := jsonStrings2Datums(ti, chunk.Key, chunk.UpperBound.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -100,11 +134,11 @@ func NewChunkFromJSON(jsonStr string, tp string) (*Chunk, error) {
 		Key:       chunk.Key,
 		ChunkSize: chunk.ChunkSize,
 		LowerBound: &Boundary{
-			Value:     lowerVal,
+			Value:     lowerVals,
 			Inclusive: chunk.LowerBound.Inclusive,
 		},
 		UpperBound: &Boundary{
-			Value:     upperVal,
+			Value:     upperVals,
 			Inclusive: chunk.UpperBound.Inclusive,
 		},
 	}, nil

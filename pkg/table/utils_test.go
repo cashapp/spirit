@@ -84,4 +84,37 @@ func TestMySQLRealEscapeString(t *testing.T) {
 	assert.Equal(t, "abc", mysqlRealEscapeString("abc"))
 	assert.Equal(t, `o\'test`, mysqlRealEscapeString(`o'test`))
 	assert.Equal(t, `o\\\'test`, mysqlRealEscapeString(`o\'test`))
+	assert.Equal(t, `o\"test`, mysqlRealEscapeString(`o"test`))
+}
+
+func TestExpandRowConstructorComparison(t *testing.T) {
+	assert.Equal(t, "((`a` > 1)\n OR (`a` = 1 AND `b` >= 2))",
+		expandRowConstructorComparison([]string{"a", "b"},
+			OpGreaterEqual,
+			[]Datum{newDatum(1, signedType), newDatum(2, signedType)}))
+
+	assert.Equal(t, "((`a` > 1)\n OR (`a` = 1 AND `b` > 2))",
+		expandRowConstructorComparison([]string{"a", "b"},
+			OpGreaterThan,
+			[]Datum{newDatum(1, signedType), newDatum(2, signedType)}))
+
+	assert.Equal(t, "((`id1` > 2)\n OR (`id1` = 2 AND `id2` > 2)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` > 4)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` = 4 AND `id4` >= 5))",
+		expandRowConstructorComparison([]string{"id1", "id2", "id3", "id4"},
+			OpGreaterEqual,
+			[]Datum{newDatum(2, signedType), newDatum(2, signedType), newDatum(4, signedType), newDatum(5, signedType)}))
+
+	assert.Equal(t, "((`id1` < 2)\n OR (`id1` = 2 AND `id2` < 2)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` < 4)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` = 4 AND `id4` <= 5))",
+		expandRowConstructorComparison([]string{"id1", "id2", "id3", "id4"},
+			OpLessEqual,
+			[]Datum{newDatum(2, signedType), newDatum(2, signedType), newDatum(4, signedType), newDatum(5, signedType)}))
+
+	assert.Equal(t, "((`id1` < 2)\n OR (`id1` = 2 AND `id2` < 2)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` < 4)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` = 4 AND `id4` < 5))",
+		expandRowConstructorComparison([]string{"id1", "id2", "id3", "id4"},
+			OpLessThan,
+			[]Datum{newDatum(2, signedType), newDatum(2, signedType), newDatum(4, signedType), newDatum(5, signedType)}))
+
+	assert.Equal(t, "((`id1` > 2)\n OR (`id1` = 2 AND `id2` > 2)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` > 4)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` = 4 AND `id4` > 5))",
+		expandRowConstructorComparison([]string{"id1", "id2", "id3", "id4"},
+			OpGreaterThan,
+			[]Datum{newDatum(2, signedType), newDatum(2, signedType), newDatum(4, signedType), newDatum(5, signedType)}))
 }

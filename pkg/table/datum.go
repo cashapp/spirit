@@ -162,6 +162,7 @@ func (d Datum) Range(d2 Datum) uint64 {
 	return d.Val.(uint64) - d2.Val.(uint64)
 }
 
+// String returns the datum as a SQL escaped string
 func (d Datum) String() string {
 	if d.Tp == binaryType {
 		return "\"" + mysqlRealEscapeString(d.Val.(string)) + "\""

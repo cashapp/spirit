@@ -551,19 +551,19 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	// Instead of checker.Run we call checker.ChecksumChunk directly
 	// since we only care about a specifically crafted chunk.
 	chunk := &table.Chunk{
-		Key: cutoverTable.KeyColumns[0],
+		Key: []string{cutoverTable.KeyColumns[0]},
 		LowerBound: &table.Boundary{
-			Value: table.Datum{
+			Value: []table.Datum{{
 				Tp:  cutoverTable.MaxValue().Tp,
 				Val: lowerBoundKey,
-			},
+			}},
 			Inclusive: true,
 		},
 		UpperBound: &table.Boundary{
-			Value: table.Datum{
+			Value: []table.Datum{{
 				Tp:  cutoverTable.MaxValue().Tp,
 				Val: upperBoundKey,
-			},
+			}},
 			Inclusive: true,
 		},
 	}

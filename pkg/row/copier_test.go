@@ -366,7 +366,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 	t1new := table.NewTableInfo(db, "test", "_copierchkpt1_new")
 	assert.NoError(t, t1new.SetInfo(context.TODO()))
 
-	lowWatermark := `{"Key":"a","ChunkSize":1,"LowerBound":{"Value":3,"Inclusive":true},"UpperBound":{"Value":4,"Inclusive":false}}`
+	lowWatermark := `{"Key":["a"],"ChunkSize":1,"LowerBound":{"Value":["3"],"Inclusive":true},"UpperBound":{"Value":["4"],"Inclusive":false}}`
 	copier, err := NewCopierFromCheckpoint(db, t1, t1new, NewCopierDefaultConfig(), lowWatermark, 3, 3)
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works

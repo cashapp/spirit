@@ -277,3 +277,11 @@ func (t *TableInfo) WrapCastType(col string) string {
 	}
 	return fmt.Sprintf("CAST(`%s` AS %s)", col, castableTp(tp))
 }
+
+func (t *TableInfo) datumTp(col string) datumTp {
+	tp, ok := t.columnsMySQLTps[col] // the tp keeps the width in this context.
+	if !ok {
+		panic("column not found, can not determine datumTp")
+	}
+	return mySQLTypeToDatumTp(tp)
+}

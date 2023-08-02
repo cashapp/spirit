@@ -73,9 +73,9 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        key,
-			LowerBound: &Boundary{minVal, true},
-			UpperBound: &Boundary{maxVal, false},
+			Key:        t.Ti.KeyColumns,
+			LowerBound: &Boundary{[]Datum{minVal}, true},
+			UpperBound: &Boundary{[]Datum{maxVal}, false},
 		}, nil
 	}
 	// If there were no rows, it means we are indeed
@@ -83,8 +83,8 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 	t.finalChunkSent = true
 	return &Chunk{
 		ChunkSize:  t.chunkSize,
-		Key:        key,
-		LowerBound: &Boundary{t.chunkPtr, true},
+		Key:        t.Ti.KeyColumns,
+		LowerBound: &Boundary{[]Datum{t.chunkPtr}, true},
 	}, nil
 }
 
@@ -104,8 +104,8 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		t.chunkPtr = t.Ti.minValue
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        t.Ti.KeyColumns[0],
-			UpperBound: &Boundary{t.chunkPtr, false},
+			Key:        t.Ti.KeyColumns,
+			UpperBound: &Boundary{[]Datum{t.chunkPtr}, false},
 		}, nil
 	}
 	if t.chunkPrefetchingEnabled {
@@ -130,8 +130,8 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		t.finalChunkSent = true
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
-			Key:        t.Ti.KeyColumns[0],
-			LowerBound: &Boundary{t.chunkPtr, true},
+			Key:        t.Ti.KeyColumns,
+			LowerBound: &Boundary{[]Datum{t.chunkPtr}, true},
 		}, nil
 	}
 
@@ -144,9 +144,9 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 	t.chunkPtr = maxVal
 	return &Chunk{
 		ChunkSize:  t.chunkSize,
-		Key:        t.Ti.KeyColumns[0],
-		LowerBound: &Boundary{minVal, true},
-		UpperBound: &Boundary{maxVal, false},
+		Key:        t.Ti.KeyColumns,
+		LowerBound: &Boundary{[]Datum{minVal}, true},
+		UpperBound: &Boundary{[]Datum{maxVal}, false},
 	}, nil
 }
 
@@ -175,18 +175,19 @@ func (t *chunkerOptimistic) OpenAtWatermark(cp string, highPtr Datum) error {
 	if err := t.open(); err != nil {
 		return err
 	}
-
+	// Because this chunker only supports single-column primary keys,
+	// we can safely set the checkpointHighPtr as a single value like this.
 	t.checkpointHighPtr = highPtr // set the high pointer.
-
-	chunk, err := NewChunkFromJSON(cp, t.Ti.keyColumnsMySQLTp[0])
+	chunk, err := newChunkFromJSON(t.Ti, cp)
 	if err != nil {
 		return err
 	}
 	// We can restore from chunk.UpperBound, but because it is a < operator,
 	// There might be an annoying off by 1 error. So let's just restore
-	// from the chunk.LowerBound.
+	// from the chunk.LowerBound. Because this chunker only support single-column
+	// keys, it uses Value[0].
 	t.watermark = chunk
-	t.chunkPtr = chunk.LowerBound.Value
+	t.chunkPtr = chunk.LowerBound.Value[0]
 	return nil
 }
 
@@ -256,7 +257,7 @@ func (t *chunkerOptimistic) isSpecialRestoredChunk(chunk *Chunk) bool {
 	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
 		return false // restored checkpoints always have both.
 	}
-	return chunk.LowerBound.Value == t.watermark.LowerBound.Value
+	return chunk.LowerBound.Value[0] == t.watermark.LowerBound.Value[0]
 }
 
 // bumpWatermark updates the minimum value that is known to be safely copied,
@@ -284,7 +285,7 @@ func (t *chunkerOptimistic) bumpWatermark(chunk *Chunk) {
 	}
 	// We haven't set the first chunk yet, or it's not aligned with the
 	// previous watermark. Queue it up, and move on.
-	if t.watermark == nil || (t.watermark.UpperBound.Value != chunk.LowerBound.Value) {
+	if t.watermark == nil || (t.watermark.UpperBound.Value[0] != chunk.LowerBound.Value[0]) {
 		t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
 		return
 	}
@@ -309,7 +310,7 @@ applyQueuedChunks:
 				panic(errMsg)
 			}
 			// The value aligns, remove it from the queued chunks and set the watermark to it.
-			if queuedChunk.LowerBound.Value == t.watermark.UpperBound.Value {
+			if queuedChunk.LowerBound.Value[0] == t.watermark.UpperBound.Value[0] {
 				t.watermark = queuedChunk
 				t.watermarkQueuedChunks = append(t.watermarkQueuedChunks[:i], t.watermarkQueuedChunks[i+1:]...)
 				found = true
@@ -323,6 +324,9 @@ applyQueuedChunks:
 }
 
 func (t *chunkerOptimistic) open() (err error) {
+	if len(t.Ti.KeyColumns) > 1 {
+		return errors.New("the optimistic chunker no longer supports key columns > 1")
+	}
 	tp := mySQLTypeToDatumTp(t.Ti.keyColumnsMySQLTp[0])
 	if tp == unknownType {
 		return ErrUnsupportedPKType

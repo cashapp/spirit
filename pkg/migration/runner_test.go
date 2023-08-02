@@ -723,7 +723,7 @@ func TestCheckpoint(t *testing.T) {
 	// gives feedback back to table.
 	watermark, err := r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
@@ -750,7 +750,7 @@ func TestCheckpoint(t *testing.T) {
 
 	chunk, err := r.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, "1001", chunk.LowerBound.Value.String())
+	assert.Equal(t, "1001", chunk.LowerBound.Value[0].String())
 	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from
@@ -758,7 +758,7 @@ func TestCheckpoint(t *testing.T) {
 	// the last checkpoint because on restore, the LowerBound is taken.
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
@@ -771,7 +771,7 @@ func TestCheckpoint(t *testing.T) {
 
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"11001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"12001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
 	assert.NoError(t, r.db.Close())
 }
 
@@ -824,7 +824,7 @@ func TestCheckpointRestore(t *testing.T) {
 
 	// Now insert a fake checkpoint, this uses a known bad value
 	// from issue #125
-	watermark := "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\":\"53926425\",\"Inclusive\":true},\"UpperBound\":{\"Value\":\"53926425\",\"Inclusive\":false}}"
+	watermark := "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\":[\"53926425\"],\"Inclusive\":true},\"UpperBound\":{\"Value\":[\"53926425\"],\"Inclusive\":false}}"
 	binlog := r.replClient.GetBinlogApplyPosition()
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
@@ -944,7 +944,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 
 	watermark, err := m.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
@@ -1126,7 +1126,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	chunk, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.NotNil(t, chunk)
-	assert.Equal(t, "`id1` < 1001", chunk.String())
+	assert.Equal(t, "((`id1` < 1001)\n OR (`id1` = 1001 AND `id2` < 1))", chunk.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// Now insert some data.
@@ -1140,7 +1140,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// Second chunk
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, "`id1` >= 1001", chunk.String())
+	assert.Equal(t, "((`id1` > 1001)\n OR (`id1` = 1001 AND `id2` >= 1))", chunk.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// Now insert some data.
@@ -1775,7 +1775,7 @@ func TestE2ERogueValues(t *testing.T) {
 	// Second chunk
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.Equal(t, "`datetime` >= \"819 \\\". \"", chunk.String())
+	assert.Equal(t, "((`datetime` > \"819 \\\". \")\n OR (`datetime` = \"819 \\\". \" AND `col2` >= 1))", chunk.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// Now insert some data.
