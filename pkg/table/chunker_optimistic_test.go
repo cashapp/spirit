@@ -32,11 +32,13 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 	}
 	chunker.setDynamicChunking(false)
 
-	assert.NoError(t, t1.isCompatibleWithChunker())
+	assert.NoError(t, t1.isMemoryComparable())
 	t1.keyColumnsMySQLTp[0] = "varchar"
-	assert.Error(t, t1.isCompatibleWithChunker())
+	t1.keyDatums[0] = unknownType
+	assert.Error(t, t1.isMemoryComparable())
 	t1.keyColumnsMySQLTp[0] = "bigint"
-	assert.NoError(t, t1.isCompatibleWithChunker())
+	t1.keyDatums[0] = signedType
+	assert.NoError(t, t1.isMemoryComparable())
 
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
 
@@ -81,7 +83,7 @@ func TestLowWatermark(t *testing.T) {
 	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
-	assert.NoError(t, t1.isCompatibleWithChunker())
+	assert.NoError(t, t1.isMemoryComparable())
 	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: ChunkerDefaultTarget,
@@ -109,7 +111,7 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunk, time.Second)
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"1001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"1001\"],\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
@@ -117,7 +119,7 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 
 	chunkAsync1, err := chunker.Next()
 	assert.NoError(t, err)
@@ -134,29 +136,29 @@ func TestLowWatermark(t *testing.T) {
 	chunker.Feedback(chunkAsync2, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync3, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"1001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"2001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync1, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"4001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"5001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"4001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"5001\"],\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "`id` >= 5001 AND `id` < 6001", chunk.String()) // should bump immediately
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"4001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"5001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"4001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"5001\"],\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":1000,\"LowerBound\":{\"Value\": \"5001\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"6001\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"5001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"6001\"],\"Inclusive\":false}}", watermark)
 }
 
 func TestOptimisticDynamicChunking(t *testing.T) {
@@ -169,6 +171,9 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	t1.keyDatums = []datumTp{signedType}
 	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
+	t1.columnsMySQLTps = make(map[string]string)
+	t1.columnsMySQLTps["id"] = "bigint"
+
 	chunker, err := NewChunker(t1, 100*time.Millisecond, logrus.New())
 	assert.NoError(t, err)
 
@@ -221,7 +226,7 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
 
-	assert.Equal(t, "{\"Key\":\"id\",\"ChunkSize\":22,\"LowerBound\":{\"Value\": \"584\",\"Inclusive\":true},\"UpperBound\":{\"Value\": \"606\",\"Inclusive\":false}}", watermark)
+	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":22,\"LowerBound\":{\"Value\": [\"584\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"606\"],\"Inclusive\":false}}", watermark)
 
 	// Start everything over again as t2.
 	t2 := newTableInfo4Test("test", "t1")
@@ -231,6 +236,8 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	t2.KeyColumns = []string{"id"}
 	t2.keyColumnsMySQLTp = []string{"bigint"}
 	t2.KeyIsAutoInc = true
+	t2.columnsMySQLTps = make(map[string]string)
+	t2.columnsMySQLTps["id"] = "bigint"
 
 	chunker2, err := NewChunker(t1, 100, logrus.New())
 	assert.NoError(t, err)
@@ -242,7 +249,7 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	// we would have to worry about off-by-1 errors.
 	chunk, err = chunker2.Next()
 	assert.NoError(t, err)
-	assert.Equal(t, "584", chunk.LowerBound.Value.String())
+	assert.Equal(t, "584", chunk.LowerBound.Value[0].String())
 }
 
 func TestOptimisticPrefetchChunking(t *testing.T) {

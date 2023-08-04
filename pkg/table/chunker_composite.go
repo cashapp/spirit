@@ -1,8 +1,11 @@
 package table
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,12 +14,12 @@ import (
 
 type chunkerComposite struct {
 	sync.Mutex
-	Ti                *TableInfo
-	chunkSize         uint64
-	chunkPtr          Datum
-	checkpointHighPtr Datum // the high watermark detected on restore
-	finalChunkSent    bool
-	isOpen            bool
+	Ti             *TableInfo
+	chunkSize      uint64
+	chunkPtrs      []Datum  // a list of Ptrs for each of the keys.
+	chunkKeys      []string // all the keys to chunk on (usually all the col names of the PK)
+	finalChunkSent bool
+	isOpen         bool
 
 	// Dynamic Chunking is time based instead of row based.
 	// It uses *time* to determine the target chunk size.
@@ -45,63 +48,103 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	if !t.isOpen {
 		return nil, ErrTableNotOpen
 	}
-	key := t.Ti.KeyColumns[0]
-	// Assume first chunk. If this is not the first chunk,
-	// we have to add a >key lower bound.
-	query := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1 OFFSET %d",
-		key, t.Ti.QuotedName, key, t.chunkSize,
+	// Start prefetching the next chunk
+	// First assume it's the first chunk, we can overwrite this
+	// just below.
+	query := fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) ORDER BY %s LIMIT 1 OFFSET %d",
+		strings.Join(t.chunkKeys, ","),
+		t.Ti.QuotedName,
+		strings.Join(t.chunkKeys, ","),
+		t.chunkSize,
 	)
-	if !t.chunkPtr.IsNil() {
-		query = fmt.Sprintf("SELECT %s FROM %s WHERE %s > %s ORDER BY %s LIMIT 1 OFFSET %d",
-			key, t.Ti.QuotedName, key, t.chunkPtr.String(), key, t.chunkSize,
+	if !t.isFirstChunk() {
+		// This is not the first chunk, since we have pointers set.
+		query = fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE %s ORDER BY %s LIMIT 1 OFFSET %d",
+			strings.Join(t.chunkKeys, ","),
+			t.Ti.QuotedName,
+			expandRowConstructorComparison(t.chunkKeys, OpGreaterThan, t.chunkPtrs),
+			strings.Join(t.chunkKeys, ","), // order by
+			t.chunkSize,
 		)
 	}
+	upperDatums, err := t.nextQueryToDatums(query)
+	if err != nil {
+		return nil, err
+	}
+	// Handle the special cases first:
+	// there were no rows found, so we are at the end
+	// of the table.
+	if len(upperDatums) == 0 {
+		t.finalChunkSent = true // This is the last chunk.
+		if t.isFirstChunk() {   // and also the first chunk.
+			return &Chunk{
+				ChunkSize: t.chunkSize,
+				Key:       t.chunkKeys,
+			}, nil
+		}
+		// Else, it's just the last chunk.
+		return &Chunk{
+			ChunkSize:  t.chunkSize,
+			Key:        t.chunkKeys,
+			LowerBound: &Boundary{t.chunkPtrs, true},
+		}, nil
+	}
+	// Else, there were rows found.
+	// Convert upperVals to []Datum for the chunkPtrs.
+	lowerBoundary := &Boundary{t.chunkPtrs, true}
+	if t.isFirstChunk() {
+		lowerBoundary = nil // first chunk
+	}
+	t.chunkPtrs = upperDatums
+	return &Chunk{
+		ChunkSize:  t.chunkSize,
+		Key:        t.chunkKeys,
+		LowerBound: lowerBoundary,
+		UpperBound: &Boundary{upperDatums, false},
+	}, nil
+}
+
+func (t *chunkerComposite) isFirstChunk() bool {
+	return len(t.chunkPtrs) == 0
+}
+
+// nextQueryToDatums executes the prefetch query which returns 1 row-max.
+// The columns in this result are then converted to Datums and returned
+func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 	rows, err := t.Ti.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	columnNames, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	columns := make([]sql.RawBytes, len(columnNames))
+	columnPointers := make([]interface{}, len(columnNames))
+	for i := 0; i < len(columnNames); i++ {
+		columnPointers[i] = &columns[i]
+	}
+	rowsFound := false
 	if rows.Next() {
-		minVal := t.chunkPtr
-		var upperVal string
-		err = rows.Scan(&upperVal)
+		rowsFound = true
+		err = rows.Scan(columnPointers...)
 		if err != nil {
 			return nil, err
 		}
-		lowerBoundary := &Boundary{minVal, true}
-		if t.chunkPtr.IsNil() {
-			lowerBoundary = nil // first chunk
-		}
-		upperBoundary := &Boundary{newDatum(upperVal, t.chunkPtr.Tp), false}
-		t.chunkPtr = upperBoundary.Value
-		return &Chunk{
-			ChunkSize:  t.chunkSize,
-			Key:        key,
-			LowerBound: lowerBoundary,
-			UpperBound: upperBoundary,
-		}, nil
 	}
-	// Handle the case that there were no rows.
-	// This means that < chunkSize rows remain in the table
-	// and we processing the final chunk.
-	t.finalChunkSent = true
-	// In the special case that chunkPtr is nil this means
-	// we are processing the first *and* last chunk. i.e.
-	// the table has less than chunkSize rows in it, so we
-	// return a single chunk with no boundaries.
-	if t.chunkPtr.IsNil() {
-		return &Chunk{
-			ChunkSize: t.chunkSize,
-			Key:       key,
-		}, nil
+	// If no rows were found we can early-return here.
+	if !rowsFound {
+		return nil, nil
 	}
-	// Otherwise we return a final chunk with a lower bound
-	// and an open ended upper bound.
-	return &Chunk{
-		ChunkSize:  t.chunkSize,
-		Key:        key,
-		LowerBound: &Boundary{t.chunkPtr, true},
-	}, nil
+	// The types are currently broken because it scans as raw bytes.
+	// We need to convert them to the correct type.
+	var datums []Datum
+	for i, name := range columnNames {
+		newVal := reflect.ValueOf(columns[i]).Interface().(sql.RawBytes)
+		datums = append(datums, newDatum(string(newVal), t.Ti.datumTp(name)))
+	}
+	return datums, nil
 }
 
 // Open opens a table to be used by NextChunk(). See also OpenAtWatermark()
@@ -115,16 +158,16 @@ func (t *chunkerComposite) Open() (err error) {
 
 // OpenAtWatermark opens a table for the resume-from-checkpoint use case.
 // This will set the chunkPtr to a known safe value that is contained within
-// the checkpoint
-func (t *chunkerComposite) OpenAtWatermark(checkpnt string, highPtr Datum) error {
+// the checkpoint. Because the composite chunker *does not support* the
+// KeyAboveWatermark optimization, the second argument is ignored.
+func (t *chunkerComposite) OpenAtWatermark(checkpnt string, _ Datum) error {
 	t.Lock()
 	defer t.Unlock()
 
 	if err := t.open(); err != nil {
 		return err
 	}
-	t.checkpointHighPtr = highPtr // set the high pointer.
-	chunk, err := NewChunkFromJSON(checkpnt, t.Ti.keyColumnsMySQLTp[0])
+	chunk, err := newChunkFromJSON(t.Ti, checkpnt)
 	if err != nil {
 		return err
 	}
@@ -132,7 +175,7 @@ func (t *chunkerComposite) OpenAtWatermark(checkpnt string, highPtr Datum) error
 	// There might be an annoying off by 1 error. So let's just restore
 	// from the chunk.LowerBound.
 	t.watermark = chunk
-	t.chunkPtr = chunk.LowerBound.Value
+	t.chunkPtrs = chunk.LowerBound.Value
 	return nil
 }
 
@@ -186,7 +229,6 @@ func (t *chunkerComposite) Feedback(chunk *Chunk, d time.Duration) {
 func (t *chunkerComposite) GetLowWatermark() (string, error) {
 	t.Lock()
 	defer t.Unlock()
-
 	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
 		return "", errors.New("watermark not yet ready")
 	}
@@ -202,7 +244,7 @@ func (t *chunkerComposite) isSpecialRestoredChunk(chunk *Chunk) bool {
 	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
 		return false // restored checkpoints always have both.
 	}
-	return chunk.LowerBound.Value == t.watermark.LowerBound.Value
+	return chunk.LowerBound.comparesTo(t.watermark.LowerBound)
 }
 
 // bumpWatermark updates the minimum value that is known to be safely copied,
@@ -230,7 +272,7 @@ func (t *chunkerComposite) bumpWatermark(chunk *Chunk) {
 	}
 	// We haven't set the first chunk yet, or it's not aligned with the
 	// previous watermark. Queue it up, and move on.
-	if t.watermark == nil || (t.watermark.UpperBound.Value != chunk.LowerBound.Value) {
+	if t.watermark == nil || !t.watermark.UpperBound.comparesTo(chunk.LowerBound) {
 		t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
 		return
 	}
@@ -255,7 +297,7 @@ applyQueuedChunks:
 				panic(errMsg)
 			}
 			// The value aligns, remove it from the queued chunks and set the watermark to it.
-			if queuedChunk.LowerBound.Value == t.watermark.UpperBound.Value {
+			if queuedChunk.LowerBound.comparesTo(t.watermark.UpperBound) {
 				t.watermark = queuedChunk
 				t.watermarkQueuedChunks = append(t.watermarkQueuedChunks[:i], t.watermarkQueuedChunks[i+1:]...)
 				found = true
@@ -269,17 +311,13 @@ applyQueuedChunks:
 }
 
 func (t *chunkerComposite) open() (err error) {
-	tp := mySQLTypeToDatumTp(t.Ti.keyColumnsMySQLTp[0])
-	if tp == unknownType {
-		return ErrUnsupportedPKType
-	}
 	if t.isOpen {
 		// This prevents an error where open is re-called
 		// leading to the watermark being in a strange state.
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkPtr = NewNilDatum(t.Ti.keyDatums[0])
+	t.chunkKeys = t.Ti.KeyColumns // chunk on all keys in the PK.
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 	return nil

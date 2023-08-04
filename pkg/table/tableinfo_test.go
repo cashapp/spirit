@@ -17,10 +17,19 @@ func TestOpenOnUnsupportedType(t *testing.T) {
 	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"varchar"}
+	t1.keyDatums = []datumTp{unknownType}
 	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
 	_, err := NewChunker(t1, 100, logrus.New())
+	assert.Error(t, err) // err unsupported.
+
+	// Also unsupported as part of a composite key.
+	// When the first part of the key is supported.
+	t1.KeyColumns = []string{"id", "otherkey"}
+	t1.keyColumnsMySQLTp = []string{"bigint", "varchar"}
+	t1.keyDatums = []datumTp{signedType, unknownType}
+	_, err = NewChunker(t1, 100, logrus.New())
 	assert.Error(t, err) // err unsupported.
 }
 

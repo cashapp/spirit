@@ -1,6 +1,7 @@
 package table
 
 import (
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -97,4 +98,45 @@ func mysqlRealEscapeString(value string) string {
 		}
 	}
 	return sb.String()
+}
+
+// expandRowConstructorComparison is a workaround for MySQL
+// not always optimizing conditions such as (a,b,c) > (1,2,3).
+// This limitation is still current in 8.0, and was not fixed
+// by the work in https://dev.mysql.com/worklog/task/?id=7019
+func expandRowConstructorComparison(cols []string, operator Operator, vals []Datum) string {
+	if len(cols) != len(vals) {
+		panic("cols should be same size as values")
+	}
+	if len(cols) == 1 {
+		return fmt.Sprintf("`%s` %s %s", cols[0], operator, vals[0].String())
+	}
+	// Unless we are in the "final" position
+	// we need to use a different intermediate operator
+	// for comparison. i.e. >= becomes >
+	intermediateOperator := operator
+	switch operator { //nolint: exhaustive
+	case OpGreaterEqual:
+		intermediateOperator = OpGreaterThan
+	case OpLessEqual:
+		intermediateOperator = OpLessThan
+	}
+	conds := []string{}
+	buffer := []string{}
+	for i, col := range cols {
+		if i == 0 {
+			conds = append(conds, fmt.Sprintf("(`%s` %s %s)", col, intermediateOperator, vals[i].String()))
+			buffer = append(buffer, fmt.Sprintf("`%s` %s %s", col, "=", vals[i].String()))
+			continue
+		}
+		// If we are in the final position we can
+		// overwrite the intermediate operator with
+		// the original operator.
+		if i == len(cols)-1 {
+			intermediateOperator = operator
+		}
+		conds = append(conds, fmt.Sprintf("(%s AND `%s` %s %s)", strings.Join(buffer, " AND "), col, intermediateOperator, vals[i].String()))
+		buffer = append(buffer, fmt.Sprintf("`%s` %s %s", col, "=", vals[i].String()))
+	}
+	return "(" + strings.Join(conds, "\n OR ") + ")"
 }

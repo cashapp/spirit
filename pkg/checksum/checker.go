@@ -114,7 +114,8 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	}
 	if chunk.LowerBound != nil {
 		c.Lock()
-		c.recentValue = chunk.LowerBound.Value
+		// For recent value we only use the first part of the key.
+		c.recentValue = chunk.LowerBound.Value[0]
 		c.Unlock()
 	}
 	c.chunker.Feedback(chunk, time.Since(startTime))
