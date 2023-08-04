@@ -51,15 +51,16 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 	}
 }
 
-// isCompatibleWithChunker checks that the PRIMARY KEY type is compatible.
-// We currently repeat this check in Open().
-// Important! we can support non-integer primary keys, but they
-// must be binary comparable! Otherwise features like the deltaMap
-// won't work correctly! Collations also affect chunking behavior in possibly
-// unsafe ways!
-func (t *TableInfo) isCompatibleWithChunker() error {
-	if mySQLTypeToDatumTp(t.keyColumnsMySQLTp[0]) == unknownType {
-		return ErrUnsupportedPKType
+// isMemoryComparable checks that the PRIMARY KEY type is compatible.
+// We no longer need this check for the chunker, since it can
+// handle any type of key in the composite chunker.
+// But the migration still needs to verify this, because of the
+// delta map feature, which requires binary comparable keys.
+func (t *TableInfo) isMemoryComparable() error {
+	for _, tp := range t.keyDatums {
+		if tp == unknownType {
+			return ErrUnsupportedPKType
+		}
 	}
 	return nil
 }

@@ -43,7 +43,10 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 	if chunkerTarget == 0 {
 		chunkerTarget = ChunkerDefaultTarget
 	}
-	if err := t.isCompatibleWithChunker(); err != nil {
+	// Currently we always check if the key is memory comparable.
+	// This is required for spirit's Delta Map, but
+	// not specifically required for the chunker.
+	if err := t.isMemoryComparable(); err != nil {
 		return nil, err
 	}
 	// Use the optimistic chunker for auto_increment

@@ -67,7 +67,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 			t.chunkSize,
 		)
 	}
-	upperDatums, err := t.nextQuery2Datums(query)
+	upperDatums, err := t.nextQueryToDatums(query)
 	if err != nil {
 		return nil, err
 	}
@@ -108,9 +108,9 @@ func (t *chunkerComposite) isFirstChunk() bool {
 	return len(t.chunkPtrs) == 0
 }
 
-// nextQuery2Datums executes the prefetch query which returns 1 row-max.
+// nextQueryToDatums executes the prefetch query which returns 1 row-max.
 // The columns in this result are then converted to Datums and returned
-func (t *chunkerComposite) nextQuery2Datums(query string) ([]Datum, error) {
+func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 	rows, err := t.Ti.db.Query(query)
 	if err != nil {
 		return nil, err

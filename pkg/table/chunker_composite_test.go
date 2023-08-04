@@ -12,6 +12,107 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCompositeChunkerCompositeBinary(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS composite_binary_t1")
+	runSQL(t, `CREATE TABLE composite_binary_t1 (
+		a varbinary(40) NOT NULL,
+		b varbinary(40) NOT NULL,
+		c int NOT NULL,
+		PRIMARY KEY (a,b)
+	)`)
+	runSQL(t, `INSERT INTO composite_binary_t1 (a, b, c) SELECT UUID(), UUID(), 1 FROM dual`)                                                                                      //nolint: dupword
+	runSQL(t, `INSERT INTO composite_binary_t1 (a, b, c) SELECT UUID(), UUID(), 1 FROM composite_binary_t1 a JOIN composite_binary_t1 b JOIN composite_binary_t1 c LIMIT 1000000`) //nolint: dupword
+	runSQL(t, `INSERT INTO composite_binary_t1 (a, b, c) SELECT UUID(), UUID(), 1 FROM composite_binary_t1 a JOIN composite_binary_t1 b JOIN composite_binary_t1 c LIMIT 1000000`) //nolint: dupword
+	runSQL(t, `INSERT INTO composite_binary_t1 (a, b, c) SELECT UUID(), UUID(), 1 FROM composite_binary_t1 a JOIN composite_binary_t1 b JOIN composite_binary_t1 c LIMIT 1000000`) //nolint: dupword
+	runSQL(t, `INSERT INTO composite_binary_t1 (a, b, c) SELECT UUID(), UUID(), 1 FROM composite_binary_t1 a JOIN composite_binary_t1 b JOIN composite_binary_t1 c LIMIT 1000000`) //nolint: dupword
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "composite_binary_t1")
+	assert.NoError(t, t1.SetInfo(context.Background()))
+
+	// Assert that the types are correct.
+	assert.Equal(t, []string{"varbinary", "varbinary"}, t1.keyColumnsMySQLTp)
+	assert.Equal(t, binaryType, t1.keyDatums[0])
+	assert.Equal(t, binaryType, t1.keyDatums[1])
+
+	chunker, err := NewChunker(t1, ChunkerDefaultTarget, logrus.New())
+	assert.NoError(t, err)
+	assert.IsType(t, &chunkerComposite{}, chunker)
+
+	assert.NoError(t, chunker.Open())
+
+	chunk, err := chunker.Next()
+	assert.NoError(t, err)
+	assert.NotContains(t, "`a` >= ", chunk.String()) // first chunk is special
+	upperBound := chunk.UpperBound.Value
+
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	previousUpperBound := upperBound
+	upperBound = chunk.UpperBound.Value
+	require.NotEqual(t, previousUpperBound, upperBound)
+	assert.Equal(t, fmt.Sprintf("((`a` > %s)\n OR (`a` = %s AND `b` >= %s)) AND ((`a` < %s)\n OR (`a` = %s AND `b` < %s))",
+		previousUpperBound[0].String(),
+		previousUpperBound[0].String(),
+		previousUpperBound[1].String(),
+		upperBound[0].String(),
+		upperBound[0].String(),
+		upperBound[1].String()),
+		chunk.String(),
+	)
+
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	previousUpperBound = upperBound
+	upperBound = chunk.UpperBound.Value
+	require.NotEqual(t, previousUpperBound, upperBound)
+	assert.Equal(t, fmt.Sprintf("((`a` > %s)\n OR (`a` = %s AND `b` >= %s)) AND ((`a` < %s)\n OR (`a` = %s AND `b` < %s))",
+		previousUpperBound[0].String(),
+		previousUpperBound[0].String(),
+		previousUpperBound[1].String(),
+		upperBound[0].String(),
+		upperBound[0].String(),
+		upperBound[1].String()),
+		chunk.String(),
+	)
+
+	// Test it advances again
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	previousUpperBound = upperBound
+	upperBound = chunk.UpperBound.Value
+	require.NotEqual(t, previousUpperBound, upperBound)
+	assert.Equal(t, fmt.Sprintf("((`a` > %s)\n OR (`a` = %s AND `b` >= %s)) AND ((`a` < %s)\n OR (`a` = %s AND `b` < %s))",
+		previousUpperBound[0].String(),
+		previousUpperBound[0].String(),
+		previousUpperBound[1].String(),
+		upperBound[0].String(),
+		upperBound[0].String(),
+		upperBound[1].String()),
+		chunk.String(),
+	)
+
+	// Repeat until done (final chunk is sent.)
+	// Add to the total chunks
+	totalChunks := 3 // 3 so far
+
+	for i := 0; i < 5000; i++ {
+		chunk, err = chunker.Next()
+		if err != nil {
+			break
+		}
+		totalChunks++
+		assert.NotNil(t, chunk)
+	}
+	// there are 1001010 rows. It should be about 1002 chunks.
+	// we don't care that it's exact, since we don't want a flaky
+	// test if we make small changes.
+	assert.True(t, totalChunks < 1005 && totalChunks > 995)
+}
+
 func TestCompositeChunkerBinary(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS composite_t1")
 	runSQL(t, `CREATE TABLE composite_t1 (
@@ -87,7 +188,6 @@ func TestCompositeChunkerBinary(t *testing.T) {
 	// test if we make small changes.
 	assert.True(t, totalChunks < 1005 && totalChunks > 995)
 }
-
 func TestCompositeChunkerInt(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS compositeint_t1")
 	runSQL(t, `CREATE TABLE compositeint_t1 (
