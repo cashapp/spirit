@@ -164,7 +164,7 @@ func (d Datum) Range(d2 Datum) uint64 {
 
 // String returns the datum as a SQL escaped string
 func (d Datum) String() string {
-	if d.Tp == binaryType {
+	if d.Tp == binaryType || d.Tp == unknownType {
 		return "\"" + mysqlRealEscapeString(d.Val.(string)) + "\""
 	}
 	return fmt.Sprintf("%v", d.Val)

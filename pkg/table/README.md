@@ -40,11 +40,3 @@ Its basic implementation is as follows:
 To a certain extent, the chunk-size will automatically adjust to small gaps in the table as dynamic chunking adjusts to compensate for slightly faster copies. However, this is intentionally limited with dynamic chunking having a hard limit on the chunk size of `100K` rows. It can also only expand the chunk-size by 50% at a time. This helps prevent the scenario that quickly processed chunks (likely caused by table gaps) expand the chunk size too quickly, causing future chunks to be too large and causing QoS issues. 
 
 To deal with large gaps, the optimistic chunker also supports a special "prefetching mode". The prefetching mode is enabled when the chunk size has already reached the `100K` limit, and each chunk is still only taking 20% of the target time for chunk copying. Prefetching was first developed when we discovered a user with ~20 million rows in the table but a big gap between the auto_increment value of 20 million and the end of the table (300 billion). You can think of the prefetching mode as not that much different from how the composite chunker works, as it will perform a SELECT query to find the next PK value it should use as a pointer. Prefetching is automatically disabled again if the chunk size is ever reduced below the `100K` limit.
-
-### Future work 
-
-The following are known issues:
-
-* Neither of the chunkers support chunking on anything other than the `PRIMARY KEY`. For our purposes, this is usually acceptable but we may have to revisit this in the future.
-* Not specifically a limitation of chunking, but some optimizations in spirit require that the `PRIMARY KEY` not have collations. Thus, we explicitly disallow `VARCHAR` primary keys in the chunker. The optimizations are very useful, which makes this a complex problem to fix. But it also appears to be the most common incompatibility issue with spirit, so we may have to reconsider this at some point.
-

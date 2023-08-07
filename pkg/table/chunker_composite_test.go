@@ -394,3 +394,76 @@ func TestCompositeSmallTable(t *testing.T) {
 	assert.Equal(t, "1=1", chunk.String()) // small chunk
 	assert.NoError(t, chunker.Close())
 }
+
+func TestSetKey(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS setkey_t1")
+	runSQL(t, `CREATE TABLE setkey_t1 (
+		id INT NOT NULL PRIMARY KEY auto_increment,
+		a int NOT NULL,
+		b int NOT NULL,
+		status ENUM('PENDING', 'ACTIVE', 'ARCHIVED') NOT NULL DEFAULT 'PENDING',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX (status)
+	)`)
+	// 11K records.
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM dual`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "setkey_t1")
+	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunker := &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("status", []string{"status", "id"}, "status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY")
+	assert.NoError(t, err)
+	assert.NoError(t, chunker.Open())
+
+	chunk, err := chunker.Next()
+	assert.NoError(t, err)
+	// Because there are zero rows with status archived or updated_at that old,
+	// it returns 1 chunk with 1=1 and the original condition.
+	assert.Equal(t, "1=1 AND (status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY)", chunk.String())
+	assert.NoError(t, chunker.Close())
+
+	// If I reset again with a different condition it should range as chunks.
+	chunker = &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("status", []string{"status", "id"}, "status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY")
+	assert.NoError(t, err)
+	assert.NoError(t, chunker.Open())
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` < \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` < 1008)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	// Check a chunk with both a lowerbound and upper bound.
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` > \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` >= 1008)) AND ((`status` < \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` < 2032)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	// repeat ~10 more times without calling Feedback()
+	for i := 0; i < 8; i++ {
+		_, err = chunker.Next()
+		assert.NoError(t, err)
+	}
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` > \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` >= 10040)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	_, err = chunker.Next()
+	assert.ErrorIs(t, err, ErrTableIsRead)
+
+	assert.NoError(t, chunker.Close())
+}

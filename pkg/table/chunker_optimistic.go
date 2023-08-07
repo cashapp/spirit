@@ -423,3 +423,7 @@ func (t *chunkerOptimistic) KeyAboveHighWatermark(key interface{}) bool {
 	// Finally we check the chunkPtr.
 	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
 }
+
+func (t *chunkerOptimistic) SetKey(_ string, _ []string, _ string) error {
+	return errors.New("unsupported")
+}

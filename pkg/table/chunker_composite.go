@@ -14,12 +14,14 @@ import (
 
 type chunkerComposite struct {
 	sync.Mutex
-	Ti             *TableInfo
-	chunkSize      uint64
-	chunkPtrs      []Datum  // a list of Ptrs for each of the keys.
-	chunkKeys      []string // all the keys to chunk on (usually all the col names of the PK)
-	finalChunkSent bool
-	isOpen         bool
+	Ti                   *TableInfo
+	chunkSize            uint64
+	chunkPtrs            []Datum  // a list of Ptrs for each of the keys.
+	chunkKeys            []string // all the keys to chunk on (usually all the col names of the PK)
+	keyName              string   // the name of the key we are chunking on
+	additionalConditions string   // any additional WHERE conditions.
+	finalChunkSent       bool
+	isOpen               bool
 
 	// Dynamic Chunking is time based instead of row based.
 	// It uses *time* to determine the target chunk size.
@@ -34,6 +36,16 @@ type chunkerComposite struct {
 }
 
 var _ Chunker = &chunkerComposite{}
+
+func (t *chunkerComposite) additionalConditionsSQL(whereSent bool) string {
+	if t.additionalConditions == "" {
+		return ""
+	}
+	if whereSent {
+		return fmt.Sprintf(" AND (%s)", t.additionalConditions)
+	}
+	return " WHERE " + t.additionalConditions
+}
 
 // Next in the composite chunker uses a query (aka prefetching) to determine the
 // boundary of this chunk. This method is slower, but works better when the
@@ -51,18 +63,22 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	// Start prefetching the next chunk
 	// First assume it's the first chunk, we can overwrite this
 	// just below.
-	query := fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) ORDER BY %s LIMIT 1 OFFSET %d",
+	query := fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (%s) %s ORDER BY %s LIMIT 1 OFFSET %d",
 		strings.Join(t.chunkKeys, ","),
 		t.Ti.QuotedName,
+		t.keyName,
+		t.additionalConditionsSQL(false),
 		strings.Join(t.chunkKeys, ","),
 		t.chunkSize,
 	)
 	if !t.isFirstChunk() {
 		// This is not the first chunk, since we have pointers set.
-		query = fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE %s ORDER BY %s LIMIT 1 OFFSET %d",
+		query = fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (%s) WHERE %s %s ORDER BY %s LIMIT 1 OFFSET %d",
 			strings.Join(t.chunkKeys, ","),
 			t.Ti.QuotedName,
+			t.keyName,
 			expandRowConstructorComparison(t.chunkKeys, OpGreaterThan, t.chunkPtrs),
+			t.additionalConditionsSQL(true),
 			strings.Join(t.chunkKeys, ","), // order by
 			t.chunkSize,
 		)
@@ -78,15 +94,17 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 		t.finalChunkSent = true // This is the last chunk.
 		if t.isFirstChunk() {   // and also the first chunk.
 			return &Chunk{
-				ChunkSize: t.chunkSize,
-				Key:       t.chunkKeys,
+				ChunkSize:            t.chunkSize,
+				Key:                  t.chunkKeys,
+				AdditionalConditions: t.additionalConditions,
 			}, nil
 		}
 		// Else, it's just the last chunk.
 		return &Chunk{
-			ChunkSize:  t.chunkSize,
-			Key:        t.chunkKeys,
-			LowerBound: &Boundary{t.chunkPtrs, true},
+			ChunkSize:            t.chunkSize,
+			Key:                  t.chunkKeys,
+			LowerBound:           &Boundary{t.chunkPtrs, true},
+			AdditionalConditions: t.additionalConditions,
 		}, nil
 	}
 	// Else, there were rows found.
@@ -97,10 +115,11 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	}
 	t.chunkPtrs = upperDatums
 	return &Chunk{
-		ChunkSize:  t.chunkSize,
-		Key:        t.chunkKeys,
-		LowerBound: lowerBoundary,
-		UpperBound: &Boundary{upperDatums, false},
+		ChunkSize:            t.chunkSize,
+		Key:                  t.chunkKeys,
+		LowerBound:           lowerBoundary,
+		UpperBound:           &Boundary{upperDatums, false},
+		AdditionalConditions: t.additionalConditions,
 	}, nil
 }
 
@@ -317,7 +336,13 @@ func (t *chunkerComposite) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkKeys = t.Ti.KeyColumns // chunk on all keys in the PK.
+	if len(t.chunkKeys) == 0 {
+		// SetKey has not been called.
+		// chunk on all keys in the PK.
+		// default to primary key.
+		t.chunkKeys = t.Ti.KeyColumns
+		t.keyName = "PRIMARY"
+	}
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 	return nil
@@ -363,4 +388,14 @@ func (t *chunkerComposite) calculateNewTargetChunkSize() uint64 {
 
 func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 	return false
+}
+
+func (t *chunkerComposite) SetKey(keyName string, keyCols []string, additionalConditions string) error {
+	if t.isOpen {
+		return errors.New("cannot set key after table is open")
+	}
+	t.chunkKeys = keyCols // TODO: merge the key Cols and PRIMARY KEY cols and remove keyCols from interface!
+	t.keyName = keyName
+	t.additionalConditions = additionalConditions
+	return nil
 }

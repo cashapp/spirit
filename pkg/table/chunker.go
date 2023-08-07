@@ -37,6 +37,7 @@ type Chunker interface {
 	Feedback(*Chunk, time.Duration)
 	GetLowWatermark() (string, error)
 	KeyAboveHighWatermark(interface{}) bool
+	SetKey(string, []string, string) error
 }
 
 func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced) (Chunker, error) {
