@@ -26,6 +26,10 @@ func IsCompatible(ctx context.Context, migration *Migration) bool {
 	if err := m.table.SetInfo(ctx); err != nil {
 		return false
 	}
+	// check that it's memory comparable.
+	if err := m.table.PrimaryKeyIsMemoryComparable(); err != nil {
+		return false
+	}
 	// Check that we can get a chunker.
 	if _, err := table.NewChunker(m.table, m.migration.TargetChunkTime, m.logger); err != nil {
 		return false

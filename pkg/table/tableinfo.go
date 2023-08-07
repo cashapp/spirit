@@ -51,20 +51,6 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 	}
 }
 
-// isMemoryComparable checks that the PRIMARY KEY type is compatible.
-// We no longer need this check for the chunker, since it can
-// handle any type of key in the composite chunker.
-// But the migration still needs to verify this, because of the
-// delta map feature, which requires binary comparable keys.
-func (t *TableInfo) isMemoryComparable() error {
-	for _, tp := range t.keyDatums {
-		if tp == unknownType {
-			return ErrUnsupportedPKType
-		}
-	}
-	return nil
-}
-
 // PrimaryKeyValues helps extract the PRIMARY KEY from a row image.
 // It uses our knowledge of the ordinal position of columns to find the
 // position of primary key columns (there might be more than one).
@@ -89,12 +75,6 @@ func (t *TableInfo) SetInfo(ctx context.Context) error {
 		return err
 	}
 	if err := t.setPrimaryKey(ctx); err != nil {
-		return err
-	}
-	// Check primary key is memory comparable.
-	// In future this may become optional, since it's not a chunker requirement,
-	// but a requirement for the deltaMap.
-	if err := t.checkPrimaryKeyIsMemoryComparable(ctx); err != nil {
 		return err
 	}
 	return t.setMinMax(ctx)
@@ -179,16 +159,18 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 	return nil
 }
 
-func (t *TableInfo) checkPrimaryKeyIsMemoryComparable(ctx context.Context) error {
-	for _, col := range t.KeyColumns {
-		var colType string
-		query := "SELECT column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
-		err := t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&colType)
-		if err != nil {
-			return err
-		}
-		if mySQLTypeToDatumTp(colType) == unknownType {
-			return fmt.Errorf("primary key contains %s which is not memory comparable", colType)
+// PrimaryKeyIsMemoryComparable checks that the PRIMARY KEY type is compatible.
+// We no longer need this check for the chunker, since it can
+// handle any type of key in the composite chunker.
+// But the migration still needs to verify this, because of the
+// delta map feature, which requires binary comparable keys.
+func (t *TableInfo) PrimaryKeyIsMemoryComparable() error {
+	if len(t.KeyColumns) == 0 || len(t.keyDatums) == 0 {
+		return errors.New("please call setInfo() first")
+	}
+	for _, tp := range t.keyDatums {
+		if tp == unknownType {
+			return ErrUnsupportedPKType
 		}
 	}
 	return nil

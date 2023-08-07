@@ -32,13 +32,13 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 	}
 	chunker.setDynamicChunking(false)
 
-	assert.NoError(t, t1.isMemoryComparable())
+	assert.NoError(t, t1.PrimaryKeyIsMemoryComparable())
 	t1.keyColumnsMySQLTp[0] = "varchar"
 	t1.keyDatums[0] = unknownType
-	assert.Error(t, t1.isMemoryComparable())
+	assert.Error(t, t1.PrimaryKeyIsMemoryComparable())
 	t1.keyColumnsMySQLTp[0] = "bigint"
 	t1.keyDatums[0] = signedType
-	assert.NoError(t, t1.isMemoryComparable())
+	assert.NoError(t, t1.PrimaryKeyIsMemoryComparable())
 
 	assert.Equal(t, "`test`.`t1`", t1.QuotedName)
 
@@ -83,7 +83,7 @@ func TestLowWatermark(t *testing.T) {
 	t1.KeyIsAutoInc = true
 	t1.Columns = []string{"id", "name"}
 
-	assert.NoError(t, t1.isMemoryComparable())
+	assert.NoError(t, t1.PrimaryKeyIsMemoryComparable())
 	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: ChunkerDefaultTarget,
