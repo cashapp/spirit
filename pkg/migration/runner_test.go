@@ -1134,7 +1134,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// The composite chunker does not support keyAboveHighWatermark
 	// so it will show up as a delta.
-	sleep() // plenty
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	// Second chunk
@@ -1147,12 +1147,12 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
 	runSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	runSQL(t, `delete from e2et1 where id1 = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Some data is inserted later, even though the last chunk is done.
@@ -1260,7 +1260,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Give it a chance, since we need to read from the binary log to populate this
 	// Even though we expect nothing.
-	sleep() // plenty
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
 	// second chunk is between min and max value.
@@ -1274,12 +1274,12 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// because it is within chunk size range of the second chunk.
 	runSQL(t, `insert into e2et2 (id) values (5)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	runSQL(t, `delete from e2et2 where id = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	// third (and last) chunk is open ended,
@@ -1782,11 +1782,11 @@ func TestE2ERogueValues(t *testing.T) {
 	// This should be picked up by the binlog subscription
 	runSQL(t, `insert into e2erogue values (5, 2)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	runSQL(t, "delete from e2erogue where `datetime` like '819%'")
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Now that copy rows is done, we flush the changeset until trivial.
