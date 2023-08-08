@@ -17,8 +17,9 @@ const (
 // rdsAddr matches Amazon RDS hostnames with optional :port suffix.
 // It's used to automatically load the Amazon RDS CA and enable TLS
 var (
-	rdsAddr = regexp.MustCompile(`rds\.amazonaws\.com(:\d+)?$`)
-	once    sync.Once
+	rdsAddr   = regexp.MustCompile(`rds\.amazonaws\.com(:\d+)?$`)
+	TLSConfig *tls.Config
+	once      sync.Once
 	// rds-ca-2019-root.pem
 	rds2019rootCA = []byte(`-----BEGIN CERTIFICATE-----
 MIIEBjCCAu6gAwIBAgIJAMc0ZzaSUK51MA0GCSqGSIb3DQEBCwUAMIGPMQswCQYD
@@ -46,8 +47,19 @@ zPW4CXXvhLmE02TA9/HeCw3KEHIwicNuEfw=
 -----END CERTIFICATE-----`)
 )
 
-func isRDSHost(host string) bool {
+func IsRDSHost(host string) bool {
 	return rdsAddr.MatchString(host)
+}
+
+func InitRDSTLS() error {
+	var err error
+	once.Do(func() {
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(rds2019rootCA)
+		TLSConfig = &tls.Config{RootCAs: caCertPool}
+		err = mysql.RegisterTLSConfig(rdsTLSConfigName, TLSConfig)
+	})
+	return err
 }
 
 // newDSN returns a new DSN to be used to connect to MySQL.
@@ -58,14 +70,8 @@ func newDSN(dsn string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if isRDSHost(cfg.Addr) {
-		once.Do(func() {
-			caCertPool := x509.NewCertPool()
-			caCertPool.AppendCertsFromPEM(rds2019rootCA)
-			tlsConfig := &tls.Config{RootCAs: caCertPool}
-			err = mysql.RegisterTLSConfig(rdsTLSConfigName, tlsConfig)
-		})
-		if err != nil {
+	if IsRDSHost(cfg.Addr) {
+		if err = InitRDSTLS(); err != nil {
 			return "", err
 		}
 		dsn += "?tls=" + rdsTLSConfigName

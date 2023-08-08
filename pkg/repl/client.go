@@ -227,6 +227,13 @@ func (c *Client) Run() (err error) {
 	cfg.Logger = NewLogWrapper(c.logger) // wrapper to filter the noise.
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
 	cfg.Dump.ExecutionPath = "" // skip dump
+	if dbconn.IsRDSHost(cfg.Addr) {
+		if err = dbconn.InitRDSTLS(); err != nil {
+			return err // could not init TLS config.
+		}
+		// use TLS config for RDS.
+		cfg.TLSConfig = dbconn.TLSConfig
+	}
 	c.canal, err = canal.NewCanal(cfg)
 	if err != nil {
 		return err
