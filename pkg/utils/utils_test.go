@@ -46,3 +46,9 @@ func TestHashAndUnhashKey(t *testing.T) {
 	unhashed = UnhashKey(hashed)
 	assert.Equal(t, "'1234'", unhashed)
 }
+
+func TestStripPort(t *testing.T) {
+	assert.Equal(t, "hostname.com", StripPort("hostname.com"))
+	assert.Equal(t, "hostname.com", StripPort("hostname.com:3306"))
+	assert.Equal(t, "127.0.0.1", StripPort("127.0.0.1:3306"))
+}

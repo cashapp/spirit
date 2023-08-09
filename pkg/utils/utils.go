@@ -79,3 +79,10 @@ func IsMySQL8(db *sql.DB) bool {
 	}
 	return version == "8"
 }
+
+func StripPort(hostname string) string {
+	if strings.Contains(hostname, ":") {
+		return strings.Split(hostname, ":")[0]
+	}
+	return hostname
+}
