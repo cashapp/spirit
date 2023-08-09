@@ -19,10 +19,6 @@ func runSQL(t *testing.T, stmt string) {
 	assert.NoError(t, err)
 }
 
-func sleep() {
-	time.Sleep(100 * time.Millisecond)
-}
-
 func TestE2ENullAlterEmpty(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
