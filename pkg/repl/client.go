@@ -385,12 +385,12 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 	// Otherwise, flush the changes.
 	var stmts []string
 	var buffer []string
-	prevKeyOperation := changesToFlush[0].isDelete // for initialization
+	prevKey := changesToFlush[0] // for initialization
 	for _, change := range changesToFlush {
 		// We are changing from DELETE to REPLACE
 		// or vice versa, *or* the buffer is getting very large.
-		if change.isDelete != prevKeyOperation || len(buffer) > DefaultBatchSize {
-			if prevKeyOperation {
+		if change.isDelete != prevKey.isDelete || len(buffer) > DefaultBatchSize {
+			if prevKey.isDelete {
 				stmts = append(stmts, c.createDeleteStmt(buffer))
 			} else {
 				stmts = append(stmts, c.createReplaceStmt(buffer))
@@ -398,10 +398,10 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 			buffer = nil // reset
 		}
 		buffer = append(buffer, change.key)
-		prevKeyOperation = change.isDelete
+		prevKey.isDelete = change.isDelete
 	}
 	// Flush the buffer once more.
-	if prevKeyOperation {
+	if prevKey.isDelete {
 		stmts = append(stmts, c.createDeleteStmt(buffer))
 	} else {
 		stmts = append(stmts, c.createReplaceStmt(buffer))
