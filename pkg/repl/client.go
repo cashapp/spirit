@@ -233,6 +233,7 @@ func (c *Client) Run() (err error) {
 		}
 		// use TLS config for RDS.
 		cfg.TLSConfig = dbconn.TLSConfig
+		cfg.TLSConfig.ServerName = utils.StripPort(cfg.Addr)
 	}
 	c.canal, err = canal.NewCanal(cfg)
 	if err != nil {
