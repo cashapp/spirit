@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/squareup/spirit/pkg/utils"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -153,6 +154,41 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	migration.ReplicaDSN = replicaDSN
 	migration.ReplicaMaxLag = 10 * time.Second
 	migration.SkipPreRunChecks = true
+
+	err = migration.Run()
+	assert.NoError(t, err)
+}
+
+// TestRenameInMySQL80 tests that even though renames are not supported,
+// if the version is 8.0 it will apply the instant operation before
+// the rename check applies. It's only when it needs to actually migrate
+// that it won't allow renames.
+func TestRenameInMySQL80(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+	if !utils.IsMySQL8(db) {
+		t.Skip("rename tests only runs on MySQL 8.0")
+	}
+	runSQL(t, `DROP TABLE IF EXISTS renamet1, _renamet1_new`)
+	table := `CREATE TABLE renamet1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	runSQL(t, table)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 16
+	migration.Checksum = true
+	migration.Table = "t1"
+	migration.Alter = "CHANGE name nameNew varchar(255) not null"
 
 	err = migration.Run()
 	assert.NoError(t, err)

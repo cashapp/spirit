@@ -9,7 +9,6 @@ It works very similar to gh-ost except:
 
 The goal of spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
 - You use read-replicas to serve traffic
-- You have tables with `VARCHAR` primary keys
 - You require support for older versions of MySQL
 
 If this is the case, `gh-ost` remains a fine choice.
@@ -30,9 +29,7 @@ Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes 
 
 As spirit is copying rows, it keeps track of the highest key-value that either has been copied, or could be in the process of being copied. This is called the "high watermark". As rows are discovered from the binary log, they can be discarded if the key is above the high watermark. This is because once the copier reaches this point, it is guaranteed it will copy the latest version of the row.
 
-In practice, this optimization works really well when your table has an `auto_increment` `PRIMARY KEY` and most of the inserts or modifications are at the end of the table.
-
-**Note:** Spirit does not support `VARCHAR` primary keys, so it does not need to worry about collation issues when comparing if a key is above another key.
+For now, this optimization _only applies_ well when your table has an `auto_increment` `PRIMARY KEY`. It is a lot more complicated with composite keys, or keys that could support collations (i.e. `VARCHAR`).
 
 ### Change Row Map
 
@@ -40,7 +37,7 @@ As spirit discovers rows that have been changed via the binary log, it stores th
 
 In some workloads this can result in significant performance improvements, because updates from the binary log are merged and de-duplicated. i.e. if a row is updated 10 times, it will only be copied once.
 
-**Note:** Spirit does not support `VARCHAR` primary keys, so it does not need to worry about collations where 'a' != 'A' in the change row map.
+**Note:** This optimization only applies if the entire `PRIMARY KEY` is memory comparable. If you use a `VARCHAR` primary key, it will use a slower queue-based approach.
 
 ### Multi-threaded copy
 
@@ -83,15 +80,13 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 ## Unsupported Features
 
 - **`RENAME` column**. Spirit only supports `RENAME` if it applies via the `INSTANT` DDL algorithm (MySQL 8.0+). This might mean that you need to break up some schema changes to perform the `RENAME` operations first, and then the non-`INSTANT` DDL changes after. From a code perspective: rename is tricky to add support for, because the copier can no longer take a simple intersection of columns between the old-and-new table. If you consider more complex DDLs that include a `RENAME` and an `ADD COLUMN` (i.e. `RENAME COLUMN c1 TO n1, ADD COLUMN c1 varchar(100)`) it's easy to get these wrong, leading to data corruption. This is why we do not intend to support this feature.
-- **`VARCHAR` PRIMARY KEY**. Spirit does not support `VARCHAR` primary keys. This is because it has optimizations that do not work safely with collations. If you want to use a `uuid` primary key, make sure you define it as `VARBINARY` instead. From a code perspective: the "ignore key above watermark" optimization is easy to disable, but the "change row map" is not. If Spirit was to support `VARCHAR` primary keys, it would require special handling of the binary log changes to apply in the correct order, making it a non-trivial change.
 - **`ALTER` PRIMARY KEY**. Spirit requires the table to have a primary key, and the primary key can not be altered by the schema change. There might be some flexibility to support UNIQUE keys and some modifications of the primary key in future, but it is not a priority for now.
 
 ## Risks and Limitations
 
-Writing a new data migration tool is scary, since bugs have real consequences (data loss). These are the main problems we anticipate:
+Writing a new data migration tool is scary, since bugs have real consequences (data loss).
 
-1. Spirit does not support as many different table types as gh-ost. Currently, primary keys can be int/bigint \[unsigned\] or varbinary. Composite primary keys are still supported, but there are currently no plans to support `VARCHAR` primary keys.
-2. We have tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
+We have also tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
 
 ## Development
 
