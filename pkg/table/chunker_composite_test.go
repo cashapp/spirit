@@ -404,7 +404,10 @@ func TestSetKey(t *testing.T) {
 		status ENUM('PENDING', 'ACTIVE', 'ARCHIVED') NOT NULL DEFAULT 'PENDING',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-		INDEX (status)
+		INDEX s (status),
+		INDEX u (updated_at),
+		INDEX su (status, updated_at),
+		INDEX ui (updated_at)
 	)`)
 	// 11K records.
 	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM dual`)
@@ -424,7 +427,7 @@ func TestSetKey(t *testing.T) {
 		ChunkerTarget: 100 * time.Millisecond,
 		logger:        logrus.New(),
 	}
-	err = chunker.SetKey("status", []string{"status", "id"}, "status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY")
+	err = chunker.SetKey("s", "status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY")
 	assert.NoError(t, err)
 	assert.NoError(t, chunker.Open())
 
@@ -441,7 +444,7 @@ func TestSetKey(t *testing.T) {
 		ChunkerTarget: 100 * time.Millisecond,
 		logger:        logrus.New(),
 	}
-	err = chunker.SetKey("status", []string{"status", "id"}, "status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY")
+	err = chunker.SetKey("s", "status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY")
 	assert.NoError(t, err)
 	assert.NoError(t, chunker.Open())
 	chunk, err = chunker.Next()
@@ -466,4 +469,30 @@ func TestSetKey(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTableIsRead)
 
 	assert.NoError(t, chunker.Close())
+
+	// Test other index types.
+	for _, index := range []string{"u", "su", "ui"} {
+		chunker = &chunkerComposite{
+			Ti:            t1,
+			ChunkerTarget: 100 * time.Millisecond,
+			logger:        logrus.New(),
+		}
+		err = chunker.SetKey(index, "updated_at < NOW() - INTERVAL 1 DAY")
+		assert.NoError(t, err)
+		assert.NoError(t, chunker.Open())
+		chunk, err = chunker.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, "1=1 AND (updated_at < NOW() - INTERVAL 1 DAY)", chunk.String())
+
+		// check the key parts are correct.
+		switch index {
+		case "u":
+			assert.Equal(t, []string{"updated_at", "id"}, chunker.chunkKeys)
+		case "su":
+			assert.Equal(t, []string{"status", "updated_at", "id"}, chunker.chunkKeys)
+		case "ui":
+			assert.Equal(t, []string{"updated_at", "id"}, chunker.chunkKeys)
+		}
+		assert.NoError(t, chunker.Close())
+	}
 }

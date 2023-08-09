@@ -1,4 +1,4 @@
-name: MySQL 8.0.26 (Aurora version)
+name: MySQL 8.0.28 (Aurora version)
 on:
   push:
     branches: [ main ]
@@ -14,7 +14,7 @@ jobs:
         run: ./bin/hermit env -r >> $GITHUB_ENV
 
       - name: Deploy MySQL
-        run: scripts/dbdeployer_install_8026.sh
+        run: scripts/dbdeployer_install_8028.sh
 
       - name: Test
-        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8026)/test" go test -v ./...
+        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8028)/test" go test -v ./...

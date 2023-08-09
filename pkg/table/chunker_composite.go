@@ -14,14 +14,14 @@ import (
 
 type chunkerComposite struct {
 	sync.Mutex
-	Ti                   *TableInfo
-	chunkSize            uint64
-	chunkPtrs            []Datum  // a list of Ptrs for each of the keys.
-	chunkKeys            []string // all the keys to chunk on (usually all the col names of the PK)
-	keyName              string   // the name of the key we are chunking on
-	additionalConditions string   // any additional WHERE conditions.
-	finalChunkSent       bool
-	isOpen               bool
+	Ti             *TableInfo
+	chunkSize      uint64
+	chunkPtrs      []Datum  // a list of Ptrs for each of the keys.
+	chunkKeys      []string // all the keys to chunk on (usually all the col names of the PK)
+	keyName        string   // the name of the key we are chunking on
+	where          string   // any additional WHERE conditions.
+	finalChunkSent bool
+	isOpen         bool
 
 	// Dynamic Chunking is time based instead of row based.
 	// It uses *time* to determine the target chunk size.
@@ -38,13 +38,13 @@ type chunkerComposite struct {
 var _ Chunker = &chunkerComposite{}
 
 func (t *chunkerComposite) additionalConditionsSQL(whereSent bool) string {
-	if t.additionalConditions == "" {
+	if t.where == "" {
 		return ""
 	}
 	if whereSent {
-		return fmt.Sprintf(" AND (%s)", t.additionalConditions)
+		return fmt.Sprintf(" AND (%s)", t.where)
 	}
-	return " WHERE " + t.additionalConditions
+	return " WHERE " + t.where
 }
 
 // Next in the composite chunker uses a query (aka prefetching) to determine the
@@ -96,7 +96,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 			return &Chunk{
 				ChunkSize:            t.chunkSize,
 				Key:                  t.chunkKeys,
-				AdditionalConditions: t.additionalConditions,
+				AdditionalConditions: t.where,
 			}, nil
 		}
 		// Else, it's just the last chunk.
@@ -104,7 +104,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 			ChunkSize:            t.chunkSize,
 			Key:                  t.chunkKeys,
 			LowerBound:           &Boundary{t.chunkPtrs, true},
-			AdditionalConditions: t.additionalConditions,
+			AdditionalConditions: t.where,
 		}, nil
 	}
 	// Else, there were rows found.
@@ -119,7 +119,7 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 		Key:                  t.chunkKeys,
 		LowerBound:           lowerBoundary,
 		UpperBound:           &Boundary{upperDatums, false},
-		AdditionalConditions: t.additionalConditions,
+		AdditionalConditions: t.where,
 	}, nil
 }
 
@@ -390,12 +390,29 @@ func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 	return false
 }
 
-func (t *chunkerComposite) SetKey(keyName string, keyCols []string, additionalConditions string) error {
+// SetKey allows you to chunk on a secondary index, and not the primary key.
+// This is useful outside of the context of spirit, when the table package
+// is used directly. It is only supported by the composite chunker,
+// since the optimistic chunker is designed around auto_inc PKs.
+func (t *chunkerComposite) SetKey(keyName string, where string) error {
 	if t.isOpen {
 		return errors.New("cannot set key after table is open")
 	}
-	t.chunkKeys = keyCols // TODO: merge the key Cols and PRIMARY KEY cols and remove keyCols from interface!
+	keyCols, err := t.Ti.DescIndex(keyName)
+	if err != nil {
+		return err // index is not valid.
+	}
+	// There is a chance that if the index is something like "status" then it is low cardinality.
+	// This is not ideal for chunking, and since we are allowed to assume InnoDB, each
+	// secondary index actually includes the PRIMARY KEY columns in it.
+	// So we can merge in the PK columns to the keyCols.
+	// For simplicity, we only do this when the columns *don't* overlap.
+	// This is because ranging on the same column twice will create logic errors.
+	if !keysOverlap(keyCols, t.Ti.KeyColumns) {
+		keyCols = append(keyCols, t.Ti.KeyColumns...)
+	}
+	t.chunkKeys = keyCols
 	t.keyName = keyName
-	t.additionalConditions = additionalConditions
+	t.where = where
 	return nil
 }

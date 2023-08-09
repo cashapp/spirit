@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -254,4 +255,73 @@ func TestReplClientOpts(t *testing.T) {
 
 	// The binlog position should have changed.
 	assert.NotEqual(t, startingPos, client.GetBinlogApplyPosition())
+}
+
+func TestReplClientQueue(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	runSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
+	runSQL(t, "CREATE TABLE replqueuet1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE replqueuet2 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _replqueuet1_chkpnt (a int)") // just used to advance binlog
+
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM dual")
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+
+	t1 := table.NewTableInfo(db, "test", "replqueuet1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replqueuet2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+
+	cfg, err := mysql2.ParseDSN(dsn())
+	assert.NoError(t, err)
+
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
+	assert.NoError(t, client.Run())
+	defer client.Close()
+
+	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	// Attach copier's keyabovewatermark to the repl client
+	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark
+
+	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
+
+	// Delete from the table, because there is no keyabove watermark
+	// optimization these deletes will be queued immediately.
+	runSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
+	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.Equal(t, client.GetDeltaLen(), 1000)
+
+	// Read from the copier
+	chk, err := copier.Next4Test()
+	assert.NoError(t, err)
+	prevUpperBound := chk.UpperBound.Value[0].String()
+	assert.Equal(t, fmt.Sprintf("`a` < %s", prevUpperBound), chk.String())
+	// read again
+	chk, err = copier.Next4Test()
+	assert.NoError(t, err)
+	assert.Equal(t, fmt.Sprintf("`a` >= %s AND `a` < %s", prevUpperBound, chk.UpperBound.Value[0].String()), chk.String())
+
+	// Accumulate more deltas
+	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 LIMIT 501")
+	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.Equal(t, 1501, client.GetDeltaLen())
+
+	// Flush the changeset
+	assert.NoError(t, client.Flush(context.TODO()))
+	assert.Equal(t, 0, client.GetDeltaLen())
+
+	// Accumulate more deltas
+	runSQL(t, "DELETE FROM replqueuet1 LIMIT 100")
+	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.Equal(t, 100, client.GetDeltaLen())
+
+	// Final flush
+	assert.NoError(t, client.Flush(context.TODO()))
+	assert.Equal(t, client.GetDeltaLen(), 0)
 }

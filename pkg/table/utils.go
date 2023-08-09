@@ -140,3 +140,14 @@ func expandRowConstructorComparison(cols []string, operator Operator, vals []Dat
 	}
 	return "(" + strings.Join(conds, "\n OR ") + ")"
 }
+
+func keysOverlap(list1, list2 []string) bool {
+	for _, v := range list1 {
+		for _, v2 := range list2 {
+			if v == v2 {
+				return true
+			}
+		}
+	}
+	return false
+}

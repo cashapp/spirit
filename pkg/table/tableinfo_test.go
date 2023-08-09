@@ -79,23 +79,23 @@ func runSQL(t *testing.T, stmt string) {
 }
 
 func TestDiscovery(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS discoveryt1`)
+	table := `CREATE TABLE discoveryt1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
-	runSQL(t, `insert into t1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	runSQL(t, `insert into discoveryt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo(db, "test", "t1")
+	t1 := NewTableInfo(db, "test", "discoveryt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
-	assert.Equal(t, "t1", t1.TableName)
+	assert.Equal(t, "discoveryt1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
 	assert.Equal(t, "id", t1.KeyColumns[0])
 
@@ -107,11 +107,6 @@ func TestDiscovery(t *testing.T) {
 	assert.Equal(t, "1", t1.minValue.String())
 	assert.Equal(t, "3", t1.maxValue.String())
 
-	//runSQL(t, `insert into t1 values (4, 'a'), (5, 'b'), (6, 'c')`)
-	//assert.NoError(t, t1.UpdateTableStatistics(db))
-	//assert.Equal(t, int64(1), t1.minValue)
-	//assert.Equal(t, int64(6), t1.maxValue)
-
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"int"}, t1.keyColumnsMySQLTp)
 	assert.True(t, t1.KeyIsAutoInc)
@@ -119,33 +114,28 @@ func TestDiscovery(t *testing.T) {
 }
 
 func TestDiscoveryUInt(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS discoveryuintt1`)
+	table := `CREATE TABLE discoveryuintt1 (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	runSQL(t, table)
-	runSQL(t, `insert into t1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	runSQL(t, `insert into discoveryuintt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo(db, "test", "t1")
+	t1 := NewTableInfo(db, "test", "discoveryuintt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
-	assert.Equal(t, "t1", t1.TableName)
+	assert.Equal(t, "discoveryuintt1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
 	assert.Equal(t, "id", t1.KeyColumns[0])
 
 	assert.Equal(t, "1", t1.minValue.String())
 	assert.Equal(t, "3", t1.maxValue.String())
-
-	//runSQL(t, `insert into t1 values (4, 'a'), (5, 'b'), (6, 'c')`)
-	//assert.NoError(t, t1.UpdateTableStatistics(db))
-	//assert.Equal(t, uint64(1), t1.minValue)
-	//assert.Equal(t, uint64(6), t1.maxValue)
 
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"int unsigned"}, t1.keyColumnsMySQLTp)
@@ -154,20 +144,20 @@ func TestDiscoveryUInt(t *testing.T) {
 }
 
 func TestDiscoveryNoKeyColumnsOrNoTable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS discoverynokeyst1`)
+	table := `CREATE TABLE discoverynokeyst1 (
 		id int(11) NOT NULL,
 		name varchar(255) NOT NULL
 	)`
 	runSQL(t, table)
-	runSQL(t, `insert into t1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	runSQL(t, `insert into discoverynokeyst1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	defer db.Close()
 
-	t1 := NewTableInfo(db, "test", "t1")
-	assert.Error(t, t1.SetInfo(context.TODO()))
+	t1 := NewTableInfo(db, "test", "discoverynokeyst1")
+	assert.ErrorContains(t, t1.SetInfo(context.TODO()), "no primary key found")
 
 	t2 := NewTableInfo(db, "test", "t2fdsfds")
 	assert.ErrorContains(t, t2.SetInfo(context.TODO()), "table test.t2fdsfds does not exist")
@@ -298,23 +288,23 @@ func TestKeyColumnsValuesExtraction(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	runSQL(t, `DROP TABLE IF EXISTS t1`)
-	table := `CREATE TABLE t1 (
+	runSQL(t, `DROP TABLE IF EXISTS colvaluest1`)
+	table := `CREATE TABLE colvaluest1 (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(115),
 		age int(11) NOT NULL,
 		PRIMARY KEY (id, age)
 	)`
 	runSQL(t, table)
-	runSQL(t, `insert into t1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
+	runSQL(t, `insert into colvaluest1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
 
-	t1 := NewTableInfo(db, "test", "t1")
+	t1 := NewTableInfo(db, "test", "colvaluest1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 
 	var id, age int
 	var name string
 
-	err = db.QueryRow("SELECT * FROM `test`.`t1` ORDER BY id DESC LIMIT 1").Scan(&id, &name, &age)
+	err = db.QueryRow("SELECT * FROM `test`.`colvaluest1` ORDER BY id DESC LIMIT 1").Scan(&id, &name, &age)
 	assert.NoError(t, err)
 
 	row := []interface{}{id, name, age}

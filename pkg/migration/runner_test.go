@@ -41,8 +41,8 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		Table:    "nonbinarycompatt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                       // everything is specified.
-	assert.Error(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
+	assert.NoError(t, err)                         // everything is specified.
+	assert.NoError(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
 	assert.NoError(t, m.Close())
 }
 
@@ -1134,7 +1134,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// The composite chunker does not support keyAboveHighWatermark
 	// so it will show up as a delta.
-	sleep() // plenty
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	// Second chunk
@@ -1147,12 +1147,12 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
 	runSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	runSQL(t, `delete from e2et1 where id1 = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Some data is inserted later, even though the last chunk is done.
@@ -1260,7 +1260,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Give it a chance, since we need to read from the binary log to populate this
 	// Even though we expect nothing.
-	sleep() // plenty
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
 	// second chunk is between min and max value.
@@ -1274,12 +1274,12 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// because it is within chunk size range of the second chunk.
 	runSQL(t, `insert into e2et2 (id) values (5)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	runSQL(t, `delete from e2et2 where id = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	// third (and last) chunk is open ended,
@@ -1782,11 +1782,11 @@ func TestE2ERogueValues(t *testing.T) {
 	// This should be picked up by the binlog subscription
 	runSQL(t, `insert into e2erogue values (5, 2)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	runSQL(t, "delete from e2erogue where `datetime` like '819%'")
-	sleep() // wait for binlog
+	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Now that copy rows is done, we flush the changeset until trivial.
@@ -1997,4 +1997,35 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// correctly finds the high watermark.
 	err = m.checksum(ctx)
 	assert.NoError(t, err)
+}
+
+func TestVarcharE2E(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS varchart1`)
+	table := `CREATE TABLE varchart1 (
+				pk varchar(255) NOT NULL,
+				b varchar(255) NOT NULL,
+				PRIMARY KEY (pk)
+			)`
+	runSQL(t, table)
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM dual ")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "varchart1",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }

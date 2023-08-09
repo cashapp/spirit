@@ -119,6 +119,28 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 	return nil
 }
 
+// DescIndex describes the columns in an index.
+func (t *TableInfo) DescIndex(keyName string) ([]string, error) {
+	cols := []string{}
+	rows, err := t.db.Query("SELECT column_name FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND index_name=? ORDER BY seq_in_index",
+		t.SchemaName,
+		t.TableName,
+		keyName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col string
+		if err := rows.Scan(&col); err != nil {
+			return nil, err
+		}
+		cols = append(cols, col)
+	}
+	return cols, nil
+}
+
 // setPrimaryKey sets the primary key and also the primary key type.
 // A primary key can contain multiple columns.
 func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
