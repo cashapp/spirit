@@ -46,5 +46,3 @@ To deal with large gaps, the optimistic chunker also supports a special "prefetc
 The following are known issues:
 
 * Neither of the chunkers support chunking on anything other than the `PRIMARY KEY`. For our purposes, this is usually acceptable but we may have to revisit this in the future.
-* Not specifically a limitation of chunking, but some optimizations in spirit require that the `PRIMARY KEY` not have collations. Thus, we explicitly disallow `VARCHAR` primary keys in the chunker. The optimizations are very useful, which makes this a complex problem to fix. But it also appears to be the most common incompatibility issue with spirit, so we may have to reconsider this at some point.
-

@@ -35,6 +35,10 @@ const (
 	flushThreads     = 16
 )
 
+type queuedChange struct {
+	key      string
+	isDelete bool
+}
 type Client struct {
 	canal.DummyEventHandler
 	sync.Mutex
@@ -48,6 +52,8 @@ type Client struct {
 	binlogPosInMemory    mysql.Position  // available in the binlog binlogChangeset
 	lastLogFileName      string          // last log file name we've seen in a rotation event
 
+	queuedChanges []queuedChange // used when disableDeltaMap is true
+
 	canal *canal.Canal
 
 	changesetRowsCount      int64
@@ -60,6 +66,7 @@ type Client struct {
 	newTable *table.TableInfo
 
 	disableKeyAboveWatermarkOptimization bool
+	disableDeltaMap                      bool // use queue instead
 
 	TableChangeNotificationCallback func()
 	KeyAboveCopierCallback          func(interface{}) bool
@@ -193,6 +200,9 @@ func (c *Client) GetBinlogApplyPosition() mysql.Position {
 func (c *Client) GetDeltaLen() int {
 	c.Lock()
 	defer c.Unlock()
+	if c.disableDeltaMap {
+		return len(c.queuedChanges)
+	}
 	return len(c.binlogChangeset) + int(c.binlogChangesetDelta)
 }
 
@@ -220,6 +230,12 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 }
 
 func (c *Client) Run() (err error) {
+	// We have to disable the delta map
+	// if the primary key is *not* memory comparable.
+	// We use a FIFO queue instead.
+	if err := c.table.PrimaryKeyIsMemoryComparable(); err != nil {
+		c.disableDeltaMap = true
+	}
 	cfg := canal.NewDefaultConfig()
 	cfg.Addr = c.host
 	cfg.User = c.username
@@ -338,9 +354,79 @@ func (c *Client) FlushUnderLock(ctx context.Context, lock *dbconn.TableLock) err
 	return c.flush(ctx, true, lock)
 }
 
-// flush is the internal version of Flush() and performs one flush loop.
-// it can be either a regular flush or under a lock.
 func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
+	if c.disableDeltaMap {
+		return c.flushQueue(ctx, underLock, lock)
+	}
+	return c.flushMap(ctx, underLock, lock)
+}
+
+// flushQueue flushes the FIFO queue that is used when the PRIMARY KEY
+// is not memory comparable. It needs to be single threaded,
+// so it might not scale as well as the Delta Map, but offering
+// it at least helps improve compatibility.
+//
+// The only optimization we do is we try to MERGE statements together, such
+// that if there are operations: REPLACE<1>, REPLACE<2>, DELETE<3>, REPLACE<4>
+// we merge it to REPLACE<1,2>, DELETE<3>, REPLACE<4>.
+func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
+	c.Lock()
+	changesToFlush := c.queuedChanges
+	c.queuedChanges = nil // reset
+	posOfFlush := c.binlogPosInMemory
+	c.Unlock()
+
+	// Early return if there is nothing to flush.
+	if len(changesToFlush) == 0 {
+		c.SetPos(posOfFlush)
+		return nil
+	}
+
+	// Otherwise, flush the changes.
+	var stmts []string
+	var buffer []string
+	prevKey := changesToFlush[0] // for initialization
+	for _, change := range changesToFlush {
+		// We are changing from DELETE to REPLACE
+		// or vice versa, *or* the buffer is getting very large.
+		if change.isDelete != prevKey.isDelete || len(buffer) > DefaultBatchSize {
+			if prevKey.isDelete {
+				stmts = append(stmts, c.createDeleteStmt(buffer))
+			} else {
+				stmts = append(stmts, c.createReplaceStmt(buffer))
+			}
+			buffer = nil // reset
+		}
+		buffer = append(buffer, change.key)
+		prevKey.isDelete = change.isDelete
+	}
+	// Flush the buffer once more.
+	if prevKey.isDelete {
+		stmts = append(stmts, c.createDeleteStmt(buffer))
+	} else {
+		stmts = append(stmts, c.createReplaceStmt(buffer))
+	}
+	if underLock {
+		// Execute under lock means it is a final flush
+		// We need to use the lock connection to do this
+		// so there is no parallelism.
+		if err := lock.ExecUnderLock(ctx, stmts); err != nil {
+			return err
+		}
+	} else {
+		// Execute the statements in a transaction.
+		// They still need to be single threaded.
+		if _, err := dbconn.RetryableTransaction(ctx, c.db, true, dbconn.NewDBConfig(), stmts...); err != nil {
+			return err
+		}
+	}
+	c.SetPos(posOfFlush)
+	return nil
+}
+
+// flushMap is the internal version of Flush() for the delta map.
+// it is used by default unless the PRIMARY KEY is non memory comparable.
+func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
 	c.Lock()
 	setToFlush := c.binlogChangeset
 	posOfFlush := c.binlogPosInMemory         // copy the value, not the pointer
@@ -380,12 +466,13 @@ func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLo
 	stmts = append(stmts, c.createDeleteStmt(deleteKeys))
 	stmts = append(stmts, c.createReplaceStmt(replaceKeys))
 
-	var err error
 	if underLock {
 		// Execute under lock means it is a final flush
 		// We need to use the lock connection to do this
 		// so there is no parallelism.
-		err = lock.ExecUnderLock(ctx, stmts)
+		if err := lock.ExecUnderLock(ctx, stmts); err != nil {
+			return err
+		}
 	} else {
 		// Execute the statements in parallel up to 16 threads.
 		// They should not conflict and order should not matter
@@ -401,12 +488,14 @@ func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLo
 			})
 		}
 		// wait for all work to finish
-		err = g.Wait()
+		if err := g.Wait(); err != nil {
+			return err
+		}
 	}
 	// Update the synced binlog position to the posOfFlush
 	// uses a mutex.
 	c.SetPos(posOfFlush)
-	return err
+	return nil
 }
 
 func (c *Client) createDeleteStmt(deleteKeys []string) string {
@@ -450,11 +539,7 @@ func (c *Client) Flush(ctx context.Context) error {
 		if err := c.BlockWait(ctx); err != nil {
 			return err
 		}
-		c.Lock()
-		changeSetLen := len(c.binlogChangeset)
-		c.Unlock()
-
-		if changeSetLen < binlogTrivialThreshold {
+		if c.GetDeltaLen() < binlogTrivialThreshold {
 			break
 		}
 	}
@@ -543,5 +628,9 @@ func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
 	c.Lock()
 	defer c.Unlock()
 
+	if c.disableDeltaMap {
+		c.queuedChanges = append(c.queuedChanges, queuedChange{key: utils.HashKey(key), isDelete: deleted})
+		return
+	}
 	c.binlogChangeset[utils.HashKey(key)] = deleted
 }

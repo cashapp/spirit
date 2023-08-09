@@ -41,8 +41,8 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		Table:    "nonbinarycompatt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                       // everything is specified.
-	assert.Error(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
+	assert.NoError(t, err)                         // everything is specified.
+	assert.NoError(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
 	assert.NoError(t, m.Close())
 }
 
@@ -1997,4 +1997,35 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// correctly finds the high watermark.
 	err = m.checksum(ctx)
 	assert.NoError(t, err)
+}
+
+func TestVarcharE2E(t *testing.T) {
+	runSQL(t, `DROP TABLE IF EXISTS varchart1`)
+	table := `CREATE TABLE varchart1 (
+				pk varchar(255) NOT NULL,
+				b varchar(255) NOT NULL,
+				PRIMARY KEY (pk)
+			)`
+	runSQL(t, table)
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM dual ")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "varchart1",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }
