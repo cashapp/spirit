@@ -9,10 +9,11 @@ import (
 // Chunk is returned by chunk.Next()
 // Applications can use it to iterate over the rows.
 type Chunk struct {
-	Key        []string
-	ChunkSize  uint64
-	LowerBound *Boundary
-	UpperBound *Boundary
+	Key                  []string
+	ChunkSize            uint64
+	LowerBound           *Boundary
+	UpperBound           *Boundary
+	AdditionalConditions string
 }
 
 // Boundary is used by chunk for lower or upper boundary
@@ -53,6 +54,9 @@ func (c *Chunk) String() string {
 	}
 	if c.LowerBound == nil && c.UpperBound == nil {
 		conds = append(conds, "1=1")
+	}
+	if c.AdditionalConditions != "" {
+		conds = append(conds, "("+c.AdditionalConditions+")")
 	}
 	return strings.Join(conds, " AND ")
 }

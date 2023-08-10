@@ -98,6 +98,11 @@ func TestExpandRowConstructorComparison(t *testing.T) {
 			OpGreaterThan,
 			[]Datum{newDatum(1, signedType), newDatum(2, signedType)}))
 
+	assert.Equal(t, "((`a` > \"PENDING\")\n OR (`a` = \"PENDING\" AND `b` > 2))",
+		expandRowConstructorComparison([]string{"a", "b"},
+			OpGreaterThan,
+			[]Datum{newDatum("PENDING", binaryType), newDatum(2, signedType)}))
+
 	assert.Equal(t, "((`id1` > 2)\n OR (`id1` = 2 AND `id2` > 2)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` > 4)\n OR (`id1` = 2 AND `id2` = 2 AND `id3` = 4 AND `id4` >= 5))",
 		expandRowConstructorComparison([]string{"id1", "id2", "id3", "id4"},
 			OpGreaterEqual,

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/siddontang/loggers"
+	"golang.org/x/exp/slices"
 )
 
 type chunkerComposite struct {
@@ -18,6 +19,8 @@ type chunkerComposite struct {
 	chunkSize      uint64
 	chunkPtrs      []Datum  // a list of Ptrs for each of the keys.
 	chunkKeys      []string // all the keys to chunk on (usually all the col names of the PK)
+	keyName        string   // the name of the key we are chunking on
+	where          string   // any additional WHERE conditions.
 	finalChunkSent bool
 	isOpen         bool
 
@@ -35,6 +38,16 @@ type chunkerComposite struct {
 
 var _ Chunker = &chunkerComposite{}
 
+func (t *chunkerComposite) additionalConditionsSQL(whereSent bool) string {
+	if t.where == "" {
+		return ""
+	}
+	if whereSent {
+		return fmt.Sprintf(" AND (%s)", t.where)
+	}
+	return " WHERE " + t.where
+}
+
 // Next in the composite chunker uses a query (aka prefetching) to determine the
 // boundary of this chunk. This method is slower, but works better when the
 // table can not predictably be chunked by just dividing the range between min and max values.
@@ -51,18 +64,22 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	// Start prefetching the next chunk
 	// First assume it's the first chunk, we can overwrite this
 	// just below.
-	query := fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) ORDER BY %s LIMIT 1 OFFSET %d",
+	query := fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (%s) %s ORDER BY %s LIMIT 1 OFFSET %d",
 		strings.Join(t.chunkKeys, ","),
 		t.Ti.QuotedName,
+		t.keyName,
+		t.additionalConditionsSQL(false),
 		strings.Join(t.chunkKeys, ","),
 		t.chunkSize,
 	)
 	if !t.isFirstChunk() {
 		// This is not the first chunk, since we have pointers set.
-		query = fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE %s ORDER BY %s LIMIT 1 OFFSET %d",
+		query = fmt.Sprintf("SELECT %s FROM %s FORCE INDEX (%s) WHERE %s %s ORDER BY %s LIMIT 1 OFFSET %d",
 			strings.Join(t.chunkKeys, ","),
 			t.Ti.QuotedName,
+			t.keyName,
 			expandRowConstructorComparison(t.chunkKeys, OpGreaterThan, t.chunkPtrs),
+			t.additionalConditionsSQL(true),
 			strings.Join(t.chunkKeys, ","), // order by
 			t.chunkSize,
 		)
@@ -78,15 +95,17 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 		t.finalChunkSent = true // This is the last chunk.
 		if t.isFirstChunk() {   // and also the first chunk.
 			return &Chunk{
-				ChunkSize: t.chunkSize,
-				Key:       t.chunkKeys,
+				ChunkSize:            t.chunkSize,
+				Key:                  t.chunkKeys,
+				AdditionalConditions: t.where,
 			}, nil
 		}
 		// Else, it's just the last chunk.
 		return &Chunk{
-			ChunkSize:  t.chunkSize,
-			Key:        t.chunkKeys,
-			LowerBound: &Boundary{t.chunkPtrs, true},
+			ChunkSize:            t.chunkSize,
+			Key:                  t.chunkKeys,
+			LowerBound:           &Boundary{t.chunkPtrs, true},
+			AdditionalConditions: t.where,
 		}, nil
 	}
 	// Else, there were rows found.
@@ -97,10 +116,11 @@ func (t *chunkerComposite) Next() (*Chunk, error) {
 	}
 	t.chunkPtrs = upperDatums
 	return &Chunk{
-		ChunkSize:  t.chunkSize,
-		Key:        t.chunkKeys,
-		LowerBound: lowerBoundary,
-		UpperBound: &Boundary{upperDatums, false},
+		ChunkSize:            t.chunkSize,
+		Key:                  t.chunkKeys,
+		LowerBound:           lowerBoundary,
+		UpperBound:           &Boundary{upperDatums, false},
+		AdditionalConditions: t.where,
 	}, nil
 }
 
@@ -317,7 +337,13 @@ func (t *chunkerComposite) open() (err error) {
 		return errors.New("table is already open, did you mean to call Reset()?")
 	}
 	t.isOpen = true
-	t.chunkKeys = t.Ti.KeyColumns // chunk on all keys in the PK.
+	if len(t.chunkKeys) == 0 {
+		// SetKey has not been called.
+		// chunk on all keys in the PK.
+		// default to primary key.
+		t.chunkKeys = t.Ti.KeyColumns
+		t.keyName = "PRIMARY"
+	}
 	t.finalChunkSent = false
 	t.chunkSize = StartingChunkSize
 	return nil
@@ -363,4 +389,33 @@ func (t *chunkerComposite) calculateNewTargetChunkSize() uint64 {
 
 func (t *chunkerComposite) KeyAboveHighWatermark(key interface{}) bool {
 	return false
+}
+
+// SetKey allows you to chunk on a secondary index, and not the primary key.
+// This is useful outside of the context of spirit, when the table package
+// is used directly. It is only supported by the composite chunker,
+// since the optimistic chunker is designed around auto_inc PKs.
+func (t *chunkerComposite) SetKey(keyName string, where string) error {
+	if t.isOpen {
+		return errors.New("cannot set key after table is open")
+	}
+	keyCols, err := t.Ti.DescIndex(keyName)
+	if err != nil {
+		return err // index is not valid.
+	}
+	// There is a chance that if the index is something like "status" then it is low cardinality.
+	// This is not ideal for chunking, and since we are allowed to assume InnoDB, each
+	// secondary index actually includes the PRIMARY KEY columns in it.
+	// So we can merge in the PK columns to the keyCols.
+	// We only do this for each non-overlapping column in the PRIMARY KEY.
+	// This is because ranging on the same column twice will create logic errors.
+	for _, pkCol := range t.Ti.KeyColumns {
+		if !slices.Contains(keyCols, pkCol) {
+			keyCols = append(keyCols, pkCol)
+		}
+	}
+	t.chunkKeys = keyCols
+	t.keyName = keyName
+	t.where = where
+	return nil
 }

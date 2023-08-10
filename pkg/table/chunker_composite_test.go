@@ -394,3 +394,158 @@ func TestCompositeSmallTable(t *testing.T) {
 	assert.Equal(t, "1=1", chunk.String()) // small chunk
 	assert.NoError(t, chunker.Close())
 }
+
+func TestSetKey(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS setkey_t1")
+	runSQL(t, `CREATE TABLE setkey_t1 (
+		id INT NOT NULL PRIMARY KEY auto_increment,
+		a int NOT NULL,
+		b int NOT NULL,
+		status ENUM('PENDING', 'ACTIVE', 'ARCHIVED') NOT NULL DEFAULT 'PENDING',
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		INDEX s (status),
+		INDEX u (updated_at),
+		INDEX su (status, updated_at),
+		INDEX ui (updated_at)
+	)`)
+	// 11K records.
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM dual`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+	runSQL(t, `INSERT INTO setkey_t1 SELECT NULL, 1, 1, 'PENDING', NOW(), NOW() FROM setkey_t1 a JOIN setkey_t1 b JOIN setkey_t1 c LIMIT 10000`)
+
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "setkey_t1")
+	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunker := &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("s", "status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY")
+	assert.NoError(t, err)
+	assert.NoError(t, chunker.Open())
+
+	chunk, err := chunker.Next()
+	assert.NoError(t, err)
+	// Because there are zero rows with status archived or updated_at that old,
+	// it returns 1 chunk with 1=1 and the original condition.
+	assert.Equal(t, "1=1 AND (status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY)", chunk.String())
+	assert.NoError(t, chunker.Close())
+
+	// If I reset again with a different condition it should range as chunks.
+	chunker = &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("s", "status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY")
+	assert.NoError(t, err)
+	assert.NoError(t, chunker.Open())
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` < \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` < 1008)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	// Check a chunk with both a lowerbound and upper bound.
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` > \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` >= 1008)) AND ((`status` < \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` < 2032)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	// repeat ~10 more times without calling Feedback()
+	for i := 0; i < 8; i++ {
+		_, err = chunker.Next()
+		assert.NoError(t, err)
+	}
+	chunk, err = chunker.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "((`status` > \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` >= 10040)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
+
+	_, err = chunker.Next()
+	assert.ErrorIs(t, err, ErrTableIsRead)
+
+	assert.NoError(t, chunker.Close())
+
+	// Test other index types.
+	for _, index := range []string{"u", "su", "ui"} {
+		chunker = &chunkerComposite{
+			Ti:            t1,
+			ChunkerTarget: 100 * time.Millisecond,
+			logger:        logrus.New(),
+		}
+		err = chunker.SetKey(index, "updated_at < NOW() - INTERVAL 1 DAY")
+		assert.NoError(t, err)
+		assert.NoError(t, chunker.Open())
+		chunk, err = chunker.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, "1=1 AND (updated_at < NOW() - INTERVAL 1 DAY)", chunk.String())
+
+		// check the key parts are correct.
+		switch index {
+		case "u":
+			assert.Equal(t, []string{"updated_at", "id"}, chunker.chunkKeys)
+		case "su":
+			assert.Equal(t, []string{"status", "updated_at", "id"}, chunker.chunkKeys)
+		case "ui":
+			assert.Equal(t, []string{"updated_at", "id"}, chunker.chunkKeys)
+		}
+		assert.NoError(t, chunker.Close())
+	}
+}
+
+// TestSetKeyCompositeKeyMerge tests our expansion when columns in the index
+// are also in the PRIMARY KEY.
+// We shouldn't include the column twice due to logic errors,
+// but we can use the other columns from the primary key for chunking.
+// Proof:
+// explain format=json SELECT * FROM setkeycomposite_t1 FORCE INDEX (dnc) WHERE dob='2023-08-10' and name=0x63643361343961382D333739392D313165652D393166352D613562616235356361653536 AND city='cd3a49ac-3799-11ee-91f5-a5bab55cae56' AND ssn=0x63643361343961392D333739392D313165652D393166352D613562616235356361653536;
+//
+//	"key": "dnc",
+//
+// "used_key_parts": [
+//
+//		"dob",
+//		"name",
+//		"city",
+//		"ssn"
+//	  ],
+//	  "key_length": "489",
+//	  "ref": [
+//		"const",
+//		"const",
+//		"const",
+//		"const"
+//	  ],
+//	  "rows_examined_per_scan": 1,
+//	  "rows_produced_per_join": 1,
+//	  "filtered": "100.00",
+//	  "using_index": true,
+func TestSetKeyCompositeKeyMerge(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS setkeycomposite_t1")
+	runSQL(t, `CREATE TABLE setkeycomposite_t1 (
+			name VARBINARY(40) NOT NULL,
+			ssn VARBINARY(40) NOT NULL,
+			dob date NOT NULL,
+			city VARCHAR(100) NOT NULL,
+			PRIMARY KEY (name,ssn),
+			INDEX dnc (dob,name,city)
+		)`)
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "setkeycomposite_t1")
+	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunker := &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("dnc", "")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"dob", "name", "city", "ssn"}, chunker.chunkKeys)
+}
