@@ -123,9 +123,3 @@ func TestExpandRowConstructorComparison(t *testing.T) {
 			OpGreaterThan,
 			[]Datum{newDatum(2, signedType), newDatum(2, signedType), newDatum(4, signedType), newDatum(5, signedType)}))
 }
-
-func TestKeysOverlap(t *testing.T) {
-	assert.True(t, keysOverlap([]string{"a", "b", "c"}, []string{"a", "b", "c"}))
-	assert.False(t, keysOverlap([]string{"id"}, []string{"status"}))
-	assert.True(t, keysOverlap([]string{"id"}, []string{"status", "id"}))
-}

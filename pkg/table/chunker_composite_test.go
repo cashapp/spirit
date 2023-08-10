@@ -496,3 +496,56 @@ func TestSetKey(t *testing.T) {
 		assert.NoError(t, chunker.Close())
 	}
 }
+
+// TestSetKeyCompositeKeyMerge tests our expansion when columns in the index
+// are also in the PRIMARY KEY.
+// We shouldn't include the column twice due to logic errors,
+// but we can use the other columns from the primary key for chunking.
+// Proof:
+// explain format=json SELECT * FROM setkeycomposite_t1 FORCE INDEX (dnc) WHERE dob='2023-08-10' and name=0x63643361343961382D333739392D313165652D393166352D613562616235356361653536 AND city='cd3a49ac-3799-11ee-91f5-a5bab55cae56' AND ssn=0x63643361343961392D333739392D313165652D393166352D613562616235356361653536;
+//
+//	"key": "dnc",
+//
+// "used_key_parts": [
+//
+//		"dob",
+//		"name",
+//		"city",
+//		"ssn"
+//	  ],
+//	  "key_length": "489",
+//	  "ref": [
+//		"const",
+//		"const",
+//		"const",
+//		"const"
+//	  ],
+//	  "rows_examined_per_scan": 1,
+//	  "rows_produced_per_join": 1,
+//	  "filtered": "100.00",
+//	  "using_index": true,
+func TestSetKeyCompositeKeyMerge(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS setkeycomposite_t1")
+	runSQL(t, `CREATE TABLE setkeycomposite_t1 (
+			name VARBINARY(40) NOT NULL,
+			ssn VARBINARY(40) NOT NULL,
+			dob date NOT NULL,
+			city VARCHAR(100) NOT NULL,
+			PRIMARY KEY (name,ssn),
+			INDEX dnc (dob,name,city)
+		)`)
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "setkeycomposite_t1")
+	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunker := &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunker.SetKey("dnc", "")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"dob", "name", "city", "ssn"}, chunker.chunkKeys)
+}

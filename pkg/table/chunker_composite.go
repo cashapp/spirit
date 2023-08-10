@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/siddontang/loggers"
+	"golang.org/x/exp/slices"
 )
 
 type chunkerComposite struct {
@@ -406,10 +407,12 @@ func (t *chunkerComposite) SetKey(keyName string, where string) error {
 	// This is not ideal for chunking, and since we are allowed to assume InnoDB, each
 	// secondary index actually includes the PRIMARY KEY columns in it.
 	// So we can merge in the PK columns to the keyCols.
-	// For simplicity, we only do this when the columns *don't* overlap.
+	// We only do this for each non-overlapping column in the PRIMARY KEY.
 	// This is because ranging on the same column twice will create logic errors.
-	if !keysOverlap(keyCols, t.Ti.KeyColumns) {
-		keyCols = append(keyCols, t.Ti.KeyColumns...)
+	for _, pkCol := range t.Ti.KeyColumns {
+		if !slices.Contains(keyCols, pkCol) {
+			keyCols = append(keyCols, pkCol)
+		}
 	}
 	t.chunkKeys = keyCols
 	t.keyName = keyName
