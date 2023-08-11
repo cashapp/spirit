@@ -279,9 +279,9 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	// is at elevated risk because the batch loading can cause statistics
 	// to be out of date.
 	r.setCurrentState(stateAnalyzeTable)
-	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
-	r.logger.Infof("Running: %s", stmt)
-	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, stmt); err != nil {
+	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
+	r.logger.Infof("Running: %s", analyze)
+	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, analyze); err != nil {
 		return err
 	}
 
@@ -814,6 +814,10 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	}
 	copyRows := atomic.LoadUint64(&r.copier.CopyRowsCount)
 	logicalCopyRows := atomic.LoadUint64(&r.copier.CopyRowsLogicalCount)
+	// Note: when we dump the lowWatermark to the log, we are exposing the PK values,
+	// when using the composite chunker are based on actual user-data.
+	// We believe this is OK but may change it in the future. Please do not
+	// add any other fields to this log line.
 	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
