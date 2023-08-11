@@ -279,9 +279,9 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	// is at elevated risk because the batch loading can cause statistics
 	// to be out of date.
 	r.setCurrentState(stateAnalyzeTable)
-	stmt := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
-	r.logger.Infof("Running: %s", stmt)
-	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, stmt); err != nil {
+	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
+	r.logger.Infof("Running: %s", analyze)
+	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, analyze); err != nil {
 		return err
 	}
 

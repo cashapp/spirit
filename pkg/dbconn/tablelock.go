@@ -73,7 +73,6 @@ func (s *TableLock) ExecUnderLock(ctx context.Context, stmts []string) error {
 		if stmt == "" {
 			continue
 		}
-		s.logger.Infof("executing statement under table lock: %s", stmt)
 		_, err := s.lockTxn.ExecContext(ctx, stmt)
 		if err != nil {
 			return err
