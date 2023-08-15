@@ -17,9 +17,8 @@ const (
 // rdsAddr matches Amazon RDS hostnames with optional :port suffix.
 // It's used to automatically load the Amazon RDS CA and enable TLS
 var (
-	rdsAddr   = regexp.MustCompile(`rds\.amazonaws\.com(:\d+)?$`)
-	TLSConfig *tls.Config
-	once      sync.Once
+	rdsAddr = regexp.MustCompile(`rds\.amazonaws\.com(:\d+)?$`)
+	once    sync.Once
 	// rds-ca-2019-root.pem
 	rds2019rootCA = []byte(`-----BEGIN CERTIFICATE-----
 MIIEBjCCAu6gAwIBAgIJAMc0ZzaSUK51MA0GCSqGSIb3DQEBCwUAMIGPMQswCQYD
@@ -51,13 +50,16 @@ func IsRDSHost(host string) bool {
 	return rdsAddr.MatchString(host)
 }
 
-func InitRDSTLS() error {
+func NewTLSConfig() *tls.Config {
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(rds2019rootCA)
+	return &tls.Config{RootCAs: caCertPool}
+}
+
+func initRDSTLS() error {
 	var err error
 	once.Do(func() {
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(rds2019rootCA)
-		TLSConfig = &tls.Config{RootCAs: caCertPool}
-		err = mysql.RegisterTLSConfig(rdsTLSConfigName, TLSConfig)
+		err = mysql.RegisterTLSConfig(rdsTLSConfigName, NewTLSConfig())
 	})
 	return err
 }
@@ -71,7 +73,7 @@ func newDSN(dsn string) (string, error) {
 		return "", err
 	}
 	if IsRDSHost(cfg.Addr) {
-		if err = InitRDSTLS(); err != nil {
+		if err = initRDSTLS(); err != nil {
 			return "", err
 		}
 		dsn += "?tls=" + rdsTLSConfigName

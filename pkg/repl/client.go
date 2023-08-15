@@ -244,11 +244,10 @@ func (c *Client) Run() (err error) {
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
 	cfg.Dump.ExecutionPath = "" // skip dump
 	if dbconn.IsRDSHost(cfg.Addr) {
-		if err = dbconn.InitRDSTLS(); err != nil {
-			return err // could not init TLS config.
-		}
-		// use TLS config for RDS.
-		cfg.TLSConfig = dbconn.TLSConfig
+		// create a new TLSConfig for RDS
+		// It needs to be a copy because sharing a global pointer
+		// is not thread safe when spirit is used as a library.
+		cfg.TLSConfig = dbconn.NewTLSConfig()
 		cfg.TLSConfig.ServerName = utils.StripPort(cfg.Addr)
 	}
 	c.canal, err = canal.NewCanal(cfg)
