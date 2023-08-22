@@ -4,37 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
-
-	"github.com/siddontang/loggers"
 )
 
 type chunkerOptimistic struct {
-	sync.Mutex
-	Ti                *TableInfo
-	chunkSize         uint64
-	chunkPtr          Datum
-	checkpointHighPtr Datum // the high watermark detected on restore
-	finalChunkSent    bool
-	isOpen            bool
+	*coreChunker
 
-	// Dynamic Chunking is time based instead of row based.
-	// It uses *time* to determine the target chunk size.
-	chunkTimingInfo []time.Duration
-	ChunkerTarget   time.Duration // i.e. 500ms for target
-
-	disableDynamicChunker bool // only used by the test suite
-
-	// This is used for restore.
-	watermark             *Chunk
-	watermarkQueuedChunks []*Chunk
+	chunkPtr              Datum
+	checkpointHighPtr     Datum // the high watermark detected on restore
+	disableDynamicChunker bool  // only used by the test suite
 
 	// The chunk prefetching algorithm is used when the chunker detects
 	// that there are very large gaps in the sequence.
 	chunkPrefetchingEnabled bool
-
-	logger loggers.Advanced
 }
 
 var _ Chunker = &chunkerOptimistic{}
@@ -231,95 +213,6 @@ func (t *chunkerOptimistic) Feedback(chunk *Chunk, d time.Duration) {
 	// We have enough feedback to re-evaluate the chunk size.
 	if len(t.chunkTimingInfo) > 10 {
 		t.updateChunkerTarget(t.calculateNewTargetChunkSize())
-	}
-}
-
-// GetLowWatermark returns the highest known value that has been safely copied,
-// which (due to parallelism) could be significantly behind the high watermark.
-// The value is discovered via ChunkerFeedback(), and when retrieved from this func
-// can be used to write a checkpoint for restoration.
-func (t *chunkerOptimistic) GetLowWatermark() (string, error) {
-	t.Lock()
-	defer t.Unlock()
-
-	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
-		return "", errors.New("watermark not yet ready")
-	}
-
-	return t.watermark.JSON(), nil
-}
-
-// isSpecialRestoredChunk is used to test for the first chunk after restore-from-checkpoint.
-// The restored chunk is a really special beast because the lowerbound
-// will be repeated by the first chunk that is applied post restore.
-// This is called under a mutex.
-func (t *chunkerOptimistic) isSpecialRestoredChunk(chunk *Chunk) bool {
-	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
-		return false // restored checkpoints always have both.
-	}
-	return chunk.LowerBound.Value[0] == t.watermark.LowerBound.Value[0]
-}
-
-// bumpWatermark updates the minimum value that is known to be safely copied,
-// and is called under a mutex.
-// Because of parallelism, it is possible that a chunk is copied out of order,
-// so this func needs to account for that.
-// The current algorithm is N^2 complexity, but hopefully that's not a big deal.
-// Basically:
-//   - If the chunk does not "align" to the current low watermark, it's added to a queue.
-//   - If it does align, the watermark is bumped to the chunk's max value. Then
-//     each of the queued chunks is checked to see if it aligns with the new watermark.
-//   - If any queued chunks align, they are popped off the queue and the watermark is bumped.
-//   - This process repeats until there is no more alignment from the queue *or* the queue is empty.
-func (t *chunkerOptimistic) bumpWatermark(chunk *Chunk) {
-	// We never set the watermark for the very last chunk, which has an open ended upper bound.
-	// This is safer anyway since between resumes a lot more data could arrive.
-	if chunk.UpperBound == nil {
-		return
-	}
-	// Check if this is the first chunk or it's the special restored chunk.
-	// If so, set the watermark and then go on to applying any queued chunks.
-	if (t.watermark == nil && chunk.LowerBound == nil) || t.isSpecialRestoredChunk(chunk) {
-		t.watermark = chunk
-		goto applyQueuedChunks
-	}
-	// We haven't set the first chunk yet, or it's not aligned with the
-	// previous watermark. Queue it up, and move on.
-	if t.watermark == nil || (t.watermark.UpperBound.Value[0] != chunk.LowerBound.Value[0]) {
-		t.watermarkQueuedChunks = append(t.watermarkQueuedChunks, chunk)
-		return
-	}
-
-	// The remaining case is:
-	// t.watermark.UpperBound.Value == chunk.LowerBound.Value
-	// Replace the current watermark with the chunk.
-	t.watermark = chunk
-
-applyQueuedChunks:
-
-	for {
-		// Check the queue for any chunks that align with the new watermark.
-		// If there are any, pop them off the queue and bump the watermark.
-		// If there are none, we're done.
-		found := false
-		for i, queuedChunk := range t.watermarkQueuedChunks {
-			// sanity checking: chunks *should* have a lower bound and upper bound.
-			if queuedChunk.LowerBound == nil || queuedChunk.UpperBound == nil {
-				errMsg := fmt.Sprintf("chunkerOptimistic.bumpWatermark: nil value encountered: %v", queuedChunk)
-				t.logger.Error(errMsg)
-				panic(errMsg)
-			}
-			// The value aligns, remove it from the queued chunks and set the watermark to it.
-			if queuedChunk.LowerBound.Value[0] == t.watermark.UpperBound.Value[0] {
-				t.watermark = queuedChunk
-				t.watermarkQueuedChunks = append(t.watermarkQueuedChunks[:i], t.watermarkQueuedChunks[i+1:]...)
-				found = true
-				break
-			}
-		}
-		if !found {
-			break
-		}
 	}
 }
 

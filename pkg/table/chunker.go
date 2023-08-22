@@ -34,7 +34,7 @@ type Chunker interface {
 	IsRead() bool
 	Close() error
 	Next() (*Chunk, error)
-	Feedback(*Chunk, time.Duration)
+	Feedback(chunk *Chunk, d time.Duration)
 	GetLowWatermark() (string, error)
 	KeyAboveHighWatermark(interface{}) bool
 }
@@ -47,14 +47,20 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 	// tables with a single column key.
 	if len(t.KeyColumns) == 1 && t.KeyIsAutoInc {
 		return &chunkerOptimistic{
-			Ti:            t,
-			ChunkerTarget: chunkerTarget,
-			logger:        logger,
+			coreChunker: &coreChunker{
+				Ti:                     t,
+				ChunkerTarget:          chunkerTarget,
+				lowerBoundWatermarkMap: make(map[string]*Chunk, 0),
+				logger:                 logger,
+			},
 		}, nil
 	}
 	return &chunkerComposite{
-		Ti:            t,
-		ChunkerTarget: chunkerTarget,
-		logger:        logger,
+		coreChunker: &coreChunker{
+			Ti:                     t,
+			ChunkerTarget:          chunkerTarget,
+			lowerBoundWatermarkMap: make(map[string]*Chunk, 0),
+			logger:                 logger,
+		},
 	}, nil
 }

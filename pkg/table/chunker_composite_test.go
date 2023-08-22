@@ -270,9 +270,12 @@ func TestCompositeLowWatermark(t *testing.T) {
 	assert.NoError(t, t1.SetInfo(context.Background()))
 
 	chunker := &chunkerComposite{
-		Ti:            t1,
-		ChunkerTarget: ChunkerDefaultTarget,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			Ti:                     t1,
+			ChunkerTarget:          ChunkerDefaultTarget,
+			lowerBoundWatermarkMap: make(map[string]*Chunk, 0),
+			logger:                 logrus.New(),
+		},
 	}
 	_, err = chunker.Next()
 	assert.Error(t, err) // not open yet
@@ -423,9 +426,11 @@ func TestSetKey(t *testing.T) {
 	t1 := NewTableInfo(db, "test", "setkey_t1")
 	assert.NoError(t, t1.SetInfo(context.Background()))
 	chunker := &chunkerComposite{
-		Ti:            t1,
-		ChunkerTarget: 100 * time.Millisecond,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			Ti:            t1,
+			ChunkerTarget: 100 * time.Millisecond,
+			logger:        logrus.New(),
+		},
 	}
 	err = chunker.SetKey("s", "status = 'ARCHIVED' AND updated_at < NOW() - INTERVAL 1 DAY")
 	assert.NoError(t, err)
@@ -440,9 +445,11 @@ func TestSetKey(t *testing.T) {
 
 	// If I reset again with a different condition it should range as chunks.
 	chunker = &chunkerComposite{
-		Ti:            t1,
-		ChunkerTarget: 100 * time.Millisecond,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			logger:        logrus.New(),
+			ChunkerTarget: 100 * time.Millisecond,
+			Ti:            t1,
+		},
 	}
 	err = chunker.SetKey("s", "status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY")
 	assert.NoError(t, err)
@@ -473,9 +480,11 @@ func TestSetKey(t *testing.T) {
 	// Test other index types.
 	for _, index := range []string{"u", "su", "ui"} {
 		chunker = &chunkerComposite{
-			Ti:            t1,
-			ChunkerTarget: 100 * time.Millisecond,
-			logger:        logrus.New(),
+			coreChunker: &coreChunker{
+				Ti:            t1,
+				ChunkerTarget: 100 * time.Millisecond,
+				logger:        logrus.New(),
+			},
 		}
 		err = chunker.SetKey(index, "updated_at < NOW() - INTERVAL 1 DAY")
 		assert.NoError(t, err)
@@ -541,9 +550,11 @@ func TestSetKeyCompositeKeyMerge(t *testing.T) {
 	t1 := NewTableInfo(db, "test", "setkeycomposite_t1")
 	assert.NoError(t, t1.SetInfo(context.Background()))
 	chunker := &chunkerComposite{
-		Ti:            t1,
-		ChunkerTarget: 100 * time.Millisecond,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			logger:        logrus.New(),
+			ChunkerTarget: 100 * time.Millisecond,
+			Ti:            t1,
+		},
 	}
 	err = chunker.SetKey("dnc", "")
 	assert.NoError(t, err)
