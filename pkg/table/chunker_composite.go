@@ -316,3 +316,17 @@ func (t *chunkerComposite) SetKey(keyName string, where string) error {
 	t.where = where
 	return nil
 }
+
+// GetLowWatermark returns the highest known value that has been safely copied,
+// which (due to parallelism) could be significantly behind the high watermark.
+// The value is discovered via Chunker Feedback(), and when retrieved from this func
+// can be used to write a checkpoint for restoration.
+func (t *chunkerComposite) GetLowWatermark() (string, error) {
+	t.Lock()
+	defer t.Unlock()
+	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
+		return "", errors.New("watermark not yet ready")
+	}
+
+	return t.watermark.JSON(), nil
+}

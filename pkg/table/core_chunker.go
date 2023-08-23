@@ -1,7 +1,6 @@
 package table
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -31,6 +30,13 @@ type coreChunker struct {
 	isOpen          bool
 	logger          loggers.Advanced
 }
+
+type restorableChunker interface {
+	isSpecialRestoredChunk(chunk *Chunk) bool
+	bumpWatermark(chunk *Chunk)
+}
+
+var _ restorableChunker = &coreChunker{}
 
 // isSpecialRestoredChunk is used to test for the first chunk after restore-from-checkpoint.
 // The restored chunk is a really special beast because the lowerbound
@@ -101,18 +107,4 @@ applyStoredChunks:
 
 func (t *coreChunker) waterMarkMapNotEmpty() bool {
 	return t.lowerBoundWatermarkMap != nil && len(t.lowerBoundWatermarkMap) != 0
-}
-
-// GetLowWatermark returns the highest known value that has been safely copied,
-// which (due to parallelism) could be significantly behind the high watermark.
-// The value is discovered via Chunker Feedback(), and when retrieved from this func
-// can be used to write a checkpoint for restoration.
-func (t *coreChunker) GetLowWatermark() (string, error) {
-	t.Lock()
-	defer t.Unlock()
-	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
-		return "", errors.New("watermark not yet ready")
-	}
-
-	return t.watermark.JSON(), nil
 }
