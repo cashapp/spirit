@@ -35,6 +35,37 @@ func NewDBConfig() *DBConfig {
 	}
 }
 
+func standardizeConn(ctx context.Context, conn *sql.Conn, config *DBConfig) error {
+	_, err := conn.ExecContext(ctx, "SET time_zone='+00:00'")
+	if err != nil {
+		return err
+	}
+	// This looks ill-advised, but unfortunately it's required.
+	// A user might have set their SQL mode to empty even if the
+	// server has it enabled. After they've inserted data,
+	// we need to be able to produce the same when copying.
+	// If you look at standard packages like wordpress, drupal etc.
+	// they all change the SQL mode. If you look at mysqldump, etc.
+	// they all unset the SQL mode just like this.
+	_, err = conn.ExecContext(ctx, "SET sql_mode=''")
+	if err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "SET NAMES 'binary'")
+	if err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", config.InnodbLockWaitTimeout)
+	if err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, "SET lock_wait_timeout=?", config.LockWaitTimeout)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func standardizeTrx(ctx context.Context, trx *sql.Tx, config *DBConfig) error {
 	_, err := trx.ExecContext(ctx, "SET time_zone='+00:00'")
 	if err != nil {

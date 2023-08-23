@@ -33,6 +33,7 @@ const (
 type Copier struct {
 	sync.Mutex
 	db                   *sql.DB
+	pool                 *dbconn.ConnPool
 	table                *table.TableInfo
 	newTable             *table.TableInfo
 	chunker              table.Chunker
@@ -131,7 +132,7 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
-	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, dbconn.NewDBConfig(), query); err != nil {
+	if affectedRows, err = c.pool.RetryableTransaction(ctx, c.finalChecksum, query); err != nil {
 		return err
 	}
 	atomic.AddUint64(&c.CopyRowsCount, uint64(affectedRows))
@@ -175,6 +176,11 @@ func (c *Copier) Run(ctx context.Context) error {
 	go c.estimateRowsPerSecondLoop(ctx) // estimate rows while copying
 	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
+	var err error
+	c.pool, err = dbconn.NewConnPool(ctx, c.db, c.concurrency, dbconn.NewDBConfig())
+	if err != nil {
+		return err
+	}
 	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
@@ -193,7 +199,7 @@ func (c *Copier) Run(ctx context.Context) error {
 		})
 	}
 
-	err := g.Wait()
+	err = g.Wait()
 	if err != nil {
 		return err
 	}
