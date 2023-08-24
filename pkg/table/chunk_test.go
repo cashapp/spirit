@@ -43,6 +43,27 @@ func TestChunk2String(t *testing.T) {
 	assert.Equal(t, "1=1", chunk.String())
 }
 
+func TestBoundary_ValueString(t *testing.T) {
+	boundary1 := &Boundary{
+		Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType)},
+		Inclusive: false,
+	}
+	assert.Equal(t, "\"100\",\"200\"", boundary1.valuesString())
+
+	boundary2 := &Boundary{
+		Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType)},
+		Inclusive: true,
+	}
+	// Tests that Inclusive doesn't matter between Boundaries for valuesString
+	assert.Equal(t, boundary2.valuesString(), boundary1.valuesString())
+
+	// Tests composite key boundary with mixed types
+	boundary3 := &Boundary{
+		Value: []Datum{newDatum("PENDING", binaryType), newDatum(2, signedType)},
+	}
+	assert.Equal(t, "\"\"PENDING\"\",\"2\"", boundary3.valuesString())
+}
+
 func TestCompositeChunks(t *testing.T) {
 	chunk := &Chunk{
 		Key: []string{"id1", "id2"},

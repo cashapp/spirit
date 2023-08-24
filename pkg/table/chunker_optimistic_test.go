@@ -26,9 +26,11 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 	}
 	t1.statisticsLastUpdated = time.Now()
 	chunker := &chunkerOptimistic{
-		Ti:            t1,
-		ChunkerTarget: ChunkerDefaultTarget,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			Ti:            t1,
+			ChunkerTarget: ChunkerDefaultTarget,
+			logger:        logrus.New(),
+		},
 	}
 	chunker.setDynamicChunking(false)
 
@@ -85,9 +87,12 @@ func TestLowWatermark(t *testing.T) {
 
 	assert.NoError(t, t1.PrimaryKeyIsMemoryComparable())
 	chunker := &chunkerOptimistic{
-		Ti:            t1,
-		ChunkerTarget: ChunkerDefaultTarget,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			Ti:                     t1,
+			ChunkerTarget:          ChunkerDefaultTarget,
+			lowerBoundWatermarkMap: make(map[string]*Chunk, 0),
+			logger:                 logrus.New(),
+		},
 	}
 	chunker.setDynamicChunking(false)
 
@@ -289,9 +294,11 @@ func TestOptimisticPrefetchChunking(t *testing.T) {
 	t1.db = db
 	assert.NoError(t, t1.SetInfo(context.Background()))
 	chunker := &chunkerOptimistic{
-		Ti:            t1,
-		ChunkerTarget: time.Second,
-		logger:        logrus.New(),
+		coreChunker: &coreChunker{
+			Ti:            t1,
+			ChunkerTarget: time.Second,
+			logger:        logrus.New(),
+		},
 	}
 	chunker.setDynamicChunking(true)
 	assert.NoError(t, chunker.Open())

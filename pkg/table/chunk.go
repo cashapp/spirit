@@ -73,11 +73,7 @@ func (c *Chunk) JSON() string {
 // JSON encodes a boundary as JSON. The values are represented as strings,
 // to avoid JSON float behavior. See Issue #125
 func (b *Boundary) JSON() string {
-	vals := make([]string, len(b.Value))
-	for i, v := range b.Value {
-		vals[i] = fmt.Sprintf(`"%s"`, v)
-	}
-	return fmt.Sprintf(`{"Value": [%s],"Inclusive":%t}`, strings.Join(vals, ","), b.Inclusive)
+	return fmt.Sprintf(`{"Value": [%s],"Inclusive":%t}`, b.valuesString(), b.Inclusive)
 }
 
 // comparesTo returns true if the boundaries are the same.
@@ -97,6 +93,16 @@ func (b *Boundary) comparesTo(b2 *Boundary) bool {
 		}
 	}
 	return true
+}
+
+// valuesString uses only values and ignores inclusive operation,
+// to get a string representation of Values in Boundary.
+func (b *Boundary) valuesString() string {
+	vals := make([]string, len(b.Value))
+	for i, v := range b.Value {
+		vals[i] = fmt.Sprintf(`"%s"`, v)
+	}
+	return strings.Join(vals, ",")
 }
 
 type JSONChunk struct {
