@@ -55,12 +55,23 @@ func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanc
 			},
 		}, nil
 	}
-	return &chunkerComposite{
+	return NewCompositeChunker(t, chunkerTarget, logger, "", "")
+}
+
+// NewCompositeChunker returns a chunkerComposite ,
+// setting its Key if keyName and where conditions are provided
+func NewCompositeChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced, keyName string, whereCondition string) (Chunker, error) {
+	c := chunkerComposite{
 		coreChunker: &coreChunker{
 			Ti:                     t,
 			ChunkerTarget:          chunkerTarget,
 			lowerBoundWatermarkMap: make(map[string]*Chunk, 0),
 			logger:                 logger,
 		},
-	}, nil
+	}
+	var err error
+	if keyName != "" && whereCondition != "" {
+		err = c.SetKey(keyName, whereCondition)
+	}
+	return &c, err
 }
