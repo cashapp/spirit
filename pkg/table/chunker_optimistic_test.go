@@ -164,6 +164,10 @@ func TestLowWatermark(t *testing.T) {
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"5001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"6001\"],\"Inclusive\":false}}", watermark)
+
+	// Test that we have applied all stored chunks and the map is empty,
+	// as we gave Feedback for all chunks.
+	assert.Equal(t, 0, len(chunker.lowerBoundWatermarkMap))
 }
 
 func TestOptimisticDynamicChunking(t *testing.T) {
