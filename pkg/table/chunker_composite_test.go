@@ -365,6 +365,10 @@ func TestCompositeLowWatermark(t *testing.T) {
 	}
 	assert.Len(t, chunker.chunkTimingInfo, 0)
 	assert.Equal(t, 15, int(chunker.chunkSize)) // scales up a maximum of 50% at a time.
+
+	// Test that we have applied all stored chunks and the map is empty,
+	// as we gave Feedback for all chunks.
+	assert.Equal(t, 0, len(chunker.lowerBoundWatermarkMap))
 }
 
 func TestCompositeSmallTable(t *testing.T) {

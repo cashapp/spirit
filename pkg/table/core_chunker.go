@@ -99,9 +99,10 @@ applyStoredChunks:
 	// If there are any, bump the watermark and delete from the map.
 	// If there are none, we're done.
 	for t.waterMarkMapNotEmpty() && t.watermark.UpperBound != nil && t.lowerBoundWatermarkMap[t.watermark.UpperBound.valuesString()] != nil {
-		nextWatermark := t.lowerBoundWatermarkMap[t.watermark.UpperBound.valuesString()]
+		key := t.watermark.UpperBound.valuesString()
+		nextWatermark := t.lowerBoundWatermarkMap[key]
 		t.watermark = nextWatermark
-		delete(t.lowerBoundWatermarkMap, nextWatermark.String())
+		delete(t.lowerBoundWatermarkMap, key)
 	}
 }
 
