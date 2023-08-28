@@ -4,19 +4,40 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
+
+	"github.com/siddontang/loggers"
 )
 
 type chunkerOptimistic struct {
-	*coreChunker
+	sync.Mutex
+	Ti                *TableInfo
+	chunkSize         uint64
+	chunkPtr          Datum
+	checkpointHighPtr Datum // the high watermark detected on restore
+	finalChunkSent    bool
+	isOpen            bool
 
-	chunkPtr              Datum
-	checkpointHighPtr     Datum // the high watermark detected on restore
-	disableDynamicChunker bool  // only used by the test suite
+	// Dynamic Chunking is time based instead of row based.
+	// It uses *time* to determine the target chunk size.
+	chunkTimingInfo []time.Duration
+	ChunkerTarget   time.Duration // i.e. 500ms for target
+
+	disableDynamicChunker bool // only used by the test suite
+
+	// This is used for restore.
+	watermark *Chunk
+	// Map from lowerbound value of a chunk -> chunk,
+	// Used to update the watermark by applying stored chunks,
+	// by comparing their lowerBound with current watermark upperBound.
+	lowerBoundWatermarkMap map[string]*Chunk
 
 	// The chunk prefetching algorithm is used when the chunker detects
 	// that there are very large gaps in the sequence.
 	chunkPrefetchingEnabled bool
+
+	logger loggers.Advanced
 }
 
 var _ Chunker = &chunkerOptimistic{}
@@ -216,6 +237,92 @@ func (t *chunkerOptimistic) Feedback(chunk *Chunk, d time.Duration) {
 	}
 }
 
+// GetLowWatermark returns the highest known value that has been safely copied,
+// which (due to parallelism) could be significantly behind the high watermark.
+// The value is discovered via ChunkerFeedback(), and when retrieved from this func
+// can be used to write a checkpoint for restoration.
+func (t *chunkerOptimistic) GetLowWatermark() (string, error) {
+	t.Lock()
+	defer t.Unlock()
+
+	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
+		return "", errors.New("watermark not yet ready")
+	}
+
+	return t.watermark.JSON(), nil
+}
+
+// isSpecialRestoredChunk is used to test for the first chunk after restore-from-checkpoint.
+// The restored chunk is a really special beast because the lowerbound
+// will be repeated by the first chunk that is applied post restore.
+// This is called under a mutex.
+func (t *chunkerOptimistic) isSpecialRestoredChunk(chunk *Chunk) bool {
+	if chunk.LowerBound == nil || chunk.UpperBound == nil || t.watermark == nil || t.watermark.LowerBound == nil || t.watermark.UpperBound == nil {
+		return false // restored checkpoints always have both.
+	}
+	return chunk.LowerBound.comparesTo(t.watermark.LowerBound)
+}
+
+// bumpWatermark updates the minimum value that is known to be safely copied,
+// and is called under a mutex.
+// Because of parallelism, it is possible that a chunk is copied out of order,
+// so this func needs to account for that.
+// Basically:
+//   - If the chunk does not "align" to the current low watermark, it's stored in a map keyed by its lowerBound valuesString() value.
+//   - If it does align, the watermark is bumped to the chunk's max value. Then
+//     stored chunk map is checked to see if an existing chunk lowerBound aligns with the new watermark.
+//   - If any stored chunk aligns, it is deleted off the map and the watermark is bumped.
+//   - This process repeats until there is no more alignment from the stored map *or* the map is empty.
+func (t *chunkerOptimistic) bumpWatermark(chunk *Chunk) {
+	if chunk.UpperBound == nil {
+		return
+	}
+	// Check if this is the first chunk or it's the special restored chunk.
+	// If so, set the watermark and then go on to applying any stored chunks.
+	if (t.watermark == nil && chunk.LowerBound == nil) || t.isSpecialRestoredChunk(chunk) {
+		t.watermark = chunk
+		goto applyStoredChunks
+	}
+
+	// Validate that chunk has lower bound before moving on
+	if chunk.LowerBound == nil {
+		errMsg := fmt.Sprintf("coreChunker.bumpWatermark: nil lowerBound value encountered more than once: %v", chunk)
+		t.logger.Fatal(errMsg)
+	}
+
+	// We haven't set the first chunk yet, or it's not aligned with the
+	// previous watermark. Store it in the map keyed by its lowerBound, and move on.
+
+	// We only need to store by lowerBound because, when updating watermark
+	// we always compare the upperBound of current watermark to lowerBound of stored chunks.
+	// Key can never be nil, because first chunk will not hit this code path and all remaining chunks will have lowerBound.
+	if t.watermark == nil || !t.watermark.UpperBound.comparesTo(chunk.LowerBound) {
+		t.lowerBoundWatermarkMap[chunk.LowerBound.valuesString()] = chunk
+		return
+	}
+
+	// The remaining case is:
+	// t.watermark.UpperBound.Value == chunk.LowerBound.Value
+	// Replace the current watermark with the chunk.
+	t.watermark = chunk
+
+applyStoredChunks:
+
+	// Check the waterMarkMap for any chunks that align with the new watermark.
+	// If there are any, bump the watermark and delete from the map.
+	// If there are none, we're done.
+	for t.waterMarkMapNotEmpty() && t.watermark.UpperBound != nil && t.lowerBoundWatermarkMap[t.watermark.UpperBound.valuesString()] != nil {
+		key := t.watermark.UpperBound.valuesString()
+		nextWatermark := t.lowerBoundWatermarkMap[key]
+		t.watermark = nextWatermark
+		delete(t.lowerBoundWatermarkMap, key)
+	}
+}
+
+func (t *chunkerOptimistic) waterMarkMapNotEmpty() bool {
+	return t.lowerBoundWatermarkMap != nil && len(t.lowerBoundWatermarkMap) != 0
+}
+
 func (t *chunkerOptimistic) open() (err error) {
 	if len(t.Ti.KeyColumns) > 1 {
 		return errors.New("the optimistic chunker no longer supports key columns > 1")
@@ -315,18 +422,4 @@ func (t *chunkerOptimistic) KeyAboveHighWatermark(key interface{}) bool {
 	}
 	// Finally we check the chunkPtr.
 	return keyDatum.GreaterThanOrEqual(t.chunkPtr)
-}
-
-// GetLowWatermark returns the highest known value that has been safely copied,
-// which (due to parallelism) could be significantly behind the high watermark.
-// The value is discovered via Chunker Feedback(), and when retrieved from this func
-// can be used to write a checkpoint for restoration.
-func (t *chunkerOptimistic) GetLowWatermark() (string, error) {
-	t.Lock()
-	defer t.Unlock()
-	if t.watermark == nil || t.watermark.UpperBound == nil || t.watermark.LowerBound == nil {
-		return "", errors.New("watermark not yet ready")
-	}
-
-	return t.watermark.JSON(), nil
 }
