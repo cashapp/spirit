@@ -72,6 +72,7 @@ func (s migrationState) String() string {
 type Runner struct {
 	migration       *Migration
 	db              *sql.DB
+	pool            *dbconn.ConnPool
 	dbConfig        *dbconn.DBConfig
 	replica         *sql.DB
 	table           *table.TableInfo
@@ -162,6 +163,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 	r.dbConfig = dbconn.NewDBConfig()
 	r.dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
+
+	r.pool, err = dbconn.NewConnPool(ctx, r.db, r.migration.Threads, r.dbConfig)
+	defer r.pool.Close()
+	if err != nil {
+		return err
+	}
 
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -369,7 +376,7 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err := r.createCheckpointTable(ctx); err != nil {
 			return err
 		}
-		r.copier, err = row.NewCopier(r.db, r.table, r.newTable, &row.CopierConfig{
+		r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, &row.CopierConfig{
 			Concurrency:     r.migration.Threads,
 			TargetChunkTime: r.migration.TargetChunkTime,
 			FinalChecksum:   r.migration.Checksum,
@@ -639,6 +646,12 @@ func (r *Runner) cleanup(ctx context.Context) error {
 			return err
 		}
 	}
+	if r.pool != nil {
+		err := r.pool.Close()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -717,7 +730,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
 	// have the checksum enabled to apply all changes safely.
 	r.migration.Checksum = true
-	r.copier, err = row.NewCopierFromCheckpoint(r.db, r.table, r.newTable, &row.CopierConfig{
+	r.copier, err = row.NewCopierFromCheckpoint(r.pool, r.table, r.newTable, &row.CopierConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		FinalChecksum:   r.migration.Checksum,

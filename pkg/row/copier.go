@@ -33,7 +33,7 @@ const (
 type Copier struct {
 	sync.Mutex
 	db                   *sql.DB
-	pool                 *dbconn.ConnPool
+	Pool                 *dbconn.ConnPool
 	table                *table.TableInfo
 	newTable             *table.TableInfo
 	chunker              table.Chunker
@@ -76,7 +76,7 @@ func NewCopierDefaultConfig() *CopierConfig {
 }
 
 // NewCopier creates a new copier object.
-func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
+func NewCopier(db *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
@@ -85,7 +85,7 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 		return nil, err
 	}
 	return &Copier{
-		db:            db,
+		Pool:          db,
 		table:         tbl,
 		newTable:      newTable,
 		concurrency:   config.Concurrency,
@@ -98,7 +98,7 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 }
 
 // NewCopierFromCheckpoint creates a new copier object, from a checkpoint (copyRowsAt, copyRows)
-func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64) (*Copier, error) {
+func NewCopierFromCheckpoint(db *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64) (*Copier, error) {
 	c, err := NewCopier(db, tbl, newTable, config)
 	if err != nil {
 		return c, err
@@ -132,7 +132,7 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
-	if affectedRows, err = c.pool.RetryableTransaction(ctx, c.finalChecksum, query); err != nil {
+	if affectedRows, err = c.Pool.RetryableTransaction(ctx, c.finalChecksum, query); err != nil {
 		return err
 	}
 	atomic.AddUint64(&c.CopyRowsCount, uint64(affectedRows))
@@ -177,10 +177,6 @@ func (c *Copier) Run(ctx context.Context) error {
 	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
 	var err error
-	c.pool, err = dbconn.NewConnPool(ctx, c.db, c.concurrency, dbconn.NewDBConfig())
-	if err != nil {
-		return err
-	}
 	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
