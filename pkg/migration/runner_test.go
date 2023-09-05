@@ -684,7 +684,7 @@ func TestCheckpoint(t *testing.T) {
 	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
 
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -750,7 +750,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
 
 	// Start the binary log feed just before copy rows starts.
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// This opens the table at the checkpoint (table.OpenAtWatermark())
@@ -835,7 +835,7 @@ func TestCheckpointRestore(t *testing.T) {
 
 	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now insert a fake checkpoint, this uses a known bad value
@@ -926,7 +926,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	})
 	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1136,7 +1136,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1264,7 +1264,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1785,7 +1785,7 @@ func TestE2ERogueValues(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1952,7 +1952,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.

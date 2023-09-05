@@ -45,8 +45,8 @@ func TestCutOver(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
@@ -59,7 +59,7 @@ func TestCutOver(t *testing.T) {
 		BatchSize:   10000,
 	})
 	// the feed must be started.
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	cutover, err := NewCutOver(db, t1, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
@@ -102,8 +102,8 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "cutoverghostt1")
 	err = t1.SetInfo(context.Background())
@@ -118,7 +118,7 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 		BatchSize:   10000,
 	})
 	// the feed must be started.
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 	// manually assign gh-ost cutover.
 	cutover := &CutOver{
 		db:        db,
@@ -166,8 +166,8 @@ func TestMDLLockFails(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
@@ -184,7 +184,7 @@ func TestMDLLockFails(t *testing.T) {
 		BatchSize:   10000,
 	})
 	// the feed must be started.
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	cutover, err := NewCutOver(db, t1, t1new, feed, config, logger)
 	assert.NoError(t, err)
@@ -209,8 +209,8 @@ func TestInvalidOptions(t *testing.T) {
 	assert.NoError(t, err)
 
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	logger := logrus.New()
 

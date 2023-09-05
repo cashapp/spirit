@@ -55,8 +55,8 @@ func TestCopier(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "copiert1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -90,8 +90,8 @@ func TestThrottler(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "throttlert1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -119,8 +119,8 @@ func TestCopierUniqueDestination(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "copieruniqt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -155,8 +155,8 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "datatpt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -179,8 +179,8 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "null2notnullt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -203,8 +203,8 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "invaliddt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -232,8 +232,8 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "lockt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -269,8 +269,8 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "lock2t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -304,8 +304,8 @@ func TestCopierValidation(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 
@@ -326,8 +326,8 @@ func TestETA(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "testeta1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -391,8 +391,8 @@ func TestCopierFromCheckpoint(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "copierchkpt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))

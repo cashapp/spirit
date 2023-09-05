@@ -31,7 +31,6 @@ const (
 	// we probably shouldn't set this any larger than about 1K. It will also use
 	// multiple-flush-threads, which should help it group commit and still be fast.
 	DefaultBatchSize = 1000
-	flushThreads     = 4
 	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in the future.
@@ -219,7 +218,7 @@ func (c *Client) pksToRowValueConstructor(d []string) string {
 	return strings.Join(pkValues, ",")
 }
 
-func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
+func (c *Client) getCurrentBinlogPosition(ctx context.Context) (mysql.Position, error) {
 	var binlogFile, fake string
 	var binlogPos uint32
 	conn, err := c.connPool.Get()
@@ -227,7 +226,7 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	if err != nil {
 		return mysql.Position{}, err
 	}
-	err = conn.QueryRowContext(context.TODO(), "SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
+	err = conn.QueryRowContext(ctx, "SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -237,7 +236,7 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	}, nil
 }
 
-func (c *Client) Run() (err error) {
+func (c *Client) Run(ctx context.Context) (err error) {
 	// We have to disable the delta map
 	// if the primary key is *not* memory comparable.
 	// We use a FIFO queue instead.
@@ -269,11 +268,11 @@ func (c *Client) Run() (err error) {
 	// All we need to do synchronously is get a position before
 	// the table migration starts. Then we can start copying data.
 	if c.binlogPosSynced.Name == "" {
-		c.binlogPosSynced, err = c.getCurrentBinlogPosition()
+		c.binlogPosSynced, err = c.getCurrentBinlogPosition(ctx)
 		if err != nil {
 			return errors.New("failed to get binlog position, check binary is enabled")
 		}
-	} else if c.binlogPositionIsImpossible() {
+	} else if c.binlogPositionIsImpossible(ctx) {
 		// Canal needs to be called as a go routine, so before we do check that the binary log
 		// Position is not impossible so we can return a synchronous error.
 		return errors.New("binlog position is impossible, the source may have already purged it")
@@ -287,13 +286,13 @@ func (c *Client) Run() (err error) {
 	return nil
 }
 
-func (c *Client) binlogPositionIsImpossible() bool {
+func (c *Client) binlogPositionIsImpossible(ctx context.Context) bool {
 	conn, err := c.connPool.Get()
 	defer c.connPool.Put(conn)
 	if err != nil {
 		return true
 	}
-	rows, err := conn.QueryContext(context.TODO(), "SHOW MASTER LOGS") //nolint: execinquery
+	rows, err := conn.QueryContext(ctx, "SHOW MASTER LOGS") //nolint: execinquery
 	if err != nil {
 		return true // if we can't get the logs, its already impossible
 	}

@@ -3,9 +3,10 @@ package checksum
 import (
 	"context"
 	"database/sql"
-	"github.com/squareup/spirit/pkg/dbconn"
 	"os"
 	"testing"
+
+	"github.com/squareup/spirit/pkg/dbconn"
 
 	mysql "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -43,8 +44,8 @@ func TestBasicChecksum(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -59,7 +60,7 @@ func TestBasicChecksum(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -81,8 +82,8 @@ func TestBasicValidation(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -97,7 +98,7 @@ func TestBasicValidation(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and newTable must be non-nil")
@@ -121,8 +122,8 @@ func TestCorruptChecksum(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -137,7 +138,7 @@ func TestCorruptChecksum(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -155,8 +156,8 @@ func TestBoundaryCases(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -171,7 +172,7 @@ func TestBoundaryCases(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -222,8 +223,8 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -238,7 +239,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.Background()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)

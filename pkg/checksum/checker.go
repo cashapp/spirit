@@ -82,7 +82,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	return checksum, nil
 }
 
-func (c *Checker) ChecksumChunk(rrConnPool *dbconn.ConnPool, chunk *table.Chunk) error {
+func (c *Checker) ChecksumChunk(ctx context.Context, rrConnPool *dbconn.ConnPool, chunk *table.Chunk) error {
 	startTime := time.Now()
 	rrConn, err := rrConnPool.Get()
 	if err != nil {
@@ -101,11 +101,11 @@ func (c *Checker) ChecksumChunk(rrConnPool *dbconn.ConnPool, chunk *table.Chunk)
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
-	err = rrConn.QueryRowContext(context.TODO(), source).Scan(&sourceChecksum)
+	err = rrConn.QueryRowContext(ctx, source).Scan(&sourceChecksum)
 	if err != nil {
 		return err
 	}
-	err = rrConn.QueryRowContext(context.TODO(), target).Scan(&targetChecksum)
+	err = rrConn.QueryRowContext(ctx, target).Scan(&targetChecksum)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func (c *Checker) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.ChecksumChunk(c.rrConnPool, chunk); err != nil {
+			if err := c.ChecksumChunk(ctx, c.rrConnPool, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}

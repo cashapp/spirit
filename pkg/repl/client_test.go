@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"github.com/squareup/spirit/pkg/dbconn"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/squareup/spirit/pkg/dbconn"
 
 	//"time"
 
@@ -40,8 +41,8 @@ func TestReplClient(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	runSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
 	runSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -61,7 +62,7 @@ func TestReplClient(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(context.Background()))
 	defer client.Close()
 
 	// Insert into t1.
@@ -106,7 +107,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, err)
 
 	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(context.Background()))
 	defer client.Close()
 
 	copier, err := row.NewCopier(pool, t1, t2, row.NewCopierDefaultConfig())
@@ -160,8 +161,8 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	runSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
 	runSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -185,7 +186,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 		Name: "impossible",
 		Pos:  uint32(12345),
 	})
-	err = client.Run()
+	err = client.Run(context.Background())
 	assert.Error(t, err)
 }
 
@@ -194,8 +195,8 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	assert.NoError(t, err)
 
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	runSQL(t, "DROP TABLE IF EXISTS replresumepointt1, replresumepointt2")
 	runSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -214,10 +215,10 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	pos, err := client.getCurrentBinlogPosition()
+	pos, err := client.getCurrentBinlogPosition(context.Background())
 	assert.NoError(t, err)
 	pos.Pos = 4
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(context.Background()))
 	client.Close()
 }
 
@@ -226,8 +227,8 @@ func TestReplClientOpts(t *testing.T) {
 	assert.NoError(t, err)
 
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
-	//defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	runSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
 	runSQL(t, "CREATE TABLE replclientoptst1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
@@ -253,7 +254,7 @@ func TestReplClientOpts(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(context.Background()))
 	defer client.Close()
 
 	// Disable key above watermark.
@@ -282,8 +283,8 @@ func TestReplClientQueue(t *testing.T) {
 	assert.NoError(t, err)
 
 	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	runSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
 	runSQL(t, "CREATE TABLE replqueuet1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -305,7 +306,7 @@ func TestReplClientQueue(t *testing.T) {
 	assert.NoError(t, err)
 
 	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(context.Background()))
 	defer client.Close()
 
 	copier, err := row.NewCopier(pool, t1, t2, row.NewCopierDefaultConfig())

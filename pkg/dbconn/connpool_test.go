@@ -3,10 +3,11 @@ package dbconn
 import (
 	"context"
 	"database/sql"
-	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRetryableTrx(t *testing.T) {
@@ -16,8 +17,8 @@ func TestRetryableTrx(t *testing.T) {
 	config := NewDBConfig()
 
 	pool, err := NewConnPool(context.TODO(), db, 2, NewDBConfig())
-	defer pool.Close()
 	assert.NoError(t, err)
+	defer pool.Close()
 
 	err = DBExec(context.Background(), db, config, "DROP TABLE IF EXISTS test.dbexec")
 	assert.NoError(t, err)

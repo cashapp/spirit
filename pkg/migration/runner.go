@@ -393,7 +393,7 @@ func (r *Runner) setup(ctx context.Context) error {
 			BatchSize:   repl.DefaultBatchSize,
 		})
 		// Start the binary log feed now
-		if err := r.replClient.Run(); err != nil {
+		if err := r.replClient.Run(ctx); err != nil {
 			return err
 		}
 	}
@@ -573,7 +573,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 			Inclusive: true,
 		},
 	}
-	if err := checker.ChecksumChunk(rrConnPool, chunk); err != nil {
+	if err := checker.ChecksumChunk(ctx, rrConnPool, chunk); err != nil {
 		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
 		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
 			oldTable.QuotedName,
@@ -764,7 +764,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
 	// and still be able to start from scratch.
 	// Start the binary log feed just before copy rows starts.
-	if err := r.replClient.Run(); err != nil {
+	if err := r.replClient.Run(ctx); err != nil {
 		r.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
