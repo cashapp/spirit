@@ -43,10 +43,6 @@ var (
 	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 30 * time.Second
-	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
-	// Longer values require more memory, but permit more merging.
-	// I expect we will change this to 1hr-24hr in the future.
-	binlogPerodicFlushInterval = 30 * time.Second
 )
 
 func (s migrationState) String() string {
@@ -429,7 +425,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
 	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
-	go r.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
+	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
 	return nil
 }
 

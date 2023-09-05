@@ -33,6 +33,10 @@ const (
 	// multiple-flush-threads, which should help it group commit and still be fast.
 	DefaultBatchSize = 1000
 	flushThreads     = 16
+	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
+	// Longer values require more memory, but permit more merging.
+	// I expect we will change this to 1hr-24hr in the future.
+	DefaultFlushInterval = 30 * time.Second
 )
 
 type queuedChange struct {

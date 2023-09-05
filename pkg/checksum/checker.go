@@ -21,8 +21,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var binlogFlushIntervalDuringChecksum = 30 * time.Second
-
 type Checker struct {
 	sync.Mutex
 	table       *table.TableInfo
@@ -209,7 +207,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// - If they are there, they will take a huge amount of time to flush
 	// - The memory requirements for 1MM deltas seems reasonable, but for a multi-day
 	//   checksum it is reasonable to assume it may exceed this.
-	go c.feed.StartPeriodicFlush(ctx, binlogFlushIntervalDuringChecksum)
+	go c.feed.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
 	defer c.feed.StopPeriodicFlush()
 
 	g, errGrpCtx := errgroup.WithContext(ctx)
