@@ -28,7 +28,7 @@ type Checker struct {
 	concurrency int
 	feed        *repl.Client
 	db          *sql.DB
-	trxPool     *dbconn.TrxPool
+	rrConnPool  *dbconn.ConnPool
 	isInvalid   bool
 	chunker     table.Chunker
 	StartTime   time.Time
@@ -82,13 +82,13 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	return checksum, nil
 }
 
-func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
+func (c *Checker) ChecksumChunk(rrConnPool *dbconn.ConnPool, chunk *table.Chunk) error {
 	startTime := time.Now()
-	trx, err := trxPool.Get()
+	rrConn, err := rrConnPool.Get()
 	if err != nil {
 		return err
 	}
-	defer trxPool.Put(trx)
+	defer rrConnPool.Put(rrConn)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		c.intersectColumns(),
@@ -101,11 +101,11 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
-	err = trx.QueryRow(source).Scan(&sourceChecksum)
+	err = rrConn.QueryRowContext(context.TODO(), source).Scan(&sourceChecksum)
 	if err != nil {
 		return err
 	}
-	err = trx.QueryRow(target).Scan(&targetChecksum)
+	err = rrConn.QueryRowContext(context.TODO(), target).Scan(&targetChecksum)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.trxPool, err = dbconn.NewTrxPool(ctx, c.db, c.concurrency, c.dbConfig)
+	c.rrConnPool, err = dbconn.NewRRConnPool(ctx, c.db, c.concurrency, c.dbConfig)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func (c *Checker) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.ChecksumChunk(c.trxPool, chunk); err != nil {
+			if err := c.ChecksumChunk(c.rrConnPool, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}
@@ -234,7 +234,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Regardless of err state, we should attempt to rollback the transaction
 	// in checksumTxns. They are likely holding metadata locks, which will block
 	// further operations like cleanup or cut-over.
-	if err := c.trxPool.Close(); err != nil {
+	if err := c.rrConnPool.Close(); err != nil {
 		return err
 	}
 	if err1 != nil {

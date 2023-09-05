@@ -16,6 +16,32 @@ type ConnPool struct {
 	conns  []*sql.Conn
 }
 
+// NewRRConnPool creates a pool of transactions which have already
+// had their read-view created in REPEATABLE READ isolation.
+func NewRRConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
+	checksumTxns := make([]*sql.Conn, 0, count)
+	for i := 0; i < count; i++ {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		_, err = conn.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+		if err != nil {
+			return nil, err
+		}
+		_, err = conn.ExecContext(ctx, "START TRANSACTION WITH CONSISTENT SNAPSHOT")
+		if err != nil {
+			return nil, err
+		}
+		// Set SQL mode, charset, etc.
+		if err := standardizeConn(ctx, conn, config); err != nil {
+			return nil, err
+		}
+		checksumTxns = append(checksumTxns, conn)
+	}
+	return &ConnPool{conns: checksumTxns, config: config}, nil
+}
+
 // NewConnPool creates a pool of connections which have already
 // been standardised.
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {

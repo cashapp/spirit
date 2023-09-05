@@ -550,7 +550,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	trxPool, err := dbconn.NewTrxPool(ctx, r.db, r.migration.Threads, r.dbConfig)
+	rrConnPool, err := dbconn.NewRRConnPool(ctx, r.db, r.migration.Threads, r.dbConfig)
 	if err != nil {
 		return err
 	}
@@ -573,7 +573,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 			Inclusive: true,
 		},
 	}
-	if err := checker.ChecksumChunk(trxPool, chunk); err != nil {
+	if err := checker.ChecksumChunk(rrConnPool, chunk); err != nil {
 		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
 		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
 			oldTable.QuotedName,
