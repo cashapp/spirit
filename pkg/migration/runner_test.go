@@ -650,6 +650,9 @@ func TestCheckpoint(t *testing.T) {
 		// the migration process manually.
 		r.db, err = sql.Open("mysql", r.dsn())
 		assert.NoError(t, err)
+
+		r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
+		assert.NoError(t, err)
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
 		err = r.table.SetInfo(context.TODO())
@@ -661,6 +664,7 @@ func TestCheckpoint(t *testing.T) {
 	}
 
 	r := preSetup()
+	defer r.connPool.Close()
 
 	// migrationRunner.Run usually calls r.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -677,9 +681,7 @@ func TestCheckpoint(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, row.NewCopierDefaultConfig())
-	r.copier.Pool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
-	defer r.copier.Pool.Close()
+	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
 
 	assert.NoError(t, err)
 	err = r.replClient.Run()
@@ -744,9 +746,8 @@ func TestCheckpoint(t *testing.T) {
 	// from checkpoint again.
 
 	r = preSetup()
+	defer r.connPool.Close()
 	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
-	r.copier.Pool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
-	defer r.copier.Pool.Close()
 
 	// Start the binary log feed just before copy rows starts.
 	err = r.replClient.Run()
@@ -828,10 +829,10 @@ func TestCheckpointRestore(t *testing.T) {
 		BatchSize:   10000,
 	})
 	// Pool setup
-	r.pool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
+	r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
-	r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, row.NewCopierDefaultConfig())
+	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = r.replClient.Run()
 	assert.NoError(t, err)
@@ -892,7 +893,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		// the migration process manually.
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
-		m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+		m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
 		assert.NoError(t, err)
 
 		// Get Table Info
@@ -904,7 +905,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	}
 
 	m := preSetup("ADD COLUMN id3 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	defer m.pool.Close()
+	defer m.connPool.Close()
 
 	// migrationRunner.Run usually calls m.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -922,7 +923,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, row.NewCopierDefaultConfig())
+	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run()
 	assert.NoError(t, err)
@@ -974,7 +975,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	defer m.pool.Close()
+	defer m.connPool.Close()
 	assert.Error(t, m.resumeFromCheckpoint(context.TODO())) // it should error because the ALTER does not match.
 }
 
@@ -1102,8 +1103,8 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	defer m.db.Close()
 
 	// Pool setup
-	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	defer m.pool.Close()
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1124,7 +1125,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1230,8 +1231,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	defer m.db.Close()
 
 	// Pool setup
-	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	defer m.pool.Close()
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1252,7 +1253,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1752,8 +1753,8 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Pool setup
-	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	defer m.pool.Close()
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1773,7 +1774,7 @@ func TestE2ERogueValues(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   repl.DefaultBatchSize,
 	})
-	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1925,8 +1926,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	m.db, err = dbconn.New(dsn())
 	assert.NoError(t, err)
 
-	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	defer m.pool.Close()
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
@@ -1940,7 +1941,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   repl.DefaultBatchSize,
 	})
-	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -2019,8 +2020,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Pool setup
-	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	defer m.pool.Close()
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)

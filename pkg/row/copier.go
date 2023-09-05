@@ -5,7 +5,6 @@ package row
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"math"
@@ -32,8 +31,7 @@ const (
 
 type Copier struct {
 	sync.Mutex
-	db                   *sql.DB
-	Pool                 *dbconn.ConnPool
+	connPool             *dbconn.ConnPool
 	table                *table.TableInfo
 	newTable             *table.TableInfo
 	chunker              table.Chunker
@@ -76,7 +74,7 @@ func NewCopierDefaultConfig() *CopierConfig {
 }
 
 // NewCopier creates a new copier object.
-func NewCopier(db *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
+func NewCopier(connPool *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig) (*Copier, error) {
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
@@ -85,7 +83,7 @@ func NewCopier(db *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *Copi
 		return nil, err
 	}
 	return &Copier{
-		Pool:          db,
+		connPool:      connPool,
 		table:         tbl,
 		newTable:      newTable,
 		concurrency:   config.Concurrency,
@@ -132,7 +130,7 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
-	if affectedRows, err = c.Pool.RetryableTransaction(ctx, c.finalChecksum, query); err != nil {
+	if affectedRows, err = c.connPool.RetryableTransaction(ctx, c.finalChecksum, query); err != nil {
 		return err
 	}
 	atomic.AddUint64(&c.CopyRowsCount, uint64(affectedRows))
