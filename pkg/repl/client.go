@@ -3,7 +3,6 @@ package repl
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -32,7 +31,7 @@ const (
 	// we probably shouldn't set this any larger than about 1K. It will also use
 	// multiple-flush-threads, which should help it group commit and still be fast.
 	DefaultBatchSize = 1000
-	flushThreads     = 16
+	flushThreads     = 4
 	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in the future.
@@ -63,7 +62,7 @@ type Client struct {
 	changesetRowsCount      int64
 	changesetRowsEventCount int64 // eliminated by optimizations
 
-	db *sql.DB // connection to run queries like SHOW MASTER STATUS
+	connPool *dbconn.ConnPool // connection to run queries like SHOW MASTER STATUS
 
 	// Infoschema version of table.
 	table    *table.TableInfo
@@ -89,9 +88,9 @@ type Client struct {
 	logger loggers.Advanced
 }
 
-func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, username, password string, config *ClientConfig) *Client {
+func NewClient(db *dbconn.ConnPool, host string, table, newTable *table.TableInfo, username, password string, config *ClientConfig) *Client {
 	return &Client{
-		db:              db,
+		connPool:        db,
 		host:            host,
 		table:           table,
 		newTable:        newTable,
@@ -223,7 +222,12 @@ func (c *Client) pksToRowValueConstructor(d []string) string {
 func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	var binlogFile, fake string
 	var binlogPos uint32
-	err := c.db.QueryRow("SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
+	conn, err := c.connPool.Get()
+	defer c.connPool.Put(conn)
+	if err != nil {
+		return mysql.Position{}, err
+	}
+	err = conn.QueryRowContext(context.TODO(), "SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -284,7 +288,12 @@ func (c *Client) Run() (err error) {
 }
 
 func (c *Client) binlogPositionIsImpossible() bool {
-	rows, err := c.db.Query("SHOW MASTER LOGS") //nolint: execinquery
+	conn, err := c.connPool.Get()
+	defer c.connPool.Put(conn)
+	if err != nil {
+		return true
+	}
+	rows, err := conn.QueryContext(context.TODO(), "SHOW MASTER LOGS") //nolint: execinquery
 	if err != nil {
 		return true // if we can't get the logs, its already impossible
 	}
@@ -419,7 +428,7 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 	} else {
 		// Execute the statements in a transaction.
 		// They still need to be single threaded.
-		if _, err := dbconn.RetryableTransaction(ctx, c.db, true, dbconn.NewDBConfig(), stmts...); err != nil {
+		if _, err := c.connPool.RetryableTransaction(ctx, true, stmts...); err != nil {
 			return err
 		}
 	}
@@ -482,11 +491,11 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		// because they come from a consistent view of a map,
 		// which is distinct keys.
 		g, errGrpCtx := errgroup.WithContext(ctx)
-		g.SetLimit(flushThreads)
+		g.SetLimit(c.connPool.Size())
 		for _, stmt := range stmts {
 			s := stmt
 			g.Go(func() error {
-				_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s)
+				_, err := c.connPool.RetryableTransaction(errGrpCtx, false, s)
 				return err
 			})
 		}
@@ -623,7 +632,12 @@ func (c *Client) BlockWait(ctx context.Context) error {
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
-	_, err := c.db.ExecContext(ctx, stmt)
+	conn, err := c.connPool.Get()
+	defer c.connPool.Put(conn)
+	if err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, stmt)
 	return err
 }
 

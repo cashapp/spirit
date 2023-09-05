@@ -44,13 +44,16 @@ func TestCutOver(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -98,6 +101,9 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "cutoverghostt1")
 	err = t1.SetInfo(context.Background())
@@ -106,7 +112,7 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -159,6 +165,9 @@ func TestMDLLockFails(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
@@ -169,7 +178,7 @@ func TestMDLLockFails(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -198,6 +207,11 @@ func TestMDLLockFails(t *testing.T) {
 func TestInvalidOptions(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
+
 	logger := logrus.New()
 
 	// Invalid options
@@ -207,7 +221,7 @@ func TestInvalidOptions(t *testing.T) {
 	t1new := table.NewTableInfo(db, "test", "t1_new")
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,

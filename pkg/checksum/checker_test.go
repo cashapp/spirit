@@ -3,6 +3,7 @@ package checksum
 import (
 	"context"
 	"database/sql"
+	"github.com/squareup/spirit/pkg/dbconn"
 	"os"
 	"testing"
 
@@ -41,6 +42,9 @@ func TestBasicChecksum(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -50,7 +54,7 @@ func TestBasicChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -76,6 +80,9 @@ func TestBasicValidation(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -85,7 +92,7 @@ func TestBasicValidation(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -113,6 +120,9 @@ func TestCorruptChecksum(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -122,7 +132,7 @@ func TestCorruptChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -144,6 +154,9 @@ func TestBoundaryCases(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -153,7 +166,7 @@ func TestBoundaryCases(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -208,6 +221,9 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -217,7 +233,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(dsn())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	//"time"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -37,6 +39,9 @@ func runSQL(t *testing.T, stmt string) {
 func TestReplClient(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
 	runSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -51,7 +56,7 @@ func TestReplClient(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -78,7 +83,7 @@ func TestReplClientComplex(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
@@ -100,7 +105,7 @@ func TestReplClientComplex(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
 	assert.NoError(t, client.Run())
 	defer client.Close()
 
@@ -154,6 +159,9 @@ func TestReplClientComplex(t *testing.T) {
 func TestReplClientResumeFromImpossible(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
 	runSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -168,7 +176,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -185,6 +193,10 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	defer pool.Close()
+	assert.NoError(t, err)
+
 	runSQL(t, "DROP TABLE IF EXISTS replresumepointt1, replresumepointt2")
 	runSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -197,7 +209,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -211,6 +223,10 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 
 func TestReplClientOpts(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	//defer pool.Close()
 	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
@@ -232,7 +248,7 @@ func TestReplClientOpts(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
@@ -265,7 +281,8 @@ func TestReplClientQueue(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	defer pool.Close()
 	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
@@ -287,7 +304,7 @@ func TestReplClientQueue(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(dsn())
 	assert.NoError(t, err)
 
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
+	client := NewClient(pool, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
 	assert.NoError(t, client.Run())
 	defer client.Close()
 

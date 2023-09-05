@@ -387,7 +387,7 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 			Logger:      r.logger,
 			Concurrency: r.migration.Threads,
 			BatchSize:   repl.DefaultBatchSize,
@@ -745,7 +745,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:      r.logger,
 		Concurrency: r.migration.Threads,
 		BatchSize:   repl.DefaultBatchSize,

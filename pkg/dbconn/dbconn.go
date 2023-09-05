@@ -239,7 +239,7 @@ func BeginStandardTrx(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.T
 	if err != nil {
 		return nil, 0, err
 	}
-	// get the connection id.
+	// Get the connection id.
 	var connectionID int
 	err = trx.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID)
 	if err != nil {

@@ -40,11 +40,11 @@ func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarning
 	var err error
 	var trx *sql.Tx
 	var rowsAffected int64
-	conn, err := p.get()
+	conn, err := p.Get()
 	if err != nil {
-		return 0, err // could not get connection
+		return 0, err // could not Get connection
 	}
-	defer p.put(conn)
+	defer p.Put(conn)
 RETRYLOOP:
 	for i := 0; i < p.config.MaxRetries; i++ {
 		// Start a transaction
@@ -124,8 +124,8 @@ RETRYLOOP:
 	return rowsAffected, err
 }
 
-// get gets a transaction from the pool.
-func (p *ConnPool) get() (*sql.Conn, error) {
+// Get gets a transaction from the pool.
+func (p *ConnPool) Get() (*sql.Conn, error) {
 	p.Lock()
 	defer p.Unlock()
 	if len(p.conns) == 0 {
@@ -136,8 +136,11 @@ func (p *ConnPool) get() (*sql.Conn, error) {
 	return conn, nil
 }
 
-// put puts a transaction back in the pool.
-func (p *ConnPool) put(trx *sql.Conn) {
+// Put puts a transaction back in the pool.
+func (p *ConnPool) Put(trx *sql.Conn) {
+	if trx == nil {
+		return
+	}
 	p.Lock()
 	defer p.Unlock()
 	p.conns = append(p.conns, trx)
@@ -145,10 +148,15 @@ func (p *ConnPool) put(trx *sql.Conn) {
 
 // Close closes all transactions in the pool.
 func (p *ConnPool) Close() error {
+	fmt.Println("ABout to close all connections ####")
 	for _, conn := range p.conns {
 		if err := conn.Close(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (p *ConnPool) Size() int {
+	return len(p.conns)
 }
