@@ -490,7 +490,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		// because they come from a consistent view of a map,
 		// which is distinct keys.
 		g, errGrpCtx := errgroup.WithContext(ctx)
-		g.SetLimit(c.connPool.Size())
+		g.SetLimit(c.concurrency)
 		for _, stmt := range stmts {
 			s := stmt
 			g.Go(func() error {

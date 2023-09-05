@@ -19,7 +19,7 @@ type ConnPool struct {
 // NewRRConnPool creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation.
 func NewRRConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
-	checksumTxns := make([]*sql.Conn, 0, count)
+	rrConns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -37,9 +37,9 @@ func NewRRConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig)
 		if err := standardizeConn(ctx, conn, config); err != nil {
 			return nil, err
 		}
-		checksumTxns = append(checksumTxns, conn)
+		rrConns = append(rrConns, conn)
 	}
-	return &ConnPool{conns: checksumTxns, config: config}, nil
+	return &ConnPool{conns: rrConns, config: config}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
@@ -174,7 +174,6 @@ func (p *ConnPool) Put(trx *sql.Conn) {
 
 // Close closes all transactions in the pool.
 func (p *ConnPool) Close() error {
-	fmt.Println("ABout to close all connections ####")
 	for _, conn := range p.conns {
 		if err := conn.Close(); err != nil {
 			return err
