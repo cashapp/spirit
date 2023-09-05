@@ -269,6 +269,9 @@ func (r *Runner) Run(originalCtx context.Context) error {
 func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateApplyChangeset)
 	// Disable the periodic flush and flush all pending events.
+	// We want it disabled for ANALYZE TABLE and acquiring a table lock
+	// *but* it will be started again briefly inside of the checksum
+	// runner to ensure that the lag does not grow too long.
 	r.replClient.StopPeriodicFlush()
 	if err := r.replClient.Flush(ctx); err != nil {
 		return err
