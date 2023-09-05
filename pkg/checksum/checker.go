@@ -201,6 +201,15 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	c.logger.Info("table unlocked, starting checksum")
 
+	// Start the periodic flush again *just* for the duration of the checksum.
+	// If the checksum is long running, it could block flushing for too long:
+	// - If we need to resume from checkpoint, the binlogs may not be there.
+	// - If they are there, they will take a huge amount of time to flush
+	// - The memory requirements for 1MM deltas seems reasonable, but for a multi-day
+	//   checksum it is reasonable to assume it may exceed this.
+	go c.feed.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
+	defer c.feed.StopPeriodicFlush()
+
 	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
 	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {

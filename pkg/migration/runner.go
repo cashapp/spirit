@@ -43,10 +43,6 @@ var (
 	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 30 * time.Second
-	// binlogPerodicFlushInterval is the time that the client will flush all binlog changes to disk.
-	// Longer values require more memory, but permit more merging.
-	// I expect we will change this to 1hr-24hr in the future.
-	binlogPerodicFlushInterval = 30 * time.Second
 )
 
 func (s migrationState) String() string {
@@ -269,6 +265,9 @@ func (r *Runner) Run(originalCtx context.Context) error {
 func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateApplyChangeset)
 	// Disable the periodic flush and flush all pending events.
+	// We want it disabled for ANALYZE TABLE and acquiring a table lock
+	// *but* it will be started again briefly inside of the checksum
+	// runner to ensure that the lag does not grow too long.
 	r.replClient.StopPeriodicFlush()
 	if err := r.replClient.Flush(ctx); err != nil {
 		return err
@@ -426,7 +425,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
 	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
-	go r.replClient.StartPeriodicFlush(ctx, binlogPerodicFlushInterval)
+	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
 	return nil
 }
 
