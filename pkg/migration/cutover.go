@@ -13,7 +13,6 @@ import (
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
-	"github.com/squareup/spirit/pkg/utils"
 )
 
 type CutoverAlgorithm int
@@ -34,6 +33,7 @@ func (a CutoverAlgorithm) String() string {
 }
 
 type CutOver struct {
+	pool      *dbconn.ConnPool
 	db        *sql.DB
 	table     *table.TableInfo
 	newTable  *table.TableInfo
@@ -45,7 +45,7 @@ type CutOver struct {
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(ctx context.Context, db *sql.DB, pool *dbconn.ConnPool, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
@@ -56,11 +56,12 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 	// For users we try to default to RenameUnderLock but fall back to Ghost
 	// if it's 5.7 or there is an error.
 	algorithm := RenameUnderLock // default to rename under lock
-	if !utils.IsMySQL8(db) {
+	if !pool.IsMySQL8(ctx) {
 		algorithm = Ghost
 	}
 	return &CutOver{
 		db:        db,
+		pool:      pool,
 		table:     table,
 		newTable:  newTable,
 		feed:      feed,
@@ -154,12 +155,14 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if c.feed.GetDeltaLen() > 0 {
 		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
 	}
-	// Start the RENAME TABLE trx. This connection is
+	// Start the RENAME TABLE conn. This connection is
 	// described as C20 in the gh-ost docs.
-	trx, connectionID, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig)
+	renameConn, connectionID, err := c.pool.GetWithConnectionID(ctx)
 	if err != nil {
 		return err
 	}
+	defer c.pool.Put(renameConn)
+
 	// Start the rename operation, it's OK it will block inside
 	// of this go-routine.
 	var wg sync.WaitGroup
@@ -170,7 +173,7 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 		query := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 			c.table.QuotedName, oldQuotedName,
 			c.newTable.QuotedName, c.table.QuotedName)
-		_, renameErr = trx.ExecContext(ctx, query)
+		_, renameErr = renameConn.ExecContext(ctx, query)
 		wg.Done()
 	}()
 
@@ -195,9 +198,14 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 
 func (c *CutOver) checkProcesslistForID(ctx context.Context, id int) error {
 	var state string
+	conn, err := c.pool.Get()
+	if err != nil {
+		return err
+	}
+	defer c.pool.Put(conn)
 	// try up to 10 times. This can be racey
 	for i := 0; i < 10; i++ {
-		err := c.db.QueryRowContext(ctx, "SELECT state FROM information_schema.processlist WHERE id = ? AND state = 'Waiting for table metadata lock'", id).Scan(&state)
+		err := conn.QueryRowContext(ctx, "SELECT state FROM information_schema.processlist WHERE id = ? AND state = 'Waiting for table metadata lock'", id).Scan(&state)
 		if err != nil {
 			c.logger.Warnf("error checking processlist for id %d. Err: %s State: %s", id, err.Error(), state)
 			time.Sleep(time.Second)

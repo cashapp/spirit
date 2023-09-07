@@ -227,7 +227,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
+	cutover, err := NewCutOver(ctx, r.db, r.connPool, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateAnalyzeTable)
 	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", analyze)
-	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, analyze); err != nil {
+	if err := r.connPool.Exec(ctx, analyze); err != nil {
 		return err
 	}
 
@@ -546,11 +546,8 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.dbConfig,
 		Logger:          r.logger,
+		Pool:            r.connPool, // can re-use our pool.
 	})
-	if err != nil {
-		return err
-	}
-	rrConnPool, err := dbconn.NewRRConnPool(ctx, r.db, r.migration.Threads, r.dbConfig)
 	if err != nil {
 		return err
 	}
@@ -573,7 +570,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 			Inclusive: true,
 		},
 	}
-	if err := checker.ChecksumChunk(ctx, rrConnPool, chunk); err != nil {
+	if err := checker.ChecksumChunk(ctx, chunk); err != nil {
 		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
 		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
 			oldTable.QuotedName,

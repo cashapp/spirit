@@ -20,9 +20,9 @@ func TestRetryableTrx(t *testing.T) {
 	assert.NoError(t, err)
 	defer pool.Close()
 
-	err = DBExec(context.Background(), db, config, "DROP TABLE IF EXISTS test.dbexec")
+	err = pool.Exec(context.Background(), "DROP TABLE IF EXISTS test.dbexec")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, config, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = pool.Exec(context.Background(), "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{

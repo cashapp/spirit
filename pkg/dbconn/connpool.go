@@ -16,9 +16,10 @@ type ConnPool struct {
 	conns  []*sql.Conn
 }
 
-// NewRRConnPool creates a pool of transactions which have already
-// had their read-view created in REPEATABLE READ isolation.
-func NewRRConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
+// NewPoolWithConsistentSnapshot creates a pool of transactions which have already
+// had their read-view created in REPEATABLE READ isolation, and the snapshot
+// has been opened.
+func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
 	rrConns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
@@ -60,7 +61,8 @@ func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (
 	return &ConnPool{config: config, conns: conns}, nil
 }
 
-// RetryableTransaction retries all statements in a transaction, retrying if a statement
+// RetryableTransaction uses the first available connection
+// it retries all statements in a transaction, retrying if a statement
 // errors, or there is a deadlock. It will retry up to maxRetries times.
 func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarnings bool, stmts ...string) (int64, error) {
 	var err error
@@ -150,7 +152,7 @@ RETRYLOOP:
 	return rowsAffected, err
 }
 
-// Get gets a transaction from the pool.
+// Get gets a connection from the pool.
 func (p *ConnPool) Get() (*sql.Conn, error) {
 	p.Lock()
 	defer p.Unlock()
@@ -162,7 +164,33 @@ func (p *ConnPool) Get() (*sql.Conn, error) {
 	return conn, nil
 }
 
-// Put puts a transaction back in the pool.
+// GetWithConnectionID gets a connection from the pool along with its ID.
+func (p *ConnPool) GetWithConnectionID(ctx context.Context) (*sql.Conn, int, error) {
+	p.Lock()
+	defer p.Unlock()
+	if len(p.conns) == 0 {
+		return nil, 0, errors.New("no conns in pool")
+	}
+	conn := p.conns[0]
+	p.conns = p.conns[1:]
+	var connectionID int
+	err := conn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID)
+	return conn, connectionID, err
+}
+
+// Exec is like db.Exec but it uses the first available connection
+// in the connection pool. Connections have previously been standardized.
+func (p *ConnPool) Exec(ctx context.Context, query string) error {
+	conn, err := p.Get()
+	if err != nil {
+		return err
+	}
+	defer p.Put(conn)
+	_, err = conn.ExecContext(ctx, query)
+	return err
+}
+
+// Put puts a connection back in the pool.
 func (p *ConnPool) Put(trx *sql.Conn) {
 	if trx == nil {
 		return
@@ -172,7 +200,7 @@ func (p *ConnPool) Put(trx *sql.Conn) {
 	p.conns = append(p.conns, trx)
 }
 
-// Close closes all transactions in the pool.
+// Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
 	for _, conn := range p.conns {
 		if err := conn.Close(); err != nil {
@@ -184,4 +212,18 @@ func (p *ConnPool) Close() error {
 
 func (p *ConnPool) Size() int {
 	return len(p.conns)
+}
+
+// IsMySQL8 returns true if we can positively identify this as mysql 8
+func (p *ConnPool) IsMySQL8(ctx context.Context) bool {
+	conn, err := p.Get()
+	if err != nil {
+		return false // can't tell
+	}
+	defer p.Put(conn)
+	var version string
+	if err := conn.QueryRowContext(ctx, "select substr(version(), 1, 1)").Scan(&version); err != nil {
+		return false // can't tell
+	}
+	return version == "8"
 }

@@ -28,7 +28,7 @@ type Checker struct {
 	concurrency int
 	feed        *repl.Client
 	db          *sql.DB
-	rrConnPool  *dbconn.ConnPool
+	pool        *dbconn.ConnPool // RR connections
 	isInvalid   bool
 	chunker     table.Chunker
 	StartTime   time.Time
@@ -42,6 +42,7 @@ type CheckerConfig struct {
 	Concurrency     int
 	TargetChunkTime time.Duration
 	DBConfig        *dbconn.DBConfig
+	Pool            *dbconn.ConnPool // usually nil
 	Logger          loggers.Advanced
 }
 
@@ -74,6 +75,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		newTable:    newTable,
 		concurrency: config.Concurrency,
 		db:          db,
+		pool:        config.Pool, // usually nil
 		feed:        feed,
 		chunker:     chunker,
 		dbConfig:    config.DBConfig,
@@ -82,13 +84,13 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	return checksum, nil
 }
 
-func (c *Checker) ChecksumChunk(ctx context.Context, rrConnPool *dbconn.ConnPool, chunk *table.Chunk) error {
+func (c *Checker) ChecksumChunk(ctx context.Context, chunk *table.Chunk) error {
 	startTime := time.Now()
-	rrConn, err := rrConnPool.Get()
+	conn, err := c.pool.Get()
 	if err != nil {
 		return err
 	}
-	defer rrConnPool.Put(rrConn)
+	defer c.pool.Put(conn)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		c.intersectColumns(),
@@ -101,11 +103,11 @@ func (c *Checker) ChecksumChunk(ctx context.Context, rrConnPool *dbconn.ConnPool
 		chunk.String(),
 	)
 	var sourceChecksum, targetChecksum int64
-	err = rrConn.QueryRowContext(ctx, source).Scan(&sourceChecksum)
+	err = conn.QueryRowContext(ctx, source).Scan(&sourceChecksum)
 	if err != nil {
 		return err
 	}
-	err = rrConn.QueryRowContext(ctx, target).Scan(&targetChecksum)
+	err = conn.QueryRowContext(ctx, target).Scan(&targetChecksum)
 	if err != nil {
 		return err
 	}
@@ -184,7 +186,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.rrConnPool, err = dbconn.NewRRConnPool(ctx, c.db, c.concurrency, c.dbConfig)
+	c.pool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.db, c.concurrency, c.dbConfig)
 	if err != nil {
 		return err
 	}
@@ -222,7 +224,7 @@ func (c *Checker) Run(ctx context.Context) error {
 				c.isInvalid = true
 				return err
 			}
-			if err := c.ChecksumChunk(ctx, c.rrConnPool, chunk); err != nil {
+			if err := c.ChecksumChunk(ctx, chunk); err != nil {
 				c.isInvalid = true
 				return err
 			}
@@ -234,7 +236,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Regardless of err state, we should attempt to rollback the transaction
 	// in checksumTxns. They are likely holding metadata locks, which will block
 	// further operations like cleanup or cut-over.
-	if err := c.rrConnPool.Close(); err != nil {
+	if err := c.pool.Close(); err != nil {
 		return err
 	}
 	if err1 != nil {
