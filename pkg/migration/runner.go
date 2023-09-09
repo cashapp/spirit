@@ -69,6 +69,7 @@ func (s migrationState) String() string {
 
 type Runner struct {
 	migration       *Migration
+	db              *sql.DB
 	connPool        *dbconn.ConnPool
 	replica         *sql.DB
 	table           *table.TableInfo
@@ -149,25 +150,25 @@ func (r *Runner) Run(originalCtx context.Context) error {
 
 	// Create a database connection
 	// It will be closed in r.Close()
-
-	db, err := dbconn.New(r.dsn())
+	var err error
+	r.db, err = dbconn.New(r.dsn())
 	if err != nil {
 		return err
 	}
-	if err := db.Ping(); err != nil {
+	if err := r.db.Ping(); err != nil {
 		return err
 	}
 	dbConfig := dbconn.NewDBConfig()
 	dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
 
-	r.connPool, err = dbconn.NewConnPool(ctx, db, r.migration.Threads, dbConfig, r.logger)
+	r.connPool, err = dbconn.NewConnPool(ctx, r.db, r.migration.Threads, dbConfig, r.logger)
 	//defer r.connPool.Close()
 	if err != nil {
 		return err
 	}
 
 	// Get Table Info
-	r.table = table.NewTableInfo(r.connPool.DB(), r.migration.Database, r.migration.Table)
+	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
 	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -304,7 +305,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 // runChecks wraps around check.RunChecks and adds the context of this migration
 func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 	return check.RunChecks(ctx, check.Resources{
-		DB:              r.connPool.DB(),
+		DB:              r.db,
 		Replica:         r.replica,
 		Table:           r.table,
 		Alter:           r.migration.Alter,
@@ -477,7 +478,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.newTable = table.NewTableInfo(r.connPool.DB(), r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -506,11 +507,11 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	}
 	// else; MySQL 5.7
 	r.logger.Infof("immediately checking last 100 rows of old table to new table for differences")
-	oldTable := table.NewTableInfo(r.connPool.DB(), r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
+	oldTable := table.NewTableInfo(r.db, r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
 	if err := oldTable.SetInfo(ctx); err != nil {
 		return err
 	}
-	cutoverTable := table.NewTableInfo(r.connPool.DB(), r.migration.Database, r.migration.Table)
+	cutoverTable := table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
 	if err := cutoverTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -525,7 +526,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		cutoverTable.KeyColumns[0],
 	)
 	var lowerBoundKey, upperBoundKey string
-	err := r.connPool.DB().QueryRowContext(ctx, lowerSQL).Scan(&lowerBoundKey)
+	err := r.db.QueryRowContext(ctx, lowerSQL).Scan(&lowerBoundKey)
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			// We just don't have enough rows to perform this check.
@@ -533,11 +534,11 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		}
 		return err
 	}
-	err = r.connPool.DB().QueryRowContext(ctx, upperSQL).Scan(&upperBoundKey)
+	err = r.db.QueryRowContext(ctx, upperSQL).Scan(&upperBoundKey)
 	if err != nil {
 		return err
 	}
-	checker, err := checksum.NewChecker(r.connPool.DB(), oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
+	checker, err := checksum.NewChecker(r.db, oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.connPool.DBConfig(),
@@ -618,7 +619,7 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.checkpointTable = table.NewTableInfo(r.connPool.DB(), r.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -673,8 +674,8 @@ func (r *Runner) Close() error {
 		}
 	}
 
-	if r.connPool != nil && r.connPool.DB() != nil {
-		err := r.connPool.DB().Close()
+	if r.db != nil {
+		err := r.db.Close()
 		if err != nil {
 			return err
 		}
@@ -704,7 +705,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	var lowWatermark, binlogName, alterStatement string
 	var binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
-	err = r.connPool.DB().QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
+	err = r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
@@ -712,7 +713,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
-	r.newTable = table.NewTableInfo(r.connPool.DB(), r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -750,7 +751,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		Pos:  uint32(binlogPos),
 	})
 
-	r.checkpointTable = table.NewTableInfo(r.connPool.DB(), r.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -772,7 +773,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
 	var err error
-	r.checker, err = checksum.NewChecker(r.connPool.DB(), r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 		Pool:            r.connPool,
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
@@ -829,7 +830,7 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
-	_, err = r.connPool.DB().ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
+	_, err = r.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
 	return err
 }
 
