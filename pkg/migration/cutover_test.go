@@ -164,13 +164,14 @@ func TestMDLLockFails(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 8, dbconn.NewDBConfig(), logrus.New())
-	assert.NoError(t, err)
-	defer pool.Close()
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
 	config.LockWaitTimeout = 1
+
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, config, logrus.New())
+	assert.NoError(t, err)
+	defer pool.Close()
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
