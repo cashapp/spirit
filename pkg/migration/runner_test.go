@@ -648,13 +648,13 @@ func TestCheckpoint(t *testing.T) {
 		r.SetLogger(testLogger)
 		// Usually we would call r.Run() but we want to step through
 		// the migration process manually.
-		r.db, err = sql.Open("mysql", r.dsn())
+		db, err := sql.Open("mysql", r.dsn())
 		assert.NoError(t, err)
 
-		r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig())
+		r.connPool, err = dbconn.NewConnPool(context.TODO(), db, r.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 		assert.NoError(t, err)
 		// Get Table Info
-		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+		r.table = table.NewTableInfo(db, r.migration.Database, r.migration.Table)
 		err = r.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, r.dropOldTable(context.TODO()))
@@ -740,7 +740,7 @@ func TestCheckpoint(t *testing.T) {
 	// the checkpoint table.
 	r.setCurrentState(stateClose)
 	r.replClient.Close()
-	assert.NoError(t, r.db.Close())
+	assert.NoError(t, r.connPool.DB().Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
@@ -782,7 +782,7 @@ func TestCheckpoint(t *testing.T) {
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
-	assert.NoError(t, r.db.Close())
+	assert.NoError(t, r.connPool.DB().Close())
 }
 
 func TestCheckpointRestore(t *testing.T) {
@@ -809,15 +809,15 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.Equal(t, "initial", r.getCurrentState().String())
 	// Usually we would call r.Run() but we want to step through
 	// the migration process manually.
-	r.db, err = sql.Open("mysql", r.dsn())
+	db, err := sql.Open("mysql", r.dsn())
 	assert.NoError(t, err)
 
-	r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, 2, dbconn.NewDBConfig())
+	r.connPool, err = dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	defer r.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
-	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	r.table = table.NewTableInfo(db, r.migration.Database, r.migration.Table)
 	err = r.table.SetInfo(context.TODO())
 	assert.NoError(t, err)
 	assert.NoError(t, r.dropOldTable(context.TODO()))
@@ -844,7 +844,7 @@ func TestCheckpointRestore(t *testing.T) {
 	binlog := r.replClient.GetBinlogApplyPosition()
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
-	_, err = r.db.ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
+	_, err = r.connPool.DB().ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
 	assert.NoError(t, err)
 
 	r2, err := NewRunner(&Migration{
@@ -892,13 +892,13 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		assert.Equal(t, "initial", m.getCurrentState().String())
 		// Usually we would call m.Run() but we want to step through
 		// the migration process manually.
-		m.db, err = sql.Open("mysql", m.dsn())
+		db, err := sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
-		m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+		m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 		assert.NoError(t, err)
 
 		// Get Table Info
-		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+		m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 		err = m.table.SetInfo(context.TODO())
 		assert.NoError(t, err)
 		assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -970,7 +970,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
 	// Close the db connection since m is to be destroyed.
-	assert.NoError(t, m.db.Close())
+	assert.NoError(t, m.connPool.DB().Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
@@ -1099,17 +1099,17 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	db, err := sql.Open("mysql", m.dsn())
 	assert.NoError(t, err)
-	defer m.db.Close()
+	defer db.Close()
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 	err = m.table.SetInfo(context.TODO())
 	assert.NoError(t, err)
 	assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -1227,17 +1227,17 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	db, err := sql.Open("mysql", m.dsn())
 	assert.NoError(t, err)
-	defer m.db.Close()
+	defer db.Close()
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 	err = m.table.SetInfo(context.TODO())
 	assert.NoError(t, err)
 	assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -1750,16 +1750,16 @@ func TestE2ERogueValues(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	db, err := sql.Open("mysql", m.dsn())
 	assert.NoError(t, err)
-	defer m.db.Close()
+	defer db.Close()
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 	defer m.connPool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
-	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 	err = m.table.SetInfo(context.TODO())
 	assert.NoError(t, err)
 	assert.NoError(t, m.dropOldTable(context.TODO()))
@@ -1924,14 +1924,14 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Do the initial setup.
-	m.db, err = dbconn.New(dsn())
+	db, err := dbconn.New(dsn())
 	assert.NoError(t, err)
 
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 	defer m.connPool.Close()
 	assert.NoError(t, err)
 
-	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
 	assert.NoError(t, m.createNewTable(ctx))
 	assert.NoError(t, m.alterNewTable(ctx))
@@ -1994,7 +1994,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, m.dumpCheckpoint(ctx))
 	// assert there is a checkpoint
 	var rowCount int
-	err = m.db.QueryRow(`SELECT count(*) from _phantomtest_chkpnt`).Scan(&rowCount)
+	err = db.QueryRow(`SELECT count(*) from _phantomtest_chkpnt`).Scan(&rowCount)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, rowCount)
 
@@ -2017,15 +2017,15 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		Checksum:        true,
 	})
 	assert.NoError(t, err)
-	m.db, err = dbconn.New(dsn())
+	db, err = dbconn.New(dsn())
 	assert.NoError(t, err)
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
+	m.connPool, err = dbconn.NewConnPool(context.TODO(), db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 	defer m.connPool.Close()
 	assert.NoError(t, err)
 
-	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
+	m.table = table.NewTableInfo(db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
 	// check we can resume from checkpoint.
 	assert.NoError(t, m.resumeFromCheckpoint(ctx))

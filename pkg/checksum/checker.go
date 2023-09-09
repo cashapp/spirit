@@ -28,7 +28,8 @@ type Checker struct {
 	concurrency int
 	feed        *repl.Client
 	db          *sql.DB
-	pool        *dbconn.ConnPool // RR connections
+	regularPool *dbconn.ConnPool // non snapshot connection
+	pool        *dbconn.ConnPool // RR snapshot connections
 	isInvalid   bool
 	chunker     table.Chunker
 	StartTime   time.Time
@@ -75,7 +76,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		newTable:    newTable,
 		concurrency: config.Concurrency,
 		db:          db,
-		pool:        config.Pool, // usually nil
+		regularPool: config.Pool, // usually nil
 		feed:        feed,
 		chunker:     chunker,
 		dbConfig:    config.DBConfig,
@@ -156,7 +157,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
+	serverLock, err := c.regularPool.NewTableLock(ctx, c.table, false)
 	if err != nil {
 		return err
 	}
@@ -186,7 +187,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.pool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.db, c.concurrency, c.dbConfig)
+	c.pool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.db, c.concurrency, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -236,7 +237,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Regardless of err state, we should attempt to rollback the transaction
 	// in checksumTxns. They are likely holding metadata locks, which will block
 	// further operations like cleanup or cut-over.
-	if err := c.pool.Close(); err != nil {
+	if err := c.pool.Close(); err != nil { //nolint:contextcheck
 		return err
 	}
 	if err1 != nil {

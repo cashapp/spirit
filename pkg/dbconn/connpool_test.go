@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,7 +17,7 @@ func TestRetryableTrx(t *testing.T) {
 	defer db.Close()
 	config := NewDBConfig()
 
-	pool, err := NewConnPool(context.TODO(), db, 2, NewDBConfig())
+	pool, err := NewConnPool(context.TODO(), db, 2, NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 

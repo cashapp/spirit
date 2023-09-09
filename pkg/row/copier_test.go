@@ -12,6 +12,7 @@ import (
 	"github.com/squareup/spirit/pkg/metrics"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
 	"github.com/stretchr/testify/assert"
@@ -54,7 +55,7 @@ func TestCopier(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -89,7 +90,7 @@ func TestThrottler(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -118,7 +119,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -154,7 +155,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -178,7 +179,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -202,7 +203,7 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -231,7 +232,7 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -268,7 +269,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -303,7 +304,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 func TestCopierValidation(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -325,7 +326,7 @@ func TestETA(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -390,7 +391,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 

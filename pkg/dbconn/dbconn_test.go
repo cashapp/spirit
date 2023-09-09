@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -53,7 +54,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 
 	config := NewDBConfig()
 	config.LockWaitTimeout = 10
-	pool, err := NewConnPool(context.Background(), db, 1, config)
+	pool, err := NewConnPool(context.Background(), db, 1, config, logrus.New())
 	assert.NoError(t, err)
 
 	conn, err = pool.Get()

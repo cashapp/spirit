@@ -40,7 +40,7 @@ func runSQL(t *testing.T, stmt string) {
 func TestReplClient(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -84,7 +84,7 @@ func TestReplClientComplex(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 
 	runSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
@@ -160,7 +160,7 @@ func TestReplClientComplex(t *testing.T) {
 func TestReplClientResumeFromImpossible(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -194,7 +194,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -226,7 +226,7 @@ func TestReplClientOpts(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -282,7 +282,7 @@ func TestReplClientQueue(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 

@@ -9,15 +9,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/squareup/spirit/pkg/metrics"
-	"github.com/squareup/spirit/pkg/utils"
-
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
 	"github.com/squareup/spirit/pkg/check"
 	"github.com/squareup/spirit/pkg/checksum"
 	"github.com/squareup/spirit/pkg/dbconn"
+	"github.com/squareup/spirit/pkg/metrics"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/row"
 	"github.com/squareup/spirit/pkg/table"
@@ -71,9 +69,7 @@ func (s migrationState) String() string {
 
 type Runner struct {
 	migration       *Migration
-	db              *sql.DB
 	connPool        *dbconn.ConnPool
-	dbConfig        *dbconn.DBConfig
 	replica         *sql.DB
 	table           *table.TableInfo
 	newTable        *table.TableInfo
@@ -153,25 +149,25 @@ func (r *Runner) Run(originalCtx context.Context) error {
 
 	// Create a database connection
 	// It will be closed in r.Close()
-	var err error
-	r.db, err = dbconn.New(r.dsn())
+
+	db, err := dbconn.New(r.dsn())
 	if err != nil {
 		return err
 	}
-	if err := r.db.Ping(); err != nil {
+	if err := db.Ping(); err != nil {
 		return err
 	}
-	r.dbConfig = dbconn.NewDBConfig()
-	r.dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
+	dbConfig := dbconn.NewDBConfig()
+	dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
 
-	r.connPool, err = dbconn.NewConnPool(ctx, r.db, r.migration.Threads, r.dbConfig)
-	defer r.connPool.Close()
+	r.connPool, err = dbconn.NewConnPool(ctx, db, r.migration.Threads, dbConfig, r.logger)
+	//defer r.connPool.Close()
 	if err != nil {
 		return err
 	}
 
 	// Get Table Info
-	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	r.table = table.NewTableInfo(r.connPool.DB(), r.migration.Database, r.migration.Table)
 	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -227,7 +223,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(ctx, r.db, r.connPool, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
+	cutover, err := NewCutOver(ctx, r.connPool, r.table, r.newTable, r.replClient, r.connPool.DBConfig(), r.logger)
 	if err != nil {
 		return err
 	}
@@ -308,7 +304,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 // runChecks wraps around check.RunChecks and adds the context of this migration
 func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 	return check.RunChecks(ctx, check.Resources{
-		DB:              r.db,
+		DB:              r.connPool.DB(),
 		Replica:         r.replica,
 		Table:           r.table,
 		Alter:           r.migration.Alter,
@@ -458,7 +454,7 @@ func (r *Runner) tableChangeNotification() {
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
 	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -472,16 +468,16 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 	}
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, newName)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName)
-	_, err = r.db.ExecContext(ctx, query)
+	err = r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
-	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.connPool.DB(), r.migration.Database, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -492,7 +488,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (r *Runner) alterNewTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -505,16 +501,16 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	// We don't need to post-cutover check in MySQL 8.0
 	// because the cutover algorithm does not depend on undocumented MySQL behavior;
 	// it's quite straight forward to lock under rename.
-	if utils.IsMySQL8(r.db) {
+	if r.connPool.IsMySQL8(ctx) {
 		return nil
 	}
 	// else; MySQL 5.7
 	r.logger.Infof("immediately checking last 100 rows of old table to new table for differences")
-	oldTable := table.NewTableInfo(r.db, r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
+	oldTable := table.NewTableInfo(r.connPool.DB(), r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
 	if err := oldTable.SetInfo(ctx); err != nil {
 		return err
 	}
-	cutoverTable := table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	cutoverTable := table.NewTableInfo(r.connPool.DB(), r.migration.Database, r.migration.Table)
 	if err := cutoverTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -529,7 +525,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		cutoverTable.KeyColumns[0],
 	)
 	var lowerBoundKey, upperBoundKey string
-	err := r.db.QueryRowContext(ctx, lowerSQL).Scan(&lowerBoundKey)
+	err := r.connPool.DB().QueryRowContext(ctx, lowerSQL).Scan(&lowerBoundKey)
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			// We just don't have enough rows to perform this check.
@@ -537,14 +533,14 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		}
 		return err
 	}
-	err = r.db.QueryRowContext(ctx, upperSQL).Scan(&upperBoundKey)
+	err = r.connPool.DB().QueryRowContext(ctx, upperSQL).Scan(&upperBoundKey)
 	if err != nil {
 		return err
 	}
-	checker, err := checksum.NewChecker(r.db, oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
+	checker, err := checksum.NewChecker(r.connPool.DB(), oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.dbConfig,
+		DBConfig:        r.connPool.DBConfig(),
 		Logger:          r.logger,
 		Pool:            r.connPool, // can re-use our pool.
 	})
@@ -592,19 +588,19 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 func (r *Runner) dropOldTable(ctx context.Context) error {
 	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, oldName)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	return err
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	return err
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	return err
 }
 
@@ -612,17 +608,17 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, cpName)
-	_, err := r.db.ExecContext(ctx, query)
+	err := r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
 		r.table.SchemaName, cpName)
-	_, err = r.db.ExecContext(ctx, query)
+	err = r.connPool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
-	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.connPool.DB(), r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -632,19 +628,13 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 func (r *Runner) cleanup(ctx context.Context) error {
 	if r.newTable != nil {
 		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-		_, err := r.db.ExecContext(ctx, query)
+		err := r.connPool.Exec(ctx, query)
 		if err != nil {
 			return err
 		}
 	}
 	if r.checkpointTable != nil {
 		err := r.dropCheckpoint(ctx)
-		if err != nil {
-			return err
-		}
-	}
-	if r.connPool != nil {
-		err := r.connPool.Close()
 		if err != nil {
 			return err
 		}
@@ -675,8 +665,16 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
-	if r.db != nil {
-		err := r.db.Close()
+
+	if r.connPool != nil {
+		err := r.connPool.Close()
+		if err != nil {
+			return err
+		}
+	}
+
+	if r.connPool != nil && r.connPool.DB() != nil {
+		err := r.connPool.DB().Close()
 		if err != nil {
 			return err
 		}
@@ -696,7 +694,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Make sure we can read from the new table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
 		r.migration.Database, newName)
-	_, err := r.db.Exec(query)
+	err := r.connPool.Exec(ctx, query)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", newName)
 	}
@@ -706,7 +704,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	var lowWatermark, binlogName, alterStatement string
 	var binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
-	err = r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
+	err = r.connPool.DB().QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
@@ -714,7 +712,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 	}
 	// Populate the objects that would have been set in the other funcs.
-	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.connPool.DB(), r.migration.Database, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -752,7 +750,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		Pos:  uint32(binlogPos),
 	})
 
-	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
+	r.checkpointTable = table.NewTableInfo(r.connPool.DB(), r.table.SchemaName, cpName)
 	if err != nil {
 		return err
 	}
@@ -774,10 +772,11 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
 	var err error
-	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+	r.checker, err = checksum.NewChecker(r.connPool.DB(), r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+		Pool:            r.connPool,
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.dbConfig,
+		DBConfig:        r.connPool.DBConfig(),
 		Logger:          r.logger,
 	})
 	if err != nil {
@@ -830,7 +829,7 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
-	_, err = r.db.ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
+	_, err = r.connPool.DB().ExecContext(ctx, query, lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows, r.migration.Alter)
 	return err
 }
 

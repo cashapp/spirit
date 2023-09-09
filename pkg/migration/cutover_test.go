@@ -44,7 +44,7 @@ func TestCutOver(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -61,7 +61,7 @@ func TestCutOver(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run(context.Background()))
 
-	cutover, err := NewCutOver(context.Background(), db, pool, t1, t1new, feed, dbconn.NewDBConfig(), logger)
+	cutover, err := NewCutOver(context.Background(), pool, t1, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -101,7 +101,7 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -121,12 +121,10 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	assert.NoError(t, feed.Run(context.Background()))
 	// manually assign gh-ost cutover.
 	cutover := &CutOver{
-		db:        db,
 		pool:      pool,
 		table:     t1,
 		newTable:  t1new,
 		feed:      feed,
-		dbConfig:  dbconn.NewDBConfig(),
 		algorithm: Ghost,
 		logger:    logger,
 	}
@@ -166,7 +164,7 @@ func TestMDLLockFails(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 8, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -187,7 +185,7 @@ func TestMDLLockFails(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run(context.Background()))
 
-	cutover, err := NewCutOver(context.Background(), db, pool, t1, t1new, feed, config, logger)
+	cutover, err := NewCutOver(context.Background(), pool, t1, t1new, feed, config, logger)
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -209,14 +207,14 @@ func TestInvalidOptions(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
 
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
 	logger := logrus.New()
 
 	// Invalid options
-	_, err = NewCutOver(context.Background(), db, pool, nil, nil, nil, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(context.Background(), pool, nil, nil, nil, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
@@ -227,6 +225,6 @@ func TestInvalidOptions(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	_, err = NewCutOver(context.Background(), db, pool, nil, t1new, feed, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(context.Background(), pool, nil, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 }

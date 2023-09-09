@@ -5,21 +5,26 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
 	"sync"
 
+	"github.com/siddontang/loggers"
+	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/utils"
 )
 
 type ConnPool struct {
 	sync.Mutex
+	db     *sql.DB
 	config *DBConfig
 	conns  []*sql.Conn
+	logger loggers.Advanced
 }
 
 // NewPoolWithConsistentSnapshot creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation, and the snapshot
 // has been opened.
-func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
+func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
 	rrConns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
@@ -40,12 +45,12 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		}
 		rrConns = append(rrConns, conn)
 	}
-	return &ConnPool{conns: rrConns, config: config}, nil
+	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
 // been standardised.
-func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*ConnPool, error) {
+func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
 	conns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
@@ -58,7 +63,19 @@ func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (
 		}
 		conns = append(conns, conn)
 	}
-	return &ConnPool{config: config, conns: conns}, nil
+	return &ConnPool{config: config, conns: conns, db: db, logger: logger}, nil
+}
+
+// DB returns the underlying *sql.DB for the pool, in an un-pooled way.
+// This usage is deprecated, and only expected to be used in tests
+// and very specific uses.
+func (p *ConnPool) DB() *sql.DB {
+	return p.db
+}
+
+// DBConfig returns the underlying configuration for the pool.
+func (p *ConnPool) DBConfig() *DBConfig {
+	return p.config
 }
 
 // RetryableTransaction uses the first available connection
@@ -203,8 +220,12 @@ func (p *ConnPool) Put(trx *sql.Conn) {
 // Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
 	for _, conn := range p.conns {
-		if err := conn.Close(); err != nil {
-			return err
+		err := conn.PingContext(context.Background())
+		// TODO Can't close an already closed connection.
+		if err == nil {
+			if err = conn.Close(); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -226,4 +247,54 @@ func (p *ConnPool) IsMySQL8(ctx context.Context) bool {
 		return false // can't tell
 	}
 	return version == "8"
+}
+
+// NewTableLock creates a new server wide lock on a table.
+// i.e. LOCK TABLES .. READ.
+// It uses a short-timeout with backoff and retry, since if there is a long-running
+// process that currently prevents the lock by being acquired, it is considered "nice"
+// to let a few short-running processes slip in and proceed, then optimistically try
+// and acquire the lock again.
+func (p *ConnPool) NewTableLock(ctx context.Context, table *table.TableInfo, writeLock bool) (*TableLock, error) {
+	lockTxn, _ := p.db.BeginTx(ctx, nil)
+	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", p.config.LockWaitTimeout)
+	if err != nil {
+		return nil, err // could not change timeout.
+	}
+	lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
+	if writeLock {
+		lockStmt = fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
+			table.QuotedName,
+			table.SchemaName, table.TableName,
+		)
+	}
+	for i := 0; i < p.config.MaxRetries; i++ {
+		// In gh-ost they lock the _old table name as well.
+		// this might prevent a weird case that we don't handle yet.
+		// instead, we DROP IF EXISTS just before the rename, which
+		// has a brief race.
+		p.logger.Warnf("trying to acquire table lock, timeout: %d", p.config.LockWaitTimeout)
+		_, err = lockTxn.ExecContext(ctx, lockStmt)
+		if err != nil {
+			// See if the error is retryable, many are
+			if canRetryError(err) {
+				p.logger.Warnf("failed trying to acquire table lock, backing off and retrying: %v", err)
+				backoff(i)
+				continue
+			}
+			// else not retryable
+			return nil, err
+		}
+		// else success!
+		p.logger.Warn("table lock acquired")
+		return &TableLock{
+			table:   table,
+			lockTxn: lockTxn,
+			logger:  p.logger,
+		}, nil
+	}
+	// The loop ended without success.
+	// Return the last error
+	utils.ErrInErr(lockTxn.Rollback())
+	return nil, err
 }

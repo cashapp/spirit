@@ -17,7 +17,7 @@ func TestTableLock(t *testing.T) {
 	defer db.Close()
 	config := NewDBConfig()
 	config.LockWaitTimeout = 2
-	pool, err := NewConnPool(context.TODO(), db, 2, config)
+	pool, err := NewConnPool(context.TODO(), db, 2, config, logrus.New())
 	assert.NoError(t, err)
 
 	err = pool.Exec(context.Background(), "DROP TABLE IF EXISTS test.testlock")
@@ -27,13 +27,13 @@ func TestTableLock(t *testing.T) {
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
-	lock1, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	lock1, err := pool.NewTableLock(context.Background(), tbl, false)
 	assert.NoError(t, err)
 
 	// Try to acquire a table that is already locked, should pass *because*
 	// table locks are actually READ locks. We do this so copies can still occur,
 	// only writes are blocked.
-	lock2, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	lock2, err := pool.NewTableLock(context.Background(), tbl, false)
 	assert.NoError(t, err)
 
 	assert.NoError(t, lock1.Close())
@@ -48,7 +48,7 @@ func TestTableLockFail(t *testing.T) {
 	config := NewDBConfig()
 	config.MaxRetries = 1
 	config.LockWaitTimeout = 1
-	pool, err := NewConnPool(context.TODO(), db, 2, config)
+	pool, err := NewConnPool(context.TODO(), db, 2, config, logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -73,6 +73,6 @@ func TestTableLockFail(t *testing.T) {
 	wg.Wait()
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
-	_, err = NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	_, err = pool.NewTableLock(context.Background(), tbl, false)
 	assert.Error(t, err)
 }

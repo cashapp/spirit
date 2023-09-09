@@ -43,7 +43,7 @@ func TestBasicChecksum(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -62,7 +62,9 @@ func TestBasicChecksum(t *testing.T) {
 	})
 	assert.NoError(t, feed.Run(context.Background()))
 
-	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	checkerConfig := NewCheckerDefaultConfig()
+	checkerConfig.Pool = pool
+	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 
 	assert.Nil(t, checker.recentValue)
@@ -81,7 +83,7 @@ func TestBasicValidation(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -121,7 +123,7 @@ func TestCorruptChecksum(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -140,7 +142,9 @@ func TestCorruptChecksum(t *testing.T) {
 	})
 	assert.NoError(t, feed.Run(context.Background()))
 
-	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	checkerConfig := NewCheckerDefaultConfig()
+	checkerConfig.Pool = pool
+	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	err = checker.Run(context.Background())
 	assert.ErrorContains(t, err, "checksum mismatch")
@@ -155,7 +159,7 @@ func TestBoundaryCases(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 4, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -174,13 +178,15 @@ func TestBoundaryCases(t *testing.T) {
 	})
 	assert.NoError(t, feed.Run(context.Background()))
 
-	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	checkerConfig := NewCheckerDefaultConfig()
+	checkerConfig.Pool = pool
+	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.Error(t, checker.Run(context.Background()))
 
 	// UPDATE t1 to also be NULL
 	runSQL(t, "UPDATE t1 SET c = NULL")
-	checker, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	checker, err = NewChecker(db, t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
@@ -222,7 +228,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)
-	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig())
+	pool, err := dbconn.NewConnPool(context.TODO(), db, 2, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 	defer pool.Close()
 
@@ -240,8 +246,9 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 		BatchSize:   10000,
 	})
 	assert.NoError(t, feed.Run(context.Background()))
-
-	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	checkerConfig := NewCheckerDefaultConfig()
+	checkerConfig.Pool = pool
+	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background())) // fails
 }

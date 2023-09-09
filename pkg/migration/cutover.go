@@ -2,7 +2,6 @@ package migration
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -34,18 +33,16 @@ func (a CutoverAlgorithm) String() string {
 
 type CutOver struct {
 	pool      *dbconn.ConnPool
-	db        *sql.DB
 	table     *table.TableInfo
 	newTable  *table.TableInfo
 	feed      *repl.Client
 	algorithm CutoverAlgorithm // RenameUnderLock, Ghost
-	dbConfig  *dbconn.DBConfig
 	logger    loggers.Advanced
 }
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(ctx context.Context, db *sql.DB, pool *dbconn.ConnPool, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(ctx context.Context, pool *dbconn.ConnPool, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
@@ -60,12 +57,10 @@ func NewCutOver(ctx context.Context, db *sql.DB, pool *dbconn.ConnPool, table, n
 		algorithm = Ghost
 	}
 	return &CutOver{
-		db:        db,
 		pool:      pool,
 		table:     table,
 		newTable:  newTable,
 		feed:      feed,
-		dbConfig:  dbConfig,
 		algorithm: algorithm,
 		logger:    logger,
 	}, nil
@@ -73,7 +68,7 @@ func NewCutOver(ctx context.Context, db *sql.DB, pool *dbconn.ConnPool, table, n
 
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
-	for i := 0; i < c.dbConfig.MaxRetries; i++ {
+	for i := 0; i < c.pool.DBConfig().MaxRetries; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -85,7 +80,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 		}
 		// We use maxCutoverRetries as our retrycount, but nested
 		// within c.algorithmX() it may also have a retry for the specific statement
-		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, c.dbConfig.MaxRetries)
+		c.logger.Warnf("Attempting final cut over operation (attempt %d/%d)", i+1, c.pool.DBConfig().MaxRetries)
 		c.logger.Infof("Using cutover algorithm: %s", c.algorithm.String())
 		switch c.algorithm {
 		case RenameUnderLock:
@@ -110,7 +105,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	serverLock, err := c.pool.NewTableLock(ctx, c.table, true)
 	if err != nil {
 		return err
 	}
@@ -136,7 +131,7 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 // algorithmGhost is the gh-ost cutover algorithm
 // as defined at https://github.com/github/gh-ost/issues/82
 func (c *CutOver) algorithmGhost(ctx context.Context) error {
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
+	serverLock, err := c.pool.NewTableLock(ctx, c.table, false)
 	if err != nil {
 		return err
 	}
