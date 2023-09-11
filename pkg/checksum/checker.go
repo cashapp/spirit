@@ -6,7 +6,6 @@ package checksum
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -27,9 +26,8 @@ type Checker struct {
 	newTable    *table.TableInfo
 	concurrency int
 	feed        *repl.Client
-	db          *sql.DB
-	regularPool *dbconn.ConnPool // non snapshot connection
-	pool        *dbconn.ConnPool // RR snapshot connections
+	pool        *dbconn.ConnPool // non snapshot connection
+	ssPool      *dbconn.ConnPool // RR snapshot connections
 	isInvalid   bool
 	chunker     table.Chunker
 	StartTime   time.Time
@@ -44,6 +42,7 @@ type CheckerConfig struct {
 	TargetChunkTime time.Duration
 	DBConfig        *dbconn.DBConfig
 	Pool            *dbconn.ConnPool // usually nil
+	SSPool          *dbconn.ConnPool
 	Logger          loggers.Advanced
 }
 
@@ -57,7 +56,7 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 }
 
 // NewChecker creates a new checksum object.
-func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, config *CheckerConfig) (*Checker, error) {
+func NewChecker(tbl, newTable *table.TableInfo, feed *repl.Client, config *CheckerConfig) (*Checker, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
@@ -75,8 +74,8 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		table:       tbl,
 		newTable:    newTable,
 		concurrency: config.Concurrency,
-		db:          db,
-		regularPool: config.Pool, // usually nil
+		ssPool:      config.SSPool,
+		pool:        config.Pool, // usually nil
 		feed:        feed,
 		chunker:     chunker,
 		dbConfig:    config.DBConfig,
@@ -87,11 +86,11 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 
 func (c *Checker) ChecksumChunk(ctx context.Context, chunk *table.Chunk) error {
 	startTime := time.Now()
-	conn, err := c.pool.Get()
+	conn, err := c.ssPool.Get()
 	if err != nil {
 		return err
 	}
-	defer c.pool.Put(conn)
+	defer c.ssPool.Put(conn)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		c.intersectColumns(),
@@ -157,7 +156,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := c.regularPool.NewTableLock(ctx, c.table, false)
+	serverLock, err := c.pool.NewTableLock(ctx, c.table, false)
 	if err != nil {
 		return err
 	}
@@ -187,7 +186,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.pool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.db, c.concurrency, c.dbConfig, c.logger)
+	c.ssPool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.pool.DB(), c.concurrency, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -237,7 +236,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Regardless of err state, we should attempt to rollback the transaction
 	// in checksumTxns. They are likely holding metadata locks, which will block
 	// further operations like cleanup or cut-over.
-	if err := c.pool.Close(); err != nil { //nolint:contextcheck
+	if err := c.ssPool.Close(); err != nil { //nolint:contextcheck
 		return err
 	}
 	if err1 != nil {

@@ -70,7 +70,7 @@ func (s migrationState) String() string {
 type Runner struct {
 	migration       *Migration
 	db              *sql.DB
-	connPool        *dbconn.ConnPool
+	pool            *dbconn.ConnPool
 	replica         *sql.DB
 	table           *table.TableInfo
 	newTable        *table.TableInfo
@@ -161,8 +161,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	dbConfig := dbconn.NewDBConfig()
 	dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
 
-	r.connPool, err = dbconn.NewConnPool(ctx, r.db, r.migration.Threads, dbConfig, r.logger)
-	//defer r.connPool.Close()
+	r.pool, err = dbconn.NewConnPool(ctx, r.db, r.migration.Threads, dbConfig, r.logger)
 	if err != nil {
 		return err
 	}
@@ -224,7 +223,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(ctx, r.connPool, r.table, r.newTable, r.replClient, r.connPool.DBConfig(), r.logger)
+	cutover, err := NewCutOver(ctx, r.pool, r.table, r.newTable, r.replClient, r.pool.DBConfig(), r.logger)
 	if err != nil {
 		return err
 	}
@@ -284,7 +283,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateAnalyzeTable)
 	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", analyze)
-	if err := r.connPool.Exec(ctx, analyze); err != nil {
+	if err := r.pool.Exec(ctx, analyze); err != nil {
 		return err
 	}
 
@@ -373,7 +372,7 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err := r.createCheckpointTable(ctx); err != nil {
 			return err
 		}
-		r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, &row.CopierConfig{
+		r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, &row.CopierConfig{
 			Concurrency:     r.migration.Threads,
 			TargetChunkTime: r.migration.TargetChunkTime,
 			FinalChecksum:   r.migration.Checksum,
@@ -384,7 +383,7 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		r.replClient = repl.NewClient(r.pool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 			Logger:      r.logger,
 			Concurrency: r.migration.Threads,
 			BatchSize:   repl.DefaultBatchSize,
@@ -455,7 +454,7 @@ func (r *Runner) tableChangeNotification() {
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
 	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -469,12 +468,12 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 	}
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, newName)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName)
-	err = r.connPool.Exec(ctx, query)
+	err = r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -489,7 +488,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (r *Runner) alterNewTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName, r.migration.Alter)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -502,7 +501,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	// We don't need to post-cutover check in MySQL 8.0
 	// because the cutover algorithm does not depend on undocumented MySQL behavior;
 	// it's quite straight forward to lock under rename.
-	if r.connPool.IsMySQL8(ctx) {
+	if r.pool.IsMySQL8(ctx) {
 		return nil
 	}
 	// else; MySQL 5.7
@@ -538,12 +537,12 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	checker, err := checksum.NewChecker(r.db, oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
+	checker, err := checksum.NewChecker(oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.connPool.DBConfig(),
+		DBConfig:        r.pool.DBConfig(),
 		Logger:          r.logger,
-		Pool:            r.connPool, // can re-use our pool.
+		Pool:            r.pool, // can re-use our pool.
 	})
 	if err != nil {
 		return err
@@ -589,19 +588,19 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 func (r *Runner) dropOldTable(ctx context.Context) error {
 	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, oldName)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	return err
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName, r.migration.Alter)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	return err
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName, r.migration.Alter)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	return err
 }
 
@@ -609,13 +608,13 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, cpName)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
 		r.table.SchemaName, cpName)
-	err = r.connPool.Exec(ctx, query)
+	err = r.pool.Exec(ctx, query)
 	if err != nil {
 		return err
 	}
@@ -629,7 +628,7 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 func (r *Runner) cleanup(ctx context.Context) error {
 	if r.newTable != nil {
 		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-		err := r.connPool.Exec(ctx, query)
+		err := r.pool.Exec(ctx, query)
 		if err != nil {
 			return err
 		}
@@ -667,8 +666,8 @@ func (r *Runner) Close() error {
 		}
 	}
 
-	if r.connPool != nil {
-		err := r.connPool.Close()
+	if r.pool != nil {
+		err := r.pool.Close()
 		if err != nil {
 			return err
 		}
@@ -695,7 +694,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Make sure we can read from the new table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
 		r.migration.Database, newName)
-	err := r.connPool.Exec(ctx, query)
+	err := r.pool.Exec(ctx, query)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", newName)
 	}
@@ -726,7 +725,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// we checksum the table at the end. Thus, resume-from-checkpoint MUST
 	// have the checksum enabled to apply all changes safely.
 	r.migration.Checksum = true
-	r.copier, err = row.NewCopierFromCheckpoint(r.connPool, r.table, r.newTable, &row.CopierConfig{
+	r.copier, err = row.NewCopierFromCheckpoint(r.pool, r.table, r.newTable, &row.CopierConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		FinalChecksum:   r.migration.Checksum,
@@ -741,7 +740,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.pool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:      r.logger,
 		Concurrency: r.migration.Threads,
 		BatchSize:   repl.DefaultBatchSize,
@@ -773,11 +772,11 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
 	var err error
-	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
-		Pool:            r.connPool,
+	r.checker, err = checksum.NewChecker(r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+		Pool:            r.pool,
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.connPool.DBConfig(),
+		DBConfig:        r.pool.DBConfig(),
 		Logger:          r.logger,
 	})
 	if err != nil {

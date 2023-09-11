@@ -61,7 +61,7 @@ type Client struct {
 	changesetRowsCount      int64
 	changesetRowsEventCount int64 // eliminated by optimizations
 
-	connPool *dbconn.ConnPool // connection to run queries like SHOW MASTER STATUS
+	pool *dbconn.ConnPool // connection to run queries like SHOW MASTER STATUS
 
 	// Infoschema version of table.
 	table    *table.TableInfo
@@ -89,7 +89,7 @@ type Client struct {
 
 func NewClient(db *dbconn.ConnPool, host string, table, newTable *table.TableInfo, username, password string, config *ClientConfig) *Client {
 	return &Client{
-		connPool:        db,
+		pool:            db,
 		host:            host,
 		table:           table,
 		newTable:        newTable,
@@ -221,8 +221,8 @@ func (c *Client) pksToRowValueConstructor(d []string) string {
 func (c *Client) getCurrentBinlogPosition(ctx context.Context) (mysql.Position, error) {
 	var binlogFile, fake string
 	var binlogPos uint32
-	conn, err := c.connPool.Get()
-	defer c.connPool.Put(conn)
+	conn, err := c.pool.Get()
+	defer c.pool.Put(conn)
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -287,8 +287,8 @@ func (c *Client) Run(ctx context.Context) (err error) {
 }
 
 func (c *Client) binlogPositionIsImpossible(ctx context.Context) bool {
-	conn, err := c.connPool.Get()
-	defer c.connPool.Put(conn)
+	conn, err := c.pool.Get()
+	defer c.pool.Put(conn)
 	if err != nil {
 		return true
 	}
@@ -427,7 +427,7 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 	} else {
 		// Execute the statements in a transaction.
 		// They still need to be single threaded.
-		if _, err := c.connPool.RetryableTransaction(ctx, true, stmts...); err != nil {
+		if _, err := c.pool.RetryableTransaction(ctx, true, stmts...); err != nil {
 			return err
 		}
 	}
@@ -494,7 +494,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		for _, stmt := range stmts {
 			s := stmt
 			g.Go(func() error {
-				_, err := c.connPool.RetryableTransaction(errGrpCtx, false, s)
+				_, err := c.pool.RetryableTransaction(errGrpCtx, false, s)
 				return err
 			})
 		}
@@ -631,8 +631,8 @@ func (c *Client) BlockWait(ctx context.Context) error {
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
-	conn, err := c.connPool.Get()
-	defer c.connPool.Put(conn)
+	conn, err := c.pool.Get()
+	defer c.pool.Put(conn)
 	if err != nil {
 		return err
 	}

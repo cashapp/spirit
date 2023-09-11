@@ -651,7 +651,7 @@ func TestCheckpoint(t *testing.T) {
 		r.db, err = sql.Open("mysql", r.dsn())
 		assert.NoError(t, err)
 
-		r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+		r.pool, err = dbconn.NewConnPool(context.TODO(), r.db, r.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 		assert.NoError(t, err)
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -664,7 +664,7 @@ func TestCheckpoint(t *testing.T) {
 	}
 
 	r := preSetup()
-	defer r.connPool.Close()
+	defer r.pool.Close()
 
 	// migrationRunner.Run usually calls r.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -676,12 +676,12 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.createNewTable(context.TODO()))
 	assert.NoError(t, r.alterNewTable(context.TODO()))
 	assert.NoError(t, r.createCheckpointTable(context.TODO()))
-	r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.pool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:      logrus.New(), // don't use the logger for migration since we feed status to it.
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
+	r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, row.NewCopierDefaultConfig())
 
 	assert.NoError(t, err)
 	err = r.replClient.Run(context.Background())
@@ -740,13 +740,13 @@ func TestCheckpoint(t *testing.T) {
 	// the checkpoint table.
 	r.setCurrentState(stateClose)
 	r.replClient.Close()
-	assert.NoError(t, r.connPool.DB().Close())
+	assert.NoError(t, r.pool.DB().Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
 	r = preSetup()
-	defer r.connPool.Close()
+	defer r.pool.Close()
 	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
 
 	// Start the binary log feed just before copy rows starts.
@@ -782,7 +782,7 @@ func TestCheckpoint(t *testing.T) {
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
-	assert.NoError(t, r.connPool.DB().Close())
+	assert.NoError(t, r.pool.DB().Close())
 }
 
 func TestCheckpointRestore(t *testing.T) {
@@ -812,8 +812,8 @@ func TestCheckpointRestore(t *testing.T) {
 	r.db, err = sql.Open("mysql", r.dsn())
 	assert.NoError(t, err)
 
-	r.connPool, err = dbconn.NewConnPool(context.TODO(), r.db, 2, dbconn.NewDBConfig(), logrus.New())
-	defer r.connPool.Close()
+	r.pool, err = dbconn.NewConnPool(context.TODO(), r.db, 2, dbconn.NewDBConfig(), logrus.New())
+	defer r.pool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -827,13 +827,13 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.NoError(t, r.alterNewTable(context.TODO()))
 	assert.NoError(t, r.createCheckpointTable(context.TODO()))
 
-	r.replClient = repl.NewClient(r.connPool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.pool, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:      logrus.New(),
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
 
-	r.copier, err = row.NewCopier(r.connPool, r.table, r.newTable, row.NewCopierDefaultConfig())
+	r.copier, err = row.NewCopier(r.pool, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = r.replClient.Run(context.Background())
 	assert.NoError(t, err)
@@ -844,7 +844,7 @@ func TestCheckpointRestore(t *testing.T) {
 	binlog := r.replClient.GetBinlogApplyPosition()
 	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
 		r.checkpointTable.QuotedName)
-	_, err = r.connPool.DB().ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
+	_, err = r.pool.DB().ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
 	assert.NoError(t, err)
 
 	r2, err := NewRunner(&Migration{
@@ -894,7 +894,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		// the migration process manually.
 		m.db, err = sql.Open("mysql", m.dsn())
 		assert.NoError(t, err)
-		m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+		m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
 		assert.NoError(t, err)
 
 		// Get Table Info
@@ -906,7 +906,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	}
 
 	m := preSetup("ADD COLUMN id3 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	defer m.connPool.Close()
+	defer m.pool.Close()
 
 	// migrationRunner.Run usually calls m.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -919,12 +919,12 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.connPool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.pool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, row.NewCopierDefaultConfig())
+	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run(context.Background())
 	assert.NoError(t, err)
@@ -970,13 +970,13 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
 	// Close the db connection since m is to be destroyed.
-	assert.NoError(t, m.connPool.DB().Close())
+	assert.NoError(t, m.pool.DB().Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	defer m.connPool.Close()
+	defer m.pool.Close()
 	assert.Error(t, m.resumeFromCheckpoint(context.TODO())) // it should error because the ALTER does not match.
 }
 
@@ -1104,8 +1104,8 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	defer m.db.Close()
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.connPool.Close()
+	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1121,12 +1121,12 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.connPool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.pool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1232,8 +1232,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	defer m.db.Close()
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.connPool.Close()
+	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1249,12 +1249,12 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.connPool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.pool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1754,8 +1754,8 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.connPool.Close()
+	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	// Get Table Info
@@ -1770,12 +1770,12 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(context.TODO()))
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.connPool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.pool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   repl.DefaultBatchSize,
 	})
-	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -1927,8 +1927,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	m.db, err = dbconn.New(dsn())
 	assert.NoError(t, err)
 
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.connPool.Close()
+	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
@@ -1937,12 +1937,12 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(ctx))
 	assert.NoError(t, m.createCheckpointTable(ctx))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.connPool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.pool, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:      logger,
 		Concurrency: 4,
 		BatchSize:   repl.DefaultBatchSize,
 	})
-	m.copier, err = row.NewCopier(m.connPool, m.table, m.newTable, &row.CopierConfig{
+	m.copier, err = row.NewCopier(m.pool, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
 		TargetChunkTime: m.migration.TargetChunkTime,
 		FinalChecksum:   m.migration.Checksum,
@@ -2021,8 +2021,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Pool setup
-	m.connPool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.connPool.Close()
+	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
+	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)

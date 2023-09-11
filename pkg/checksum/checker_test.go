@@ -64,7 +64,7 @@ func TestBasicChecksum(t *testing.T) {
 
 	checkerConfig := NewCheckerDefaultConfig()
 	checkerConfig.Pool = pool
-	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
+	checker, err := NewChecker(t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 
 	assert.Nil(t, checker.recentValue)
@@ -102,13 +102,13 @@ func TestBasicValidation(t *testing.T) {
 	})
 	assert.NoError(t, feed.Run(context.Background()))
 
-	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
+	_, err = NewChecker(nil, t2, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and newTable must be non-nil")
-	_, err = NewChecker(db, t1, nil, feed, NewCheckerDefaultConfig())
+	_, err = NewChecker(t1, nil, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and newTable must be non-nil")
-	_, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	_, err = NewChecker(t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	_, err = NewChecker(db, t1, t2, nil, NewCheckerDefaultConfig()) // no feed
+	_, err = NewChecker(t1, t2, nil, NewCheckerDefaultConfig()) // no feed
 	assert.EqualError(t, err, "feed must be non-nil")
 }
 
@@ -144,7 +144,7 @@ func TestCorruptChecksum(t *testing.T) {
 
 	checkerConfig := NewCheckerDefaultConfig()
 	checkerConfig.Pool = pool
-	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
+	checker, err := NewChecker(t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	err = checker.Run(context.Background())
 	assert.ErrorContains(t, err, "checksum mismatch")
@@ -180,13 +180,13 @@ func TestBoundaryCases(t *testing.T) {
 
 	checkerConfig := NewCheckerDefaultConfig()
 	checkerConfig.Pool = pool
-	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
+	checker, err := NewChecker(t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.Error(t, checker.Run(context.Background()))
 
 	// UPDATE t1 to also be NULL
 	runSQL(t, "UPDATE t1 SET c = NULL")
-	checker, err = NewChecker(db, t1, t2, feed, checkerConfig)
+	checker, err = NewChecker(t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
@@ -248,7 +248,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	assert.NoError(t, feed.Run(context.Background()))
 	checkerConfig := NewCheckerDefaultConfig()
 	checkerConfig.Pool = pool
-	checker, err := NewChecker(db, t1, t2, feed, checkerConfig)
+	checker, err := NewChecker(t1, t2, feed, checkerConfig)
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background())) // fails
 }
