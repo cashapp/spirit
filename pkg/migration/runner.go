@@ -537,12 +537,17 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	ssPoolForChecksum, err := dbconn.NewPoolWithConsistentSnapshot(ctx, r.db, 1, r.pool.DBConfig(), r.logger)
+	if err != nil {
+		return err
+	}
 	checker, err := checksum.NewChecker(oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.pool.DBConfig(),
 		Logger:          r.logger,
 		Pool:            r.pool, // can re-use our pool.
+		SSPool:          ssPoolForChecksum,
 	})
 	if err != nil {
 		return err
