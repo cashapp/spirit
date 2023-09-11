@@ -832,11 +832,8 @@ func (r *Runner) dumpCheckpointContinuously(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Continue to checkpoint until we exit copy-rows.
-			// Ideally in future we can continue further than this,
-			// but unfortunately this currently results in a
-			// "watermark not ready" error.
-			if r.getCurrentState() > stateCopyRows {
+			// Continue to checkpoint until we exit the checksum.
+			if r.getCurrentState() >= stateCutOver {
 				return
 			}
 			if err := r.dumpCheckpoint(ctx); err != nil {
