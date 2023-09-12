@@ -195,7 +195,7 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 
 func (c *CutOver) checkProcesslistForID(ctx context.Context, id int) error {
 	var state string
-	conn, err := c.pool.Get()
+	conn, err := c.pool.Get(ctx)
 	if err != nil {
 		return err
 	}

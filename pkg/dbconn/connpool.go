@@ -82,7 +82,7 @@ func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarning
 	var err error
 	var trx *sql.Tx
 	var rowsAffected int64
-	conn, err := p.Get()
+	conn, err := p.Get(ctx)
 	if err != nil {
 		return 0, err // could not Get connection
 	}
@@ -167,7 +167,7 @@ RETRYLOOP:
 }
 
 // Get gets a connection from the pool.
-func (p *ConnPool) Get() (*sql.Conn, error) {
+func (p *ConnPool) Get(ctx context.Context) (*sql.Conn, error) {
 	p.Lock()
 	defer p.Unlock()
 	foundConn := false
@@ -186,19 +186,15 @@ RETRYLOOP:
 		return nil, errors.New("no conns in pool")
 	}
 
-	//var conn *sql.Conn
-	//
-	//if p.conns[0].PingContext(context.Background()) == nil {
-	//	conn = p.conns[0]
-	//} else if p.canReplaceConnection {
-	//	p.logger.Warnf("Connection in the pool isn't valid, replacing it with a new connection")
-	//	newConn, err := newStandardConnection(context.Background(), p.db, p.config)
-	//	if err != nil {
-	//		return nil, errors.New("error when trying to replace with a new connection ")
-	//	}
-	//	p.conns = append([]*sql.Conn{newConn}, p.conns[1:]...)
-	//	conn = p.conns[0]
-	//}
+	err := p.conns[0].PingContext(ctx)
+	if err != nil && p.canReplaceConnection {
+		p.logger.Warnf("Connection in the pool isn't valid, replacing it with a new connection")
+		newConn, err := newStandardConnection(ctx, p.db, p.config)
+		if err != nil {
+			return nil, errors.New("error when trying to replace with a new connection")
+		}
+		p.conns[0] = newConn
+	}
 	conn := p.conns[0]
 	p.conns = p.conns[1:]
 	return conn, nil
@@ -218,7 +214,7 @@ func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*
 
 // GetWithConnectionID gets a connection from the pool along with its ID.
 func (p *ConnPool) GetWithConnectionID(ctx context.Context) (*sql.Conn, int, error) {
-	conn, err := p.Get()
+	conn, err := p.Get(ctx)
 	if err != nil {
 		return nil, -1, err
 	}
@@ -230,7 +226,7 @@ func (p *ConnPool) GetWithConnectionID(ctx context.Context) (*sql.Conn, int, err
 // Exec is like db.Exec but it uses the first available connection
 // in the connection pool. Connections have previously been standardized.
 func (p *ConnPool) Exec(ctx context.Context, query string) error {
-	conn, err := p.Get()
+	conn, err := p.Get(ctx)
 	if err != nil {
 		return err
 	}
@@ -262,7 +258,6 @@ func (p *ConnPool) Close() error {
 			}
 		}
 	}
-	p.conns = nil
 	return nil
 }
 

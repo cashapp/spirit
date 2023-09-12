@@ -57,7 +57,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 	pool, err := NewConnPool(context.Background(), db, 1, config, logrus.New())
 	assert.NoError(t, err)
 
-	conn, err = pool.Get()
+	conn, err = pool.Get(context.Background())
 	assert.NoError(t, err)
 
 	// Check the timeouts are shorter when using connection from custom pool

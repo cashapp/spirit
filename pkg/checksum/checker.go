@@ -86,7 +86,7 @@ func NewChecker(tbl, newTable *table.TableInfo, feed *repl.Client, config *Check
 
 func (c *Checker) ChecksumChunk(ctx context.Context, chunk *table.Chunk) error {
 	startTime := time.Now()
-	conn, err := c.ssPool.Get()
+	conn, err := c.ssPool.Get(ctx)
 	if err != nil {
 		return err
 	}
