@@ -247,13 +247,15 @@ func (p *ConnPool) Put(conn *sql.Conn) {
 
 // Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
+	p.Lock()
+	defer p.Unlock()
 	for _, conn := range p.conns {
 		// TODO Find a way to do this cleanly.
 		// Can't close an already closed connection,
 		// so we ignore the error in closing.
 		utils.ErrInErr(conn.Close())
 	}
-	//p.conns = nil
+	p.conns = nil
 	return nil
 }
 
