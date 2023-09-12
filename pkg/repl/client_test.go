@@ -10,8 +10,6 @@ import (
 
 	"github.com/squareup/spirit/pkg/dbconn"
 
-	//"time"
-
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"

@@ -26,7 +26,7 @@ type Checker struct {
 	newTable    *table.TableInfo
 	concurrency int
 	feed        *repl.Client
-	pool        *dbconn.ConnPool // non snapshot connection
+	pool        *dbconn.ConnPool // non snapshot connections
 	ssPool      *dbconn.ConnPool // RR snapshot connections
 	isInvalid   bool
 	chunker     table.Chunker
@@ -39,8 +39,8 @@ type Checker struct {
 type CheckerConfig struct {
 	Concurrency     int
 	TargetChunkTime time.Duration
-	Pool            *dbconn.ConnPool
-	SSPool          *dbconn.ConnPool // usually nil
+	Pool            *dbconn.ConnPool // non snapshot connections
+	SSPool          *dbconn.ConnPool // RR snapshot connections, usually nil
 	Logger          loggers.Advanced
 }
 

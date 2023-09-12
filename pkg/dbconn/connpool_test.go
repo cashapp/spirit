@@ -11,6 +11,91 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestConnPool_Get_Put(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	config := NewDBConfig()
+	config.MaxRetries = 1
+
+	pool, err := NewConnPool(context.TODO(), db, 2, config, logrus.New())
+	assert.NoError(t, err)
+	defer pool.Close()
+
+	// Pull both connections from pool
+	conn1, err := pool.Get(context.Background())
+	assert.NoError(t, err)
+	assert.NotNil(t, conn1)
+	conn2, err := pool.Get(context.Background())
+	assert.NoError(t, err)
+	assert.NotNil(t, conn2)
+
+	// Check that next get returns error and a nil connection
+	nonexistingconn, err := pool.Get(context.Background())
+	assert.Error(t, err)
+	assert.Nil(t, nonexistingconn)
+
+	// Put back one and get to check if it's the same connection
+	pool.Put(conn1)
+	conn3, err := pool.Get(context.Background())
+	assert.Equal(t, conn1, conn3)
+	assert.NoError(t, err)
+}
+
+func TestConnPool_Close(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	pool, err := NewConnPool(context.TODO(), db, 4, NewDBConfig(), logrus.New())
+	assert.NoError(t, err)
+	defer pool.Close()
+
+	// Test that closing the pool sets the conns to nil
+	assert.NoError(t, pool.Close())
+	assert.Nil(t, pool.conns)
+}
+
+func TestConnPool_GetWithConnectionID(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	pool, err := NewConnPool(context.TODO(), db, 4, NewDBConfig(), logrus.New())
+	assert.NoError(t, err)
+	defer pool.Close()
+
+	conn, id, err := pool.GetWithConnectionID(context.Background())
+	assert.NoError(t, err)
+	assert.NotNil(t, conn)
+
+	var connID int
+	err = conn.QueryRowContext(context.Background(), "SELECT CONNECTION_ID()").Scan(&connID)
+	assert.NoError(t, err)
+	assert.Equal(t, connID, id)
+}
+
+func TestConnPool_Size(t *testing.T) {
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	pool, err := NewConnPool(context.TODO(), db, 4, NewDBConfig(), logrus.New())
+	assert.NoError(t, err)
+	defer pool.Close()
+
+	// Check size after initialization
+	assert.Equal(t, 4, pool.Size())
+
+	_, err = pool.Get(context.Background())
+	assert.NoError(t, err)
+	_, err = pool.Get(context.Background())
+	assert.NoError(t, err)
+
+	// Check size after pulling out some connections
+	assert.Equal(t, 2, pool.Size())
+}
 func TestRetryableTrx(t *testing.T) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)

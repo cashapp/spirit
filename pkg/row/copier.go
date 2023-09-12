@@ -174,7 +174,6 @@ func (c *Copier) Run(ctx context.Context) error {
 	go c.estimateRowsPerSecondLoop(ctx) // estimate rows while copying
 	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
-	var err error
 	for !c.chunker.IsRead() && c.isHealthy(errGrpCtx) {
 		g.Go(func() error {
 			chunk, err := c.chunker.Next()
@@ -193,7 +192,7 @@ func (c *Copier) Run(ctx context.Context) error {
 		})
 	}
 
-	err = g.Wait()
+	err := g.Wait()
 	if err != nil {
 		return err
 	}

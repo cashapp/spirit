@@ -1194,6 +1194,9 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	m.setCurrentState(stateChecksum)
 	assert.NoError(t, m.checksum(context.TODO()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
+
+	// Check that all connections have been returned to the pool.
+	assert.Equal(t, 16, m.pool.Size())
 	// All done!
 }
 
@@ -1336,6 +1339,9 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	m.setCurrentState(stateChecksum)
 	assert.NoError(t, m.checksum(context.TODO()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
+
+	// Check that all connections have been returned to the pool.
+	assert.Equal(t, 16, m.pool.Size())
 	// All done!
 }
 
@@ -1631,6 +1637,10 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+
+	// Check that all connections have been returned to the pool.
+	assert.Equal(t, newmigration.Threads, m.pool.Size())
+
 	assert.NoError(t, m.Close())
 }
 
@@ -1834,6 +1844,9 @@ func TestE2ERogueValues(t *testing.T) {
 	m.setCurrentState(stateChecksum)
 	assert.NoError(t, m.checksum(context.TODO()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
+
+	// Check that all connections have been returned to the pool.
+	assert.Equal(t, 16, m.pool.Size())
 	// All done!
 }
 
@@ -2075,5 +2088,7 @@ func TestVarcharE2E(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	// Check that all connections have been returned to the pool.
+	assert.Equal(t, 16, m.pool.Size())
 	assert.NoError(t, m.Close())
 }

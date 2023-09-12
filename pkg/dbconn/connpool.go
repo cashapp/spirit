@@ -75,6 +75,11 @@ func (p *ConnPool) DBConfig() *DBConfig {
 	return p.config
 }
 
+// Size of the pool
+func (p *ConnPool) Size() int {
+	return len(p.conns)
+}
+
 // RetryableTransaction uses the first available connection
 // it retries all statements in a transaction, retrying if a statement
 // errors, or there is a deadlock. It will retry up to maxRetries times.

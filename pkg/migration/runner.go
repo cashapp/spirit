@@ -540,6 +540,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		return err
 	}
 	ssPoolForChecksum, err := dbconn.NewPoolWithConsistentSnapshot(ctx, r.db, 1, r.pool.DBConfig(), r.logger)
+	defer utils.ErrInErr(ssPoolForChecksum.Close())
 	if err != nil {
 		return err
 	}
