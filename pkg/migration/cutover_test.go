@@ -61,7 +61,7 @@ func TestCutOver(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run(context.Background()))
 
-	cutover, err := NewCutOver(context.Background(), pool, t1, t1new, feed, dbconn.NewDBConfig(), logger)
+	cutover, err := NewCutOver(pool, t1, t1new, feed, logger)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -186,7 +186,7 @@ func TestMDLLockFails(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run(context.Background()))
 
-	cutover, err := NewCutOver(context.Background(), pool, t1, t1new, feed, config, logger)
+	cutover, err := NewCutOver(pool, t1, t1new, feed, logger)
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -215,7 +215,7 @@ func TestInvalidOptions(t *testing.T) {
 	logger := logrus.New()
 
 	// Invalid options
-	_, err = NewCutOver(context.Background(), pool, nil, nil, nil, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(pool, nil, nil, nil, logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
@@ -226,6 +226,6 @@ func TestInvalidOptions(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
-	_, err = NewCutOver(context.Background(), pool, nil, t1new, feed, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(pool, nil, t1new, feed, logger)
 	assert.Error(t, err)
 }

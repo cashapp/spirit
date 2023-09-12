@@ -96,8 +96,8 @@ func NewCopier(pool *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *Co
 }
 
 // NewCopierFromCheckpoint creates a new copier object, from a checkpoint (copyRowsAt, copyRows)
-func NewCopierFromCheckpoint(db *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64) (*Copier, error) {
-	c, err := NewCopier(db, tbl, newTable, config)
+func NewCopierFromCheckpoint(pool *dbconn.ConnPool, tbl, newTable *table.TableInfo, config *CopierConfig, lowWatermark string, rowsCopied uint64, rowsCopiedLogical uint64) (*Copier, error) {
+	c, err := NewCopier(pool, tbl, newTable, config)
 	if err != nil {
 		return c, err
 	}

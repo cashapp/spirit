@@ -41,8 +41,6 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		Table:    "nonbinarycompatt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	//m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig())
-	////assert.NoError(t, err)
 	assert.NoError(t, err)                         // everything is specified.
 	assert.NoError(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
 	assert.NoError(t, m.Close())

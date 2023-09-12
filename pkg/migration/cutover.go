@@ -44,7 +44,7 @@ type CutOver struct {
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(ctx context.Context, pool *dbconn.ConnPool, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(pool *dbconn.ConnPool, table, newTable *table.TableInfo, feed *repl.Client, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}

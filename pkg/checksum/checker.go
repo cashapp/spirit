@@ -33,16 +33,14 @@ type Checker struct {
 	StartTime   time.Time
 	ExecTime    time.Duration
 	recentValue interface{} // used for status
-	dbConfig    *dbconn.DBConfig
 	logger      loggers.Advanced
 }
 
 type CheckerConfig struct {
 	Concurrency     int
 	TargetChunkTime time.Duration
-	DBConfig        *dbconn.DBConfig
-	Pool            *dbconn.ConnPool // usually nil
-	SSPool          *dbconn.ConnPool
+	Pool            *dbconn.ConnPool
+	SSPool          *dbconn.ConnPool // usually nil
 	Logger          loggers.Advanced
 }
 
@@ -50,7 +48,6 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 	return &CheckerConfig{
 		Concurrency:     4,
 		TargetChunkTime: 1000 * time.Millisecond,
-		DBConfig:        dbconn.NewDBConfig(),
 		Logger:          logrus.New(),
 	}
 }
@@ -63,9 +60,7 @@ func NewChecker(tbl, newTable *table.TableInfo, feed *repl.Client, config *Check
 	if newTable == nil || tbl == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
-	if config.DBConfig == nil {
-		config.DBConfig = dbconn.NewDBConfig()
-	}
+
 	chunker, err := table.NewChunker(tbl, config.TargetChunkTime, config.Logger)
 	if err != nil {
 		return nil, err
@@ -74,11 +69,10 @@ func NewChecker(tbl, newTable *table.TableInfo, feed *repl.Client, config *Check
 		table:       tbl,
 		newTable:    newTable,
 		concurrency: config.Concurrency,
-		ssPool:      config.SSPool,
-		pool:        config.Pool, // usually nil
+		ssPool:      config.SSPool, // usually nil
+		pool:        config.Pool,
 		feed:        feed,
 		chunker:     chunker,
-		dbConfig:    config.DBConfig,
 		logger:      config.Logger,
 	}
 	return checksum, nil
@@ -186,7 +180,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// The table. They MUST be created before the lock is released
 	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
 	// to initialize the read-view.
-	c.ssPool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.pool.DB(), c.concurrency, c.dbConfig, c.logger)
+	c.ssPool, err = dbconn.NewPoolWithConsistentSnapshot(ctx, c.pool.DB(), c.concurrency, c.pool.DBConfig(), c.logger)
 	if err != nil {
 		return err
 	}
@@ -236,7 +230,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Regardless of err state, we should attempt to rollback the transaction
 	// in checksumTxns. They are likely holding metadata locks, which will block
 	// further operations like cleanup or cut-over.
-	if err := c.ssPool.Close(); err != nil { //nolint:contextcheck
+	if err := c.ssPool.Close(); err != nil {
 		return err
 	}
 	if err1 != nil {

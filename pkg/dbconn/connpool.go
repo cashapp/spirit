@@ -236,13 +236,13 @@ func (p *ConnPool) Exec(ctx context.Context, query string) error {
 }
 
 // Put puts a connection back in the pool.
-func (p *ConnPool) Put(trx *sql.Conn) {
-	if trx == nil {
+func (p *ConnPool) Put(conn *sql.Conn) {
+	if conn == nil {
 		return
 	}
 	p.Lock()
 	defer p.Unlock()
-	p.conns = append(p.conns, trx)
+	p.conns = append(p.conns, conn)
 }
 
 // Close closes all connection in the pool.
@@ -250,14 +250,10 @@ func (p *ConnPool) Close() error {
 	for _, conn := range p.conns {
 		// TODO Find a way to do this cleanly.
 		// Can't close an already closed connection,
-		// so we ping the connection to check it's valid before closing.
-		err := conn.PingContext(context.Background())
-		if err == nil {
-			if err = conn.Close(); err != nil {
-				return err
-			}
-		}
+		// so we ignore the error in closing.
+		utils.ErrInErr(conn.Close())
 	}
+	//p.conns = nil
 	return nil
 }
 

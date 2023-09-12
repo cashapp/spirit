@@ -225,7 +225,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(ctx, r.pool, r.table, r.newTable, r.replClient, r.pool.DBConfig(), r.logger)
+	cutover, err := NewCutOver(r.pool, r.table, r.newTable, r.replClient, r.logger)
 	if err != nil {
 		return err
 	}
@@ -546,7 +546,6 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	checker, err := checksum.NewChecker(oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.pool.DBConfig(),
 		Logger:          r.logger,
 		Pool:            r.pool, // can re-use our pool.
 		SSPool:          ssPoolForChecksum,
@@ -783,7 +782,6 @@ func (r *Runner) checksum(ctx context.Context) error {
 		Pool:            r.pool,
 		Concurrency:     r.migration.Threads,
 		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.pool.DBConfig(),
 		Logger:          r.logger,
 	})
 	if err != nil {
