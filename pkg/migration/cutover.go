@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/squareup/spirit/pkg/utils"
+
 	"github.com/siddontang/loggers"
 
 	"github.com/squareup/spirit/pkg/dbconn"
@@ -53,7 +55,7 @@ func NewCutOver(ctx context.Context, pool *dbconn.ConnPool, table, newTable *tab
 	// For users we try to default to RenameUnderLock but fall back to Ghost
 	// if it's 5.7 or there is an error.
 	algorithm := RenameUnderLock // default to rename under lock
-	if !pool.IsMySQL8(ctx) {
+	if !utils.IsMySQL8(pool.DB()) {
 		algorithm = Ghost
 	}
 	return &CutOver{

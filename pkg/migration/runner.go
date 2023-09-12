@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/squareup/spirit/pkg/utils"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
@@ -501,7 +503,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	// We don't need to post-cutover check in MySQL 8.0
 	// because the cutover algorithm does not depend on undocumented MySQL behavior;
 	// it's quite straight forward to lock under rename.
-	if r.pool.IsMySQL8(ctx) {
+	if utils.IsMySQL8(r.db) {
 		return nil
 	}
 	// else; MySQL 5.7

@@ -15,10 +15,11 @@ import (
 
 type ConnPool struct {
 	sync.Mutex
-	db     *sql.DB
-	config *DBConfig
-	conns  []*sql.Conn
-	logger loggers.Advanced
+	db                   *sql.DB
+	config               *DBConfig
+	conns                []*sql.Conn
+	canReplaceConnection bool
+	logger               loggers.Advanced
 }
 
 // NewPoolWithConsistentSnapshot creates a pool of transactions which have already
@@ -45,7 +46,7 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		}
 		rrConns = append(rrConns, conn)
 	}
-	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger}, nil
+	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger, canReplaceConnection: false}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
@@ -53,17 +54,13 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
 	conns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
-		conn, err := db.Conn(ctx)
+		conn, err := newStandardConnection(ctx, db, config)
 		if err != nil {
-			return nil, err
-		}
-		// Set SQL mode, charset, etc.
-		if err := standardizeConn(ctx, conn, config); err != nil {
 			return nil, err
 		}
 		conns = append(conns, conn)
 	}
-	return &ConnPool{config: config, conns: conns, db: db, logger: logger}, nil
+	return &ConnPool{config: config, conns: conns, db: db, logger: logger, canReplaceConnection: true}, nil
 }
 
 // DB returns the underlying *sql.DB for the pool, in an un-pooled way.
@@ -173,25 +170,60 @@ RETRYLOOP:
 func (p *ConnPool) Get() (*sql.Conn, error) {
 	p.Lock()
 	defer p.Unlock()
-	if len(p.conns) == 0 {
+	foundConn := false
+RETRYLOOP:
+	for i := 0; i < p.config.MaxRetries; i++ {
+		if len(p.conns) == 0 {
+			p.logger.Warnf("No free connections in the pool, backing off and retrying to check the pool again.")
+			backoff(i)
+			continue RETRYLOOP // retry
+		} else {
+			foundConn = true
+			break
+		}
+	}
+	if !foundConn {
 		return nil, errors.New("no conns in pool")
 	}
+
+	//var conn *sql.Conn
+	//
+	//if p.conns[0].PingContext(context.Background()) == nil {
+	//	conn = p.conns[0]
+	//} else if p.canReplaceConnection {
+	//	p.logger.Warnf("Connection in the pool isn't valid, replacing it with a new connection")
+	//	newConn, err := newStandardConnection(context.Background(), p.db, p.config)
+	//	if err != nil {
+	//		return nil, errors.New("error when trying to replace with a new connection ")
+	//	}
+	//	p.conns = append([]*sql.Conn{newConn}, p.conns[1:]...)
+	//	conn = p.conns[0]
+	//}
 	conn := p.conns[0]
 	p.conns = p.conns[1:]
 	return conn, nil
 }
 
+func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Set SQL mode, charset, etc.
+	if err := standardizeConn(ctx, conn, config); err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
 // GetWithConnectionID gets a connection from the pool along with its ID.
 func (p *ConnPool) GetWithConnectionID(ctx context.Context) (*sql.Conn, int, error) {
-	p.Lock()
-	defer p.Unlock()
-	if len(p.conns) == 0 {
-		return nil, 0, errors.New("no conns in pool")
+	conn, err := p.Get()
+	if err != nil {
+		return nil, -1, err
 	}
-	conn := p.conns[0]
-	p.conns = p.conns[1:]
 	var connectionID int
-	err := conn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID)
+	err = conn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID)
 	return conn, connectionID, err
 }
 
@@ -220,33 +252,18 @@ func (p *ConnPool) Put(trx *sql.Conn) {
 // Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
 	for _, conn := range p.conns {
+		// TODO Find a way to do this cleanly.
+		// Can't close an already closed connection,
+		// so we ping the connection to check it's valid before closing.
 		err := conn.PingContext(context.Background())
-		// TODO Can't close an already closed connection.
 		if err == nil {
 			if err = conn.Close(); err != nil {
 				return err
 			}
 		}
 	}
+	p.conns = nil
 	return nil
-}
-
-func (p *ConnPool) Size() int {
-	return len(p.conns)
-}
-
-// IsMySQL8 returns true if we can positively identify this as mysql 8
-func (p *ConnPool) IsMySQL8(ctx context.Context) bool {
-	conn, err := p.Get()
-	if err != nil {
-		return false // can't tell
-	}
-	defer p.Put(conn)
-	var version string
-	if err := conn.QueryRowContext(ctx, "select substr(version(), 1, 1)").Scan(&version); err != nil {
-		return false // can't tell
-	}
-	return version == "8"
 }
 
 // NewTableLock creates a new server wide lock on a table.
