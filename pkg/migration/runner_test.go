@@ -1630,6 +1630,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	newmigration.Table = "chkpresumetest"
 	newmigration.Alter = alterSQL
 	newmigration.TargetChunkTime = 5 * time.Second
+	newmigration.LockWaitTimeout = 5 * time.Second
 
 	m, err := NewRunner(newmigration)
 	assert.NoError(t, err)
