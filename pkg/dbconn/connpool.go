@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
@@ -11,17 +12,26 @@ import (
 )
 
 type ConnPool struct {
-	db     *sql.DB
-	config *DBConfig
-	conns  chan *sql.Conn
-	logger loggers.Advanced
+	m        sync.Mutex
+	c        sync.Cond
+	db       *sql.DB
+	config   *DBConfig
+	conns    []*sql.Conn
+	capacity int
+	logger   loggers.Advanced
 }
 
 // NewPoolWithConsistentSnapshot creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation, and the snapshot
 // has been opened.
 func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	rrConns := make(chan *sql.Conn, count)
+	q := new(ConnPool)
+	q.c = sync.Cond{L: &q.m}
+	q.capacity = count
+	q.conns = make([]*sql.Conn, 0, count)
+	q.db = db
+	q.config = config
+	q.logger = logger
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -39,23 +49,30 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		if err := standardizeConn(ctx, conn, config); err != nil {
 			return nil, err
 		}
-		rrConns <- conn
+		q.conns = append(q.conns, conn)
 	}
-	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger}, nil
+	return q, nil
 }
 
 // NewConnPool creates a pool of connections which have already
 // been standardised.
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	conns := make(chan *sql.Conn, count)
+	q := new(ConnPool)
+	q.c = sync.Cond{L: &q.m}
+	q.capacity = count
+	q.conns = make([]*sql.Conn, 0, count)
+	q.config = config
+	q.db = db
+	q.logger = logger
+
 	for i := 0; i < count; i++ {
 		conn, err := newStandardConnection(ctx, db, config)
 		if err != nil {
 			return nil, err
 		}
-		conns <- conn
+		q.conns = append(q.conns, conn)
 	}
-	return &ConnPool{config: config, conns: conns, db: db, logger: logger}, nil
+	return q, nil
 }
 
 func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
@@ -186,7 +203,16 @@ RETRYLOOP:
 
 // Get gets a connection from the pool.
 func (p *ConnPool) Get(ctx context.Context) (*sql.Conn, error) {
-	return <-p.conns, nil
+	p.c.L.Lock()
+	defer p.c.L.Unlock()
+
+	for p.Size() == 0 {
+		p.c.Wait()
+	}
+	result := p.conns[0]
+	p.conns = p.conns[1:len(p.conns)]
+	p.c.Signal()
+	return result, nil
 }
 
 // GetWithConnectionID gets a connection from the pool along with its ID.
@@ -217,18 +243,25 @@ func (p *ConnPool) Put(conn *sql.Conn) {
 	if conn == nil {
 		return
 	}
-	p.conns <- conn
+	p.c.L.Lock()
+	defer p.c.L.Unlock()
+
+	for p.Size() == p.capacity {
+		p.c.Wait()
+	}
+	p.conns = append(p.conns, conn)
+	p.c.Signal()
 }
 
 // Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
-	close(p.conns)
-	for conn := range p.conns {
+	for _, conn := range p.conns {
 		// TODO Find a way to do this cleanly.
 		// Can't close an already closed connection,
 		// so we ignore the error in closing.
 		utils.ErrInErr(conn.Close())
 	}
+	p.conns = nil
 	return nil
 }
 
