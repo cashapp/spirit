@@ -32,7 +32,7 @@ func TestConnPool_Get_Put(t *testing.T) {
 	assert.NotNil(t, conn2)
 
 	// Put back one and get to check if it's the same connection
-	pool.Put(conn1)
+	pool.Put(context.Background(), conn1)
 	conn3, err := pool.Get(context.Background())
 	assert.Equal(t, conn1, conn3)
 	assert.NoError(t, err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sync"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
@@ -14,7 +13,7 @@ import (
 
 type ConnPool struct {
 	sem    *semaphore.Weighted
-	m      sync.Mutex
+	m      *semaphore.Weighted
 	db     *sql.DB
 	config *DBConfig
 	conns  []*sql.Conn
@@ -26,6 +25,7 @@ type ConnPool struct {
 // has been opened.
 func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
 	sem := semaphore.NewWeighted(int64(count))
+	m := semaphore.NewWeighted(1)
 	rrConns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
@@ -46,13 +46,14 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		}
 		rrConns = append(rrConns, conn)
 	}
-	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger, sem: sem}, nil
+	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger, sem: sem, m: m}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
 // been standardised.
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
 	sem := semaphore.NewWeighted(int64(count))
+	m := semaphore.NewWeighted(1)
 	conns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := newStandardConnection(ctx, db, config)
@@ -61,7 +62,7 @@ func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, l
 		}
 		conns = append(conns, conn)
 	}
-	return &ConnPool{conns: conns, config: config, db: db, logger: logger, sem: sem}, nil
+	return &ConnPool{conns: conns, config: config, db: db, logger: logger, sem: sem, m: m}, nil
 }
 
 func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
@@ -104,7 +105,7 @@ func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarning
 	if err != nil {
 		return 0, err // could not Get connection
 	}
-	defer p.Put(conn)
+	defer p.Put(ctx, conn)
 RETRYLOOP:
 	for i := 0; i < p.config.MaxRetries; i++ {
 		// Start a transaction
@@ -189,8 +190,10 @@ func (p *ConnPool) Get(ctx context.Context) (*sql.Conn, error) {
 	if err := p.sem.Acquire(ctx, 1); err != nil {
 		return nil, err
 	}
-	p.m.Lock()
-	defer p.m.Unlock()
+	if err := p.m.Acquire(ctx, 1); err != nil {
+		return nil, err
+	}
+	defer p.m.Release(1)
 	result := p.conns[0]
 	p.conns = p.conns[1:len(p.conns)]
 	return result, nil
@@ -214,18 +217,18 @@ func (p *ConnPool) Exec(ctx context.Context, query string) error {
 	if err != nil {
 		return err
 	}
-	defer p.Put(conn)
+	defer p.Put(ctx, conn)
 	_, err = conn.ExecContext(ctx, query)
 	return err
 }
 
 // Put puts a connection back in the pool.
-func (p *ConnPool) Put(conn *sql.Conn) {
+func (p *ConnPool) Put(ctx context.Context, conn *sql.Conn) {
 	if conn == nil {
 		return
 	}
-	p.m.Lock()
-	defer p.m.Unlock()
+	p.m.Acquire(ctx, 1) //nolint:all
+	defer p.m.Release(1)
 	p.conns = append(p.conns, conn)
 	p.sem.Release(1)
 }

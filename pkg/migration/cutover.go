@@ -158,7 +158,7 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer c.pool.Put(renameConn)
+	defer c.pool.Put(ctx, renameConn)
 
 	// Start the rename operation, it's OK it will block inside
 	// of this go-routine.
@@ -199,7 +199,7 @@ func (c *CutOver) checkProcesslistForID(ctx context.Context, id int) error {
 	if err != nil {
 		return err
 	}
-	defer c.pool.Put(conn)
+	defer c.pool.Put(ctx, conn)
 	// try up to 10 times. This can be racey
 	for i := 0; i < 10; i++ {
 		err := conn.QueryRowContext(ctx, "SELECT state FROM information_schema.processlist WHERE id = ? AND state = 'Waiting for table metadata lock'", id).Scan(&state)

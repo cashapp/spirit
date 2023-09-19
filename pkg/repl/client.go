@@ -222,7 +222,7 @@ func (c *Client) getCurrentBinlogPosition(ctx context.Context) (mysql.Position, 
 	var binlogFile, fake string
 	var binlogPos uint32
 	conn, err := c.pool.Get(ctx)
-	defer c.pool.Put(conn)
+	defer c.pool.Put(ctx, conn)
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -288,7 +288,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 
 func (c *Client) binlogPositionIsImpossible(ctx context.Context) bool {
 	conn, err := c.pool.Get(ctx)
-	defer c.pool.Put(conn)
+	defer c.pool.Put(ctx, conn)
 	if err != nil {
 		return true
 	}
@@ -632,7 +632,7 @@ func (c *Client) BlockWait(ctx context.Context) error {
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
 	conn, err := c.pool.Get(ctx)
-	defer c.pool.Put(conn)
+	defer c.pool.Put(ctx, conn)
 	if err != nil {
 		return err
 	}

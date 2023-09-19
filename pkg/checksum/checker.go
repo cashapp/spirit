@@ -84,7 +84,7 @@ func (c *Checker) ChecksumChunk(ctx context.Context, chunk *table.Chunk) error {
 	if err != nil {
 		return err
 	}
-	defer c.ssPool.Put(conn)
+	defer c.ssPool.Put(ctx, conn)
 	c.logger.Debugf("checksumming chunk: %s", chunk.String())
 	source := fmt.Sprintf("SELECT BIT_XOR(CRC32(CONCAT(%s))) as checksum FROM %s WHERE %s",
 		c.intersectColumns(),
