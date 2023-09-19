@@ -48,6 +48,7 @@ func TestConnPool_Close(t *testing.T) {
 
 	// Test that closing the pool sets the conns to nil
 	assert.NoError(t, pool.Close())
+	assert.Nil(t, pool.conns)
 }
 
 func TestConnPool_GetWithConnectionID(t *testing.T) {

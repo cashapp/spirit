@@ -9,29 +9,24 @@ import (
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/utils"
+	"golang.org/x/sync/semaphore"
 )
 
 type ConnPool struct {
-	m        sync.Mutex
-	c        sync.Cond
-	db       *sql.DB
-	config   *DBConfig
-	conns    []*sql.Conn
-	capacity int
-	logger   loggers.Advanced
+	sem    *semaphore.Weighted
+	m      sync.Mutex
+	db     *sql.DB
+	config *DBConfig
+	conns  []*sql.Conn
+	logger loggers.Advanced
 }
 
 // NewPoolWithConsistentSnapshot creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation, and the snapshot
 // has been opened.
 func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	q := new(ConnPool)
-	q.c = sync.Cond{L: &q.m}
-	q.capacity = count
-	q.conns = make([]*sql.Conn, 0, count)
-	q.db = db
-	q.config = config
-	q.logger = logger
+	sem := semaphore.NewWeighted(int64(count))
+	rrConns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -49,30 +44,24 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		if err := standardizeConn(ctx, conn, config); err != nil {
 			return nil, err
 		}
-		q.conns = append(q.conns, conn)
+		rrConns = append(rrConns, conn)
 	}
-	return q, nil
+	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger, sem: sem}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
 // been standardised.
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	q := new(ConnPool)
-	q.c = sync.Cond{L: &q.m}
-	q.capacity = count
-	q.conns = make([]*sql.Conn, 0, count)
-	q.config = config
-	q.db = db
-	q.logger = logger
-
+	sem := semaphore.NewWeighted(int64(count))
+	conns := make([]*sql.Conn, 0, count)
 	for i := 0; i < count; i++ {
 		conn, err := newStandardConnection(ctx, db, config)
 		if err != nil {
 			return nil, err
 		}
-		q.conns = append(q.conns, conn)
+		conns = append(conns, conn)
 	}
-	return q, nil
+	return &ConnPool{conns: conns, config: config, db: db, logger: logger, sem: sem}, nil
 }
 
 func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
@@ -118,84 +107,78 @@ func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarning
 	defer p.Put(conn)
 RETRYLOOP:
 	for i := 0; i < p.config.MaxRetries; i++ {
-		select {
-		case <-ctx.Done():
-			conn = nil // To avoid putting back connection to possibly closed channel
-			return rowsAffected, ctx.Err()
-		default:
-			// Start a transaction
-			if trx, err = conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
-				backoff(i)
-				continue RETRYLOOP // retry
+		// Start a transaction
+		if trx, err = conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
+			backoff(i)
+			continue RETRYLOOP // retry
+		}
+		// Execute all statements.
+		for _, stmt := range stmts {
+			if stmt == "" {
+				continue
 			}
-			// Execute all statements.
-			for _, stmt := range stmts {
-				if stmt == "" {
-					continue
-				}
-				var res sql.Result
-				if res, err = trx.ExecContext(ctx, stmt); err != nil {
-					if canRetryError(err) {
-						utils.ErrInErr(trx.Rollback()) // Rollback
-						backoff(i)
-						continue RETRYLOOP // retry
-					}
+			var res sql.Result
+			if res, err = trx.ExecContext(ctx, stmt); err != nil {
+				if canRetryError(err) {
 					utils.ErrInErr(trx.Rollback()) // Rollback
-					return rowsAffected, err
+					backoff(i)
+					continue RETRYLOOP // retry
 				}
-				// Even though there was no ERROR we still need to inspect SHOW WARNINGS
-				// This is because many of the statements use INSERT IGNORE.
-				warningRes, err := trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
+				utils.ErrInErr(trx.Rollback()) // Rollback
+				return rowsAffected, err
+			}
+			// Even though there was no ERROR we still need to inspect SHOW WARNINGS
+			// This is because many of the statements use INSERT IGNORE.
+			warningRes, err := trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
+			if err != nil {
+				utils.ErrInErr(trx.Rollback()) // Rollback
+				return rowsAffected, err
+			}
+			defer warningRes.Close()
+			var level, code, message string
+			for warningRes.Next() {
+				err = warningRes.Scan(&level, &code, &message)
 				if err != nil {
 					utils.ErrInErr(trx.Rollback()) // Rollback
 					return rowsAffected, err
 				}
-				defer warningRes.Close()
-				var level, code, message string
-				for warningRes.Next() {
-					err = warningRes.Scan(&level, &code, &message)
-					if err != nil {
-						utils.ErrInErr(trx.Rollback()) // Rollback
-						return rowsAffected, err
-					}
-					// We won't receive out of range warnings (1264)
-					// because the SQL mode has been unset. This is important
-					// because a historical value like 0000-00-00 00:00:00
-					// might exist in the table and needs to be copied.
-					if code == "1062" && ignoreDupKeyWarnings {
-						continue // ignore duplicate key warnings
-					} else if code == "3170" {
-						// ER_CAPACITY_EXCEEDED
-						// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
-						// Range optimization was not done for this query."
-						// i.e. the query still executes it just doesn't optimize perfectly
-						continue
-					} else {
-						utils.ErrInErr(trx.Rollback())
-						return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
-					}
-				}
-				// As long as it is a statement that supports affected rows (err == nil)
-				// Get the number of rows affected and add it to the total balance.
-				count, err := res.RowsAffected()
-				if err == nil { // supported
-					rowsAffected += count
+				// We won't receive out of range warnings (1264)
+				// because the SQL mode has been unset. This is important
+				// because a historical value like 0000-00-00 00:00:00
+				// might exist in the table and needs to be copied.
+				if code == "1062" && ignoreDupKeyWarnings {
+					continue // ignore duplicate key warnings
+				} else if code == "3170" {
+					// ER_CAPACITY_EXCEEDED
+					// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
+					// Range optimization was not done for this query."
+					// i.e. the query still executes it just doesn't optimize perfectly
+					continue
+				} else {
+					utils.ErrInErr(trx.Rollback())
+					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
 				}
 			}
-			if err != nil {
-				utils.ErrInErr(trx.Rollback()) // Rollback
-				backoff(i)
-				continue RETRYLOOP
+			// As long as it is a statement that supports affected rows (err == nil)
+			// Get the number of rows affected and add it to the total balance.
+			count, err := res.RowsAffected()
+			if err == nil { // supported
+				rowsAffected += count
 			}
-			// Commit it.
-			if err = trx.Commit(); err != nil {
-				utils.ErrInErr(trx.Rollback())
-				backoff(i)
-				continue RETRYLOOP
-			}
-			// Success!
-			return rowsAffected, nil
 		}
+		if err != nil {
+			utils.ErrInErr(trx.Rollback()) // Rollback
+			backoff(i)
+			continue RETRYLOOP
+		}
+		// Commit it.
+		if err = trx.Commit(); err != nil {
+			utils.ErrInErr(trx.Rollback())
+			backoff(i)
+			continue RETRYLOOP
+		}
+		// Success!
+		return rowsAffected, nil
 	}
 	// We failed too many times, return the last error
 	return rowsAffected, err
@@ -203,15 +186,13 @@ RETRYLOOP:
 
 // Get gets a connection from the pool.
 func (p *ConnPool) Get(ctx context.Context) (*sql.Conn, error) {
-	p.c.L.Lock()
-	defer p.c.L.Unlock()
-
-	for p.Size() == 0 {
-		p.c.Wait()
+	if err := p.sem.Acquire(ctx, 1); err != nil {
+		return nil, err
 	}
+	p.m.Lock()
+	defer p.m.Unlock()
 	result := p.conns[0]
 	p.conns = p.conns[1:len(p.conns)]
-	p.c.Signal()
 	return result, nil
 }
 
@@ -243,14 +224,10 @@ func (p *ConnPool) Put(conn *sql.Conn) {
 	if conn == nil {
 		return
 	}
-	p.c.L.Lock()
-	defer p.c.L.Unlock()
-
-	for p.Size() == p.capacity {
-		p.c.Wait()
-	}
+	p.m.Lock()
+	defer p.m.Unlock()
 	p.conns = append(p.conns, conn)
-	p.c.Signal()
+	p.sem.Release(1)
 }
 
 // Close closes all connection in the pool.
