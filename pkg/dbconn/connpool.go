@@ -3,10 +3,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
-
-	"sync"
 
 	"github.com/siddontang/loggers"
 	"github.com/squareup/spirit/pkg/table"
@@ -14,19 +11,17 @@ import (
 )
 
 type ConnPool struct {
-	sync.Mutex
-	db                   *sql.DB
-	config               *DBConfig
-	conns                []*sql.Conn
-	canReplaceConnection bool
-	logger               loggers.Advanced
+	db     *sql.DB
+	config *DBConfig
+	conns  chan *sql.Conn
+	logger loggers.Advanced
 }
 
 // NewPoolWithConsistentSnapshot creates a pool of transactions which have already
 // had their read-view created in REPEATABLE READ isolation, and the snapshot
 // has been opened.
 func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	rrConns := make([]*sql.Conn, 0, count)
+	rrConns := make(chan *sql.Conn, count)
 	for i := 0; i < count; i++ {
 		conn, err := db.Conn(ctx)
 		if err != nil {
@@ -44,23 +39,35 @@ func NewPoolWithConsistentSnapshot(ctx context.Context, db *sql.DB, count int, c
 		if err := standardizeConn(ctx, conn, config); err != nil {
 			return nil, err
 		}
-		rrConns = append(rrConns, conn)
+		rrConns <- conn
 	}
-	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger, canReplaceConnection: false}, nil
+	return &ConnPool{conns: rrConns, config: config, db: db, logger: logger}, nil
 }
 
 // NewConnPool creates a pool of connections which have already
 // been standardised.
 func NewConnPool(ctx context.Context, db *sql.DB, count int, config *DBConfig, logger loggers.Advanced) (*ConnPool, error) {
-	conns := make([]*sql.Conn, 0, count)
+	conns := make(chan *sql.Conn, count)
 	for i := 0; i < count; i++ {
 		conn, err := newStandardConnection(ctx, db, config)
 		if err != nil {
 			return nil, err
 		}
-		conns = append(conns, conn)
+		conns <- conn
 	}
-	return &ConnPool{config: config, conns: conns, db: db, logger: logger, canReplaceConnection: true}, nil
+	return &ConnPool{config: config, conns: conns, db: db, logger: logger}, nil
+}
+
+func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Set SQL mode, charset, etc.
+	if err := standardizeConn(ctx, conn, config); err != nil {
+		return nil, err
+	}
+	return conn, nil
 }
 
 // DB returns the underlying *sql.DB for the pool, in an un-pooled way.
@@ -94,78 +101,84 @@ func (p *ConnPool) RetryableTransaction(ctx context.Context, ignoreDupKeyWarning
 	defer p.Put(conn)
 RETRYLOOP:
 	for i := 0; i < p.config.MaxRetries; i++ {
-		// Start a transaction
-		if trx, err = conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
-			backoff(i)
-			continue RETRYLOOP // retry
-		}
-		// Execute all statements.
-		for _, stmt := range stmts {
-			if stmt == "" {
-				continue
+		select {
+		case <-ctx.Done():
+			conn = nil // To avoid putting back connection to possibly closed channel
+			return rowsAffected, ctx.Err()
+		default:
+			// Start a transaction
+			if trx, err = conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
+				backoff(i)
+				continue RETRYLOOP // retry
 			}
-			var res sql.Result
-			if res, err = trx.ExecContext(ctx, stmt); err != nil {
-				if canRetryError(err) {
-					utils.ErrInErr(trx.Rollback()) // Rollback
-					backoff(i)
-					continue RETRYLOOP // retry
+			// Execute all statements.
+			for _, stmt := range stmts {
+				if stmt == "" {
+					continue
 				}
-				utils.ErrInErr(trx.Rollback()) // Rollback
-				return rowsAffected, err
-			}
-			// Even though there was no ERROR we still need to inspect SHOW WARNINGS
-			// This is because many of the statements use INSERT IGNORE.
-			warningRes, err := trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
-			if err != nil {
-				utils.ErrInErr(trx.Rollback()) // Rollback
-				return rowsAffected, err
-			}
-			defer warningRes.Close()
-			var level, code, message string
-			for warningRes.Next() {
-				err = warningRes.Scan(&level, &code, &message)
+				var res sql.Result
+				if res, err = trx.ExecContext(ctx, stmt); err != nil {
+					if canRetryError(err) {
+						utils.ErrInErr(trx.Rollback()) // Rollback
+						backoff(i)
+						continue RETRYLOOP // retry
+					}
+					utils.ErrInErr(trx.Rollback()) // Rollback
+					return rowsAffected, err
+				}
+				// Even though there was no ERROR we still need to inspect SHOW WARNINGS
+				// This is because many of the statements use INSERT IGNORE.
+				warningRes, err := trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
 				if err != nil {
 					utils.ErrInErr(trx.Rollback()) // Rollback
 					return rowsAffected, err
 				}
-				// We won't receive out of range warnings (1264)
-				// because the SQL mode has been unset. This is important
-				// because a historical value like 0000-00-00 00:00:00
-				// might exist in the table and needs to be copied.
-				if code == "1062" && ignoreDupKeyWarnings {
-					continue // ignore duplicate key warnings
-				} else if code == "3170" {
-					// ER_CAPACITY_EXCEEDED
-					// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
-					// Range optimization was not done for this query."
-					// i.e. the query still executes it just doesn't optimize perfectly
-					continue
-				} else {
-					utils.ErrInErr(trx.Rollback())
-					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
+				defer warningRes.Close()
+				var level, code, message string
+				for warningRes.Next() {
+					err = warningRes.Scan(&level, &code, &message)
+					if err != nil {
+						utils.ErrInErr(trx.Rollback()) // Rollback
+						return rowsAffected, err
+					}
+					// We won't receive out of range warnings (1264)
+					// because the SQL mode has been unset. This is important
+					// because a historical value like 0000-00-00 00:00:00
+					// might exist in the table and needs to be copied.
+					if code == "1062" && ignoreDupKeyWarnings {
+						continue // ignore duplicate key warnings
+					} else if code == "3170" {
+						// ER_CAPACITY_EXCEEDED
+						// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
+						// Range optimization was not done for this query."
+						// i.e. the query still executes it just doesn't optimize perfectly
+						continue
+					} else {
+						utils.ErrInErr(trx.Rollback())
+						return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
+					}
+				}
+				// As long as it is a statement that supports affected rows (err == nil)
+				// Get the number of rows affected and add it to the total balance.
+				count, err := res.RowsAffected()
+				if err == nil { // supported
+					rowsAffected += count
 				}
 			}
-			// As long as it is a statement that supports affected rows (err == nil)
-			// Get the number of rows affected and add it to the total balance.
-			count, err := res.RowsAffected()
-			if err == nil { // supported
-				rowsAffected += count
+			if err != nil {
+				utils.ErrInErr(trx.Rollback()) // Rollback
+				backoff(i)
+				continue RETRYLOOP
 			}
+			// Commit it.
+			if err = trx.Commit(); err != nil {
+				utils.ErrInErr(trx.Rollback())
+				backoff(i)
+				continue RETRYLOOP
+			}
+			// Success!
+			return rowsAffected, nil
 		}
-		if err != nil {
-			utils.ErrInErr(trx.Rollback()) // Rollback
-			backoff(i)
-			continue RETRYLOOP
-		}
-		// Commit it.
-		if err = trx.Commit(); err != nil {
-			utils.ErrInErr(trx.Rollback())
-			backoff(i)
-			continue RETRYLOOP
-		}
-		// Success!
-		return rowsAffected, nil
 	}
 	// We failed too many times, return the last error
 	return rowsAffected, err
@@ -173,48 +186,7 @@ RETRYLOOP:
 
 // Get gets a connection from the pool.
 func (p *ConnPool) Get(ctx context.Context) (*sql.Conn, error) {
-	p.Lock()
-	defer p.Unlock()
-	foundConn := false
-RETRYLOOP:
-	for i := 0; i < p.config.MaxRetries; i++ {
-		if len(p.conns) == 0 {
-			p.logger.Warnf("No free connections in the pool, backing off and retrying to check the pool again.")
-			backoff(i)
-			continue RETRYLOOP // retry
-		} else {
-			foundConn = true
-			break
-		}
-	}
-	if !foundConn {
-		return nil, errors.New("no conns in pool")
-	}
-
-	err := p.conns[0].PingContext(ctx)
-	if err != nil && p.canReplaceConnection {
-		p.logger.Warnf("Connection in the pool isn't valid, replacing it with a new connection")
-		newConn, err := newStandardConnection(ctx, p.db, p.config)
-		if err != nil {
-			return nil, errors.New("error when trying to replace with a new connection")
-		}
-		p.conns[0] = newConn
-	}
-	conn := p.conns[0]
-	p.conns = p.conns[1:]
-	return conn, nil
-}
-
-func newStandardConnection(ctx context.Context, db *sql.DB, config *DBConfig) (*sql.Conn, error) {
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// Set SQL mode, charset, etc.
-	if err := standardizeConn(ctx, conn, config); err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return <-p.conns, nil
 }
 
 // GetWithConnectionID gets a connection from the pool along with its ID.
@@ -245,22 +217,18 @@ func (p *ConnPool) Put(conn *sql.Conn) {
 	if conn == nil {
 		return
 	}
-	p.Lock()
-	defer p.Unlock()
-	p.conns = append(p.conns, conn)
+	p.conns <- conn
 }
 
 // Close closes all connection in the pool.
 func (p *ConnPool) Close() error {
-	p.Lock()
-	defer p.Unlock()
-	for _, conn := range p.conns {
+	close(p.conns)
+	for conn := range p.conns {
 		// TODO Find a way to do this cleanly.
 		// Can't close an already closed connection,
 		// so we ignore the error in closing.
 		utils.ErrInErr(conn.Close())
 	}
-	p.conns = nil
 	return nil
 }
 

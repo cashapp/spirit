@@ -1940,7 +1940,6 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, err)
 
 	m.pool, err = dbconn.NewConnPool(context.TODO(), m.db, m.migration.Threads, dbconn.NewDBConfig(), logrus.New())
-	defer m.pool.Close()
 	assert.NoError(t, err)
 
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
