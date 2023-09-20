@@ -443,7 +443,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
 	// These will both be stopped when the copier finishes
-	// and checkpoint starts, although the PeriodicFlush
+	// and checksum starts, although the PeriodicFlush
 	// will be restarted again after.
 	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
 	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
