@@ -284,6 +284,24 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 		return err
 	}
 
+	// Disable the auto-update statistics go routine. This is because the
+	// checksum uses a consistent read and doesn't see any of the new rows in the
+	// table anyway. Chunking in the space where the consistent reads may need
+	// to read a lot of older versions is *much* slower.
+	// In a previous migration:
+	// - The checksum chunks were about 100K rows each
+	// - When the checksum reached the point at which the copier had reached,
+	//   the chunks slowed down to about 30 rows(!)
+	// - The checksum task should have finished in the next 5 minutes, but instead
+	//   the projected time was another 40 hours.
+	// My understanding of MVCC in MySQL is that the consistent read threads may
+	// have had to follow pointers to older versions of rows in UNDO, which is a
+	// linked list to find the specific versions these transactions needed. It
+	// appears that it is likely N^2 complexity, and we are better off to just
+	// have the last chunk of the checksum be slow and do this once rather than
+	// repeatedly chunking in this range.
+	r.table.DisableAutoUpdateStatistics = true
+
 	// The checksum is (usually) optional, but it is ONLINE after an initial lock
 	// for consistency. It is the main way that we determine that
 	// this program is safe to use even when immature. In the event that it is
@@ -424,6 +442,9 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Start routines in table and replication packages to
 	// Continuously update the min/max and estimated rows
 	// and to flush the binary log position periodically.
+	// These will both be stopped when the copier finishes
+	// and checksum starts, although the PeriodicFlush
+	// will be restarted again after.
 	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
 	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
 	return nil
