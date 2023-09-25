@@ -6,13 +6,9 @@ import (
 	"github.com/siddontang/loggers"
 )
 
-var (
-	// StartingChunkSize is the initial chunkSize
-	// it is a const, but set to var for tests.
-	StartingChunkSize uint64 = 1000
-)
-
 const (
+	// StartingChunkSize is the initial chunkSize
+	StartingChunkSize = 1000
 	// MaxDynamicStepFactor is the maximum amount each recalculation of the dynamic chunkSize can
 	// increase by. For example, if the newTarget is 5000 but the current target is 1000, the newTarget
 	// will be capped back down to 1500. Over time the number 5000 will be reached, but not straight away.

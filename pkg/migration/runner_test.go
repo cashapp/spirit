@@ -1605,11 +1605,9 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 func TestResumeFromCheckpointE2ECompositeVarcharPK(t *testing.T) {
 	// Lower the checkpoint interval for testing.
-	table.StartingChunkSize = 100
 	checkpointDumpInterval = 100 * time.Millisecond
 	defer func() {
 		checkpointDumpInterval = 50 * time.Second
-		table.StartingChunkSize = 1000
 	}()
 	runSQL(t, `DROP TABLE IF EXISTS compositevarcharpk, _compositevarcharpk_chkpnt`)
 	runSQL(t, `CREATE TABLE compositevarcharpk (
