@@ -283,14 +283,14 @@ func TestCompositeLowWatermark(t *testing.T) {
 	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err)
 
-	assert.Equal(t, StartingChunkSize, int(chunker.chunkSize))
+	assert.Equal(t, StartingChunkSize, chunker.chunkSize)
 	chunk, err := chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "`pk` < 1008", chunk.String()) // first chunk
 	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err) // no feedback yet.
 	chunker.Feedback(chunk, time.Millisecond*500)
-	assert.Equal(t, StartingChunkSize, int(chunker.chunkSize)) // should not have changed yet (requires 10 feedbacks)
+	assert.Equal(t, StartingChunkSize, chunker.chunkSize) // should not have changed yet (requires 10 feedbacks)
 
 	_, err = chunker.GetLowWatermark()
 	assert.Error(t, err) // there has been feedback, but watermark is not ready after first chunk.

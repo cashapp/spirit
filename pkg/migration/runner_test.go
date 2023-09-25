@@ -1599,7 +1599,104 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.True(t, m.usedResumeFromCheckpoint)
 	assert.NoError(t, m.Close())
+}
+
+func TestResumeFromCheckpointE2ECompositeVarcharPK(t *testing.T) {
+	// Lower the checkpoint interval for testing.
+	table.StartingChunkSize = 100
+	checkpointDumpInterval = 100 * time.Millisecond
+	defer func() {
+		checkpointDumpInterval = 50 * time.Second
+		table.StartingChunkSize = 1000
+	}()
+	runSQL(t, `DROP TABLE IF EXISTS compositevarcharpk, _compositevarcharpk_chkpnt`)
+	runSQL(t, `CREATE TABLE compositevarcharpk (
+  token varchar(128) NOT NULL,
+  version varchar(255) NOT NULL,
+  state varchar(255) NOT NULL,
+  source varchar(128) NOT NULL,
+  created_at datetime(3) NOT NULL,
+  updated_at datetime(3) NOT NULL,
+  PRIMARY KEY (token,version)
+	);`)
+	runSQL(t, `INSERT INTO compositevarcharpk VALUES
+ (HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3))`)
+	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+ HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
+FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
+	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+ HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
+FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
+	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+ HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
+FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
+	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+ HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
+FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
+	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+ a.token, '2', 'active', 'test', NOW(3), NOW(3)
+FROM compositevarcharpk a WHERE version='1'`)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         1,
+		Table:           "compositevarcharpk",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+		TargetChunkTime: 100 * time.Millisecond,
+	}
+	runner, err := NewRunner(migration)
+	assert.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		err := runner.Run(ctx)
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+	}()
+
+	// wait until a checkpoint is saved (which means copy is in progress)
+	db, err := sql.Open("mysql", dsn())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		err = db.QueryRow(`SELECT count(*) from _compositevarcharpk_chkpnt`).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	// Between cancel and Close() every resource is freed.
+	cancel()
+	assert.NoError(t, runner.Close())
+
+	newmigration := &Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         2,
+		Table:           "compositevarcharpk",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+		TargetChunkTime: 5 * time.Second,
+	}
+	m2, err := NewRunner(newmigration)
+	assert.NoError(t, err)
+	assert.NotNil(t, m2)
+
+	err = m2.Run(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, m2.usedResumeFromCheckpoint)
+	assert.NoError(t, m2.Close())
 }
 
 // TestE2ERogueValues tests that PRIMARY KEY

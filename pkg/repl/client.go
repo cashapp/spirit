@@ -576,7 +576,7 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 				return
 			}
 			startLoop := time.Now()
-			c.logger.Info("starting periodic flush of binary log")
+			c.logger.Debug("starting periodic flush of binary log")
 			// The periodic flush does not respect the throttler since we want to advance the binlog position
 			// we allow this to run, and then expect that if it is under load the throttler
 			// will kick in and slow down the copy-rows.

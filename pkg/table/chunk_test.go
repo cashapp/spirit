@@ -61,7 +61,7 @@ func TestBoundary_ValueString(t *testing.T) {
 	boundary3 := &Boundary{
 		Value: []Datum{newDatum("PENDING", binaryType), newDatum(2, signedType)},
 	}
-	assert.Equal(t, "\"\"PENDING\"\",\"2\"", boundary3.valuesString())
+	assert.Equal(t, "\"PENDING\",\"2\"", boundary3.valuesString())
 }
 
 func TestCompositeChunks(t *testing.T) {

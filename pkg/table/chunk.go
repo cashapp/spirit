@@ -100,7 +100,11 @@ func (b *Boundary) comparesTo(b2 *Boundary) bool {
 func (b *Boundary) valuesString() string {
 	vals := make([]string, len(b.Value))
 	for i, v := range b.Value {
-		vals[i] = fmt.Sprintf(`"%s"`, v)
+		if v.Tp == signedType || v.Tp == unsignedType {
+			vals[i] = fmt.Sprintf(`"%s"`, v)
+		} else {
+			vals[i] = v.String() // already quoted
+		}
 	}
 	return strings.Join(vals, ",")
 }
