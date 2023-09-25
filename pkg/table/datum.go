@@ -131,7 +131,7 @@ func (d Datum) MinValue() Datum {
 }
 
 func (d Datum) Add(addVal uint64) Datum {
-	if d.Tp == binaryType {
+	if !d.IsNumeric() {
 		panic("not supported on binary type")
 	}
 	ret := d
@@ -153,7 +153,7 @@ func (d Datum) Add(addVal uint64) Datum {
 
 // Range returns the diff between 2 datums as an uint64.
 func (d Datum) Range(d2 Datum) uint64 {
-	if d.Tp == binaryType {
+	if !d.IsNumeric() {
 		panic("not supported on binary type")
 	}
 	if d.Tp == signedType {
@@ -164,10 +164,15 @@ func (d Datum) Range(d2 Datum) uint64 {
 
 // String returns the datum as a SQL escaped string
 func (d Datum) String() string {
-	if d.Tp == binaryType || d.Tp == unknownType {
+	if !d.IsNumeric() {
 		return "\"" + mysqlRealEscapeString(d.Val.(string)) + "\""
 	}
 	return fmt.Sprintf("%v", d.Val)
+}
+
+// IsNumeric checks if it's signed or unsigned
+func (d Datum) IsNumeric() bool {
+	return d.Tp == signedType || d.Tp == unsignedType
 }
 
 func (d Datum) IsNil() bool {
@@ -175,7 +180,7 @@ func (d Datum) IsNil() bool {
 }
 
 func (d Datum) GreaterThanOrEqual(d2 Datum) bool {
-	if d.Tp == binaryType {
+	if !d.IsNumeric() {
 		panic("not supported on binary type")
 	}
 	if d.Tp == signedType {
