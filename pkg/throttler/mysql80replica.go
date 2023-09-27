@@ -8,7 +8,7 @@ import (
 
 type MySQL80Replica struct {
 	Repl
-	isClosed bool
+	isClosed atomic.Bool
 }
 
 const MySQL8LagQuery = `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
@@ -32,7 +32,7 @@ func (l *MySQL80Replica) Open() error {
 		ticker := time.NewTicker(loopInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			if l.isClosed {
+			if l.isClosed.Load() {
 				return
 			}
 			if err := l.UpdateLag(); err != nil {
@@ -44,7 +44,7 @@ func (l *MySQL80Replica) Open() error {
 }
 
 func (l *MySQL80Replica) Close() error {
-	l.isClosed = true
+	l.isClosed.Store(true)
 	return nil
 }
 
