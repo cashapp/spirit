@@ -46,7 +46,7 @@ type Copier struct {
 	rowsPerSecond        uint64
 	isInvalid            bool
 	isOpen               bool
-	StartTime            time.Time
+	startTime            time.Time
 	ExecTime             time.Duration
 	Throttler            throttler.Throttler
 	logger               loggers.Advanced
@@ -160,10 +160,17 @@ func (c *Copier) isHealthy(ctx context.Context) bool {
 	return !c.isInvalid
 }
 
+func (c *Copier) StartTime() time.Time {
+	c.Lock()
+	defer c.Unlock()
+	return c.startTime
+}
+
 func (c *Copier) Run(ctx context.Context) error {
-	c.StartTime = time.Now()
+	c.Lock()
+	c.startTime = time.Now()
 	defer func() {
-		c.ExecTime = time.Since(c.StartTime)
+		c.ExecTime = time.Since(c.startTime)
 	}()
 	if !c.isOpen {
 		// For practical reasons resume-from-checkpoint
@@ -172,6 +179,7 @@ func (c *Copier) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	c.Unlock()
 	go c.estimateRowsPerSecondLoop(ctx) // estimate rows while copying
 	g, errGrpCtx := errgroup.WithContext(ctx)
 	g.SetLimit(c.concurrency)
@@ -182,11 +190,11 @@ func (c *Copier) Run(ctx context.Context) error {
 				if err == table.ErrTableIsRead {
 					return nil
 				}
-				c.isInvalid = true
+				c.setInvalid(true)
 				return err
 			}
 			if err := c.CopyChunk(errGrpCtx, chunk); err != nil {
-				c.isInvalid = true
+				c.setInvalid(true)
 				return err
 			}
 			return nil
@@ -199,6 +207,12 @@ func (c *Copier) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *Copier) setInvalid(newVal bool) {
+	c.Lock()
+	defer c.Unlock()
+	c.isInvalid = newVal
 }
 
 func (c *Copier) SetThrottler(throttler throttler.Throttler) {
@@ -232,17 +246,21 @@ func (c *Copier) getCopyStats() (uint64, uint64, float64) {
 
 // GetProgress returns the progress of the copier
 func (c *Copier) GetProgress() string {
+	c.Lock()
+	defer c.Unlock()
 	copied, total, pct := c.getCopyStats()
 	return fmt.Sprintf("%d/%d %.2f%%", copied, total, pct)
 }
 
 func (c *Copier) GetETA() string {
+	c.Lock()
+	defer c.Unlock()
 	copiedRows, totalRows, pct := c.getCopyStats()
 	rowsPerSecond := atomic.LoadUint64(&c.rowsPerSecond)
 	if pct > 99.99 {
 		return "DUE"
 	}
-	if rowsPerSecond == 0 || time.Since(c.StartTime) < copyETAInitialWaitTime {
+	if rowsPerSecond == 0 || time.Since(c.startTime) < copyETAInitialWaitTime {
 		return "TBD"
 	}
 	// divide the remaining rows by how many rows we copied in the last interval per second

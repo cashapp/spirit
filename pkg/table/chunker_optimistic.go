@@ -94,7 +94,7 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 func (t *chunkerOptimistic) Next() (*Chunk, error) {
 	t.Lock()
 	defer t.Unlock()
-	if t.IsRead() {
+	if t.finalChunkSent {
 		return nil, ErrTableIsRead
 	}
 	if !t.isOpen {
@@ -353,6 +353,8 @@ func (t *chunkerOptimistic) open() (err error) {
 }
 
 func (t *chunkerOptimistic) IsRead() bool {
+	t.Lock()
+	defer t.Unlock()
 	return t.finalChunkSent
 }
 
