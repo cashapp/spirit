@@ -1307,8 +1307,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// All done!
 }
 
-// TestForRemainingTableArtifacts tests that the _{name}_old table is left after
-// the migration is complete, but no _chkpnt or _new table.
+// TestForRemainingTableArtifacts tests that the table is left after
+// the migration is complete, but no _chkpnt or _new or _old table.
 func TestForRemainingTableArtifacts(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
@@ -1340,7 +1340,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
 	var tables string
 	assert.NoError(t, db.QueryRow(stmt).Scan(&tables))
-	assert.Equal(t, "_remainingtbl_old,remainingtbl", tables)
+	assert.Equal(t, "remainingtbl", tables)
 }
 
 func TestDropColumn(t *testing.T) {
@@ -2111,5 +2111,81 @@ func TestVarcharE2E(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
+}
+
+func TestSkipDropAfterCutover(t *testing.T) {
+	tableName := `drop_test`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+
+	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	runSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                "drop_test",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: true,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = m.db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 1)
+	assert.NoError(t, m.Close())
+}
+
+func TestDropAfterCutover(t *testing.T) {
+	tableName := `drop_test`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+
+	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	runSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                "drop_test",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = m.db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 0)
 	assert.NoError(t, m.Close())
 }

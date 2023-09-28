@@ -241,6 +241,14 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		// Don't return the error because our automation
 		// will retry the migration (but it's already happened)
 		r.logger.Errorf("post-cutover check failed: %v", err)
+	} else if !r.migration.SkipDropAfterCutover {
+		if err := r.dropOldTable(ctx); err != nil {
+			// Don't return the error because our automation
+			// will retry the migration (but it's already happened)
+			r.logger.Errorf("migration successful but failed to drop old table: %v", err)
+		} else {
+			r.logger.Info("successfully dropped old table")
+		}
 	}
 
 	checksumTime := time.Duration(0)
