@@ -58,7 +58,7 @@ func (t *chunkerComposite) additionalConditionsSQL(whereSent bool) string {
 func (t *chunkerComposite) Next() (*Chunk, error) {
 	t.Lock()
 	defer t.Unlock()
-	if t.IsRead() {
+	if t.finalChunkSent {
 		return nil, ErrTableIsRead
 	}
 	if !t.isOpen {
@@ -350,6 +350,8 @@ func (t *chunkerComposite) open() (err error) {
 }
 
 func (t *chunkerComposite) IsRead() bool {
+	t.Lock()
+	defer t.Unlock()
 	return t.finalChunkSent
 }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/siddontang/loggers"
@@ -40,7 +41,7 @@ type TableInfo struct {
 	maxValue                    Datum             // known maxValue of pk[0] (using type of PK[0])
 	statisticsLastUpdated       time.Time
 	statisticsLock              sync.Mutex
-	DisableAutoUpdateStatistics bool
+	DisableAutoUpdateStatistics atomic.Bool
 }
 
 func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
@@ -236,7 +237,7 @@ func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Dura
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if t.DisableAutoUpdateStatistics {
+		if t.DisableAutoUpdateStatistics.Load() {
 			return
 		}
 		select {
@@ -276,6 +277,8 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 
 // MaxValue as a datum
 func (t *TableInfo) MaxValue() Datum {
+	t.Lock()
+	defer t.Unlock()
 	return t.maxValue
 }
 

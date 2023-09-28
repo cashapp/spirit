@@ -682,7 +682,7 @@ func TestCheckpoint(t *testing.T) {
 	// Instead of calling r.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	r.copier.StartTime = time.Now()
+	//r.copier.StartTime = time.Now()
 	r.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
@@ -912,7 +912,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
+	//m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1115,7 +1115,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
+	//m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1237,7 +1237,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
+	//m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1514,12 +1514,6 @@ func TestTpConversion(t *testing.T) {
 }
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
-	// Lower the checkpoint interval for testing.
-	checkpointDumpInterval = 100 * time.Millisecond
-	defer func() {
-		checkpointDumpInterval = 50 * time.Second
-	}()
-
 	runSQL(t, `DROP TABLE IF EXISTS chkpresumetest, _chkpresumetest_old, _chkpresumetest_chkpnt`)
 	table := `CREATE TABLE chkpresumetest (
 		id int(11) NOT NULL AUTO_INCREMENT,
@@ -1604,11 +1598,6 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 }
 
 func TestResumeFromCheckpointE2ECompositeVarcharPK(t *testing.T) {
-	// Lower the checkpoint interval for testing.
-	checkpointDumpInterval = 100 * time.Millisecond
-	defer func() {
-		checkpointDumpInterval = 50 * time.Second
-	}()
 	runSQL(t, `DROP TABLE IF EXISTS compositevarcharpk, _compositevarcharpk_chkpnt`)
 	runSQL(t, `CREATE TABLE compositevarcharpk (
   token varchar(128) NOT NULL,
@@ -1848,7 +1837,7 @@ func TestE2ERogueValues(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
+	//m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2010,7 +1999,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	m.copier.StartTime = time.Now()
+	//m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 

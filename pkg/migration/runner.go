@@ -300,7 +300,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	// appears that it is likely N^2 complexity, and we are better off to just
 	// have the last chunk of the checksum be slow and do this once rather than
 	// repeatedly chunking in this range.
-	r.table.DisableAutoUpdateStatistics = true
+	r.table.DisableAutoUpdateStatistics.Store(true)
 
 	// The checksum is (usually) optional, but it is ONLINE after an initial lock
 	// for consistency. It is the main way that we determine that
@@ -880,12 +880,13 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 			switch state {
 			case stateCopyRows:
 				// Status for copy rows
+
 				r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
 					r.getCurrentState().String(),
 					r.copier.GetProgress(),
 					r.replClient.GetDeltaLen(),
 					time.Since(r.startTime).Round(time.Second),
-					time.Since(r.copier.StartTime).Round(time.Second),
+					time.Since(r.copier.StartTime()).Round(time.Second),
 					r.copier.GetETA(),
 					r.copier.Throttler.IsThrottled(),
 				)
@@ -906,7 +907,7 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					r.checker.RecentValue(), r.table.MaxValue(),
 					r.replClient.GetDeltaLen(),
 					time.Since(r.startTime).Round(time.Second),
-					time.Since(r.checker.StartTime).Round(time.Second),
+					time.Since(r.checker.StartTime()).Round(time.Second),
 				)
 			default:
 				// For the linter:
