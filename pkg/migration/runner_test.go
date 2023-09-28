@@ -1307,8 +1307,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// All done!
 }
 
-// TestForRemainingTableArtifacts tests that the _{name}_old table is left after
-// the migration is complete, but no _chkpnt or _new table.
+// TestForRemainingTableArtifacts tests that the table is left after
+// the migration is complete, but no _chkpnt or _new or _old table.
 func TestForRemainingTableArtifacts(t *testing.T) {
 	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
@@ -1340,7 +1340,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
 	var tables string
 	assert.NoError(t, db.QueryRow(stmt).Scan(&tables))
-	assert.Equal(t, "_remainingtbl_old,remainingtbl", tables)
+	assert.Equal(t, "remainingtbl", tables)
 }
 
 func TestDropColumn(t *testing.T) {
