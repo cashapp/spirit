@@ -2029,3 +2029,79 @@ func TestVarcharE2E(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
+
+func TestSkipDropAfterCutover(t *testing.T) {
+	tableName := `drop_test`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+
+	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	runSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                "drop_test",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: true,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = m.db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 1)
+	assert.NoError(t, m.Close())
+}
+
+func TestDropAfterCutover(t *testing.T) {
+	tableName := `drop_test`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+
+	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	runSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                "drop_test",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = m.db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 0)
+	assert.NoError(t, m.Close())
+}
