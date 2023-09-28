@@ -31,7 +31,7 @@ type Checker struct {
 	trxPool     *dbconn.TrxPool
 	isInvalid   bool
 	chunker     table.Chunker
-	StartTime   time.Time
+	startTime   time.Time
 	ExecTime    time.Duration
 	recentValue interface{} // used for status
 	dbConfig    *dbconn.DBConfig
@@ -122,6 +122,8 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	return nil
 }
 func (c *Checker) RecentValue() string {
+	c.Lock()
+	defer c.Unlock()
 	if c.recentValue == nil {
 		return "TBD"
 	}
@@ -137,14 +139,28 @@ func (c *Checker) isHealthy(ctx context.Context) bool {
 	return !c.isInvalid
 }
 
+func (c *Checker) StartTime() time.Time {
+	c.Lock()
+	defer c.Unlock()
+	return c.startTime
+}
+
+func (c *Checker) setInvalid(newVal bool) {
+	c.Lock()
+	defer c.Unlock()
+	c.isInvalid = newVal
+}
+
 func (c *Checker) Run(ctx context.Context) error {
-	c.StartTime = time.Now()
+	c.Lock()
+	c.startTime = time.Now()
 	defer func() {
-		c.ExecTime = time.Since(c.StartTime)
+		c.ExecTime = time.Since(c.startTime)
 	}()
 	if err := c.chunker.Open(); err != nil {
 		return err
 	}
+	c.Unlock()
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
@@ -219,11 +235,11 @@ func (c *Checker) Run(ctx context.Context) error {
 				if err == table.ErrTableIsRead {
 					return nil
 				}
-				c.isInvalid = true
+				c.setInvalid(true)
 				return err
 			}
 			if err := c.ChecksumChunk(c.trxPool, chunk); err != nil {
-				c.isInvalid = true
+				c.setInvalid(true)
 				return err
 			}
 			return nil

@@ -12,6 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMain(m *testing.M) {
+	checkpointDumpInterval = 100 * time.Millisecond
+}
+
 func runSQL(t *testing.T, stmt string) {
 	db, err := sql.Open("mysql", dsn())
 	assert.NoError(t, err)

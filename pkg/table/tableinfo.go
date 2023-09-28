@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/siddontang/loggers"
@@ -25,21 +26,22 @@ var (
 
 type TableInfo struct {
 	sync.Mutex
-	db                    *sql.DB
-	EstimatedRows         uint64
-	SchemaName            string
-	TableName             string
-	QuotedName            string
-	Columns               []string          // all the column names
-	columnsMySQLTps       map[string]string // map from column name to MySQL type
-	KeyColumns            []string          // the column names of the primaryKey
-	keyColumnsMySQLTp     []string          // the MySQL types of the primaryKey
-	KeyIsAutoInc          bool              // if pk[0] is an auto_increment column
-	keyDatums             []datumTp         // the datum type of pk
-	minValue              Datum             // known minValue of pk[0] (using type of PK[0])
-	maxValue              Datum             // known maxValue of pk[0] (using type of PK[0])
-	statisticsLastUpdated time.Time
-	statisticsLock        sync.Mutex
+	db                          *sql.DB
+	EstimatedRows               uint64
+	SchemaName                  string
+	TableName                   string
+	QuotedName                  string
+	Columns                     []string          // all the column names
+	columnsMySQLTps             map[string]string // map from column name to MySQL type
+	KeyColumns                  []string          // the column names of the primaryKey
+	keyColumnsMySQLTp           []string          // the MySQL types of the primaryKey
+	KeyIsAutoInc                bool              // if pk[0] is an auto_increment column
+	keyDatums                   []datumTp         // the datum type of pk
+	minValue                    Datum             // known minValue of pk[0] (using type of PK[0])
+	maxValue                    Datum             // known maxValue of pk[0] (using type of PK[0])
+	statisticsLastUpdated       time.Time
+	statisticsLock              sync.Mutex
+	DisableAutoUpdateStatistics atomic.Bool
 }
 
 func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
@@ -230,11 +232,14 @@ func (t *TableInfo) Close() error {
 }
 
 // AutoUpdateStatistics runs a loop that updates the table statistics every interval.
-// This will continue until Close() is called on the tableInfo.
+// This will continue until Close() is called on the tableInfo, or t.DisableAutoUpdateStatistics is set to true.
 func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
+		if t.DisableAutoUpdateStatistics.Load() {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -272,6 +277,8 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 
 // MaxValue as a datum
 func (t *TableInfo) MaxValue() Datum {
+	t.Lock()
+	defer t.Unlock()
 	return t.maxValue
 }
 

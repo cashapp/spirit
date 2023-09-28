@@ -100,7 +100,14 @@ func (b *Boundary) comparesTo(b2 *Boundary) bool {
 func (b *Boundary) valuesString() string {
 	vals := make([]string, len(b.Value))
 	for i, v := range b.Value {
-		vals[i] = fmt.Sprintf(`"%s"`, v)
+		// We have to *also* quote numeric types to avoid JSON float behavior
+		// See Issue #125; this doesn't apply to string types
+		// because they are already quoted by datum.String()
+		if v.IsNumeric() {
+			vals[i] = fmt.Sprintf(`"%s"`, v)
+		} else {
+			vals[i] = v.String()
+		}
 	}
 	return strings.Join(vals, ",")
 }

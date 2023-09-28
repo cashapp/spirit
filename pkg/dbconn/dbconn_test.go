@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -101,17 +100,13 @@ func TestRetryableTrx(t *testing.T) {
 	config.InnodbLockWaitTimeout = 1
 	trx, err := db.Begin()
 	assert.NoError(t, err)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
+	_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 1 FOR UPDATE")
+	assert.NoError(t, err)
 	go func() {
-		_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 1 FOR UPDATE")
-		assert.NoError(t, err)
-		wg.Done()
 		time.Sleep(2 * time.Second)
-		err = trx.Rollback()
-		assert.NoError(t, err)
+		err2 := trx.Rollback()
+		assert.NoError(t, err2)
 	}()
-	wg.Wait()
 	_, err = RetryableTransaction(context.Background(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 1")
 	assert.NoError(t, err)
 
@@ -120,13 +115,8 @@ func TestRetryableTrx(t *testing.T) {
 	config.MaxRetries = 2
 	trx, err = db.Begin()
 	assert.NoError(t, err)
-	wg.Add(1)
-	go func() {
-		_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")
-		assert.NoError(t, err)
-		wg.Done()
-	}()
-	wg.Wait()
+	_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")
+	assert.NoError(t, err)
 	_, err = RetryableTransaction(context.Background(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 2") // this will fail, since it times out and exhausts retries.
 	assert.Error(t, err)
 	err = trx.Rollback() // now we can rollback.

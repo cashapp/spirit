@@ -4,13 +4,15 @@ import (
 	"database/sql"
 	"errors"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type MySQL57Replica struct {
+	sync.Mutex
 	Repl
-	isClosed bool
+	isClosed atomic.Bool
 }
 
 var _ Throttler = &MySQL57Replica{}
@@ -28,7 +30,7 @@ func (l *MySQL57Replica) Open() error {
 		ticker := time.NewTicker(loopInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			if l.isClosed {
+			if l.isClosed.Load() {
 				return
 			}
 			if err := l.UpdateLag(); err != nil {
@@ -40,7 +42,7 @@ func (l *MySQL57Replica) Open() error {
 }
 
 func (l *MySQL57Replica) Close() error {
-	l.isClosed = true
+	l.isClosed.Store(true)
 	return nil
 }
 

@@ -51,7 +51,7 @@ type Client struct {
 	password string
 
 	binlogChangeset      map[string]bool // bool is deleted
-	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off.
+	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off, use atomic get/set
 	binlogPosSynced      mysql.Position  // safely written to new table
 	binlogPosInMemory    mysql.Position  // available in the binlog binlogChangeset
 	lastLogFileName      string          // last log file name we've seen in a rotation event
@@ -207,7 +207,8 @@ func (c *Client) GetDeltaLen() int {
 	if c.disableDeltaMap {
 		return len(c.queuedChanges)
 	}
-	return len(c.binlogChangeset) + int(c.binlogChangesetDelta)
+
+	return len(c.binlogChangeset) + int(atomic.LoadInt64(&c.binlogChangesetDelta))
 }
 
 // pksToRowValueConstructor constructs a statement like this:
@@ -560,7 +561,9 @@ func (c *Client) StopPeriodicFlush() {
 // StartPeriodicFlush starts a loop that periodically flushes the binlog changeset.
 // This is used by the migrator to ensure the binlog position is advanced.
 func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration) {
+	c.periodicFlushLock.Lock()
 	c.periodicFlushEnabled = true
+	c.periodicFlushLock.Unlock()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -576,7 +579,7 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 				return
 			}
 			startLoop := time.Now()
-			c.logger.Info("starting periodic flush of binary log")
+			c.logger.Debug("starting periodic flush of binary log")
 			// The periodic flush does not respect the throttler since we want to advance the binlog position
 			// we allow this to run, and then expect that if it is under load the throttler
 			// will kick in and slow down the copy-rows.
