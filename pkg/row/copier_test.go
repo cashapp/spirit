@@ -2,7 +2,6 @@ package row
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"sync"
 	"testing"
@@ -27,7 +26,7 @@ func dsn() string {
 }
 
 func runSQL(t *testing.T, stmt string) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	_, err = db.Exec(stmt)
@@ -52,7 +51,7 @@ func TestCopier(t *testing.T) {
 	runSQL(t, "CREATE TABLE copiert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT INTO copiert1 VALUES (1, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "copiert1")
@@ -84,7 +83,7 @@ func TestThrottler(t *testing.T) {
 	runSQL(t, "CREATE TABLE throttlert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT INTO throttlert1 VALUES (1, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "throttlert1")
@@ -110,7 +109,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 	runSQL(t, "CREATE TABLE copieruniqt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a), UNIQUE(b))")
 	runSQL(t, "INSERT INTO copieruniqt1 VALUES (1, 2, 3), (2,2,3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "copieruniqt1")
@@ -143,7 +142,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	runSQL(t, "CREATE TABLE datatpt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT INTO datatpt1 VALUES (1, 2, 'aaa'), (2,2,'bbb')")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "datatpt1")
@@ -164,7 +163,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	runSQL(t, "CREATE TABLE null2notnullt2 (a INT NOT NULL, b INT, c INT NOT NULL, PRIMARY KEY (a))")
 	runSQL(t, "INSERT INTO null2notnullt1 VALUES (1, 2, 123), (2,2,NULL)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "null2notnullt1")
@@ -185,7 +184,7 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 	runSQL(t, "CREATE TABLE invaliddt2 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
 	runSQL(t, "INSERT IGNORE INTO invaliddt1 VALUES (1, 2, '0000-00-00')")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "invaliddt1")
@@ -211,7 +210,7 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 	runSQL(t, "CREATE TABLE lockt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "INSERT IGNORE INTO lockt1 VALUES (1, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "lockt1")
@@ -240,12 +239,14 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS lock2t1, lock2t2")
 	runSQL(t, "CREATE TABLE lock2t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO lock2t1 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO lock2t1 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO lock2t2 VALUES (1, 2, 3)")
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
+	config.InnodbLockWaitTimeout = 1
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), config)
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "lock2t1")
@@ -254,8 +255,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Lock again but for 60 seconds.
-	// This will cause a failure because the retry is:
-	// 5*1 second + 5* back off (~10ms randomized).
+	// This will cause a failure because the retry is less than this (2 retries * 1 sec + backoff)
 	var wg sync.WaitGroup
 	wg.Add(1) // wait for the goroutine to acquire the lock
 	go func() {
@@ -277,7 +277,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 }
 
 func TestCopierValidation(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -296,7 +296,7 @@ func TestETA(t *testing.T) {
 	// high max value
 	runSQL(t, "INSERT IGNORE INTO testeta2 VALUES (10000, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "testeta1")
@@ -358,7 +358,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 	runSQL(t, "INSERT INTO copierchkpt1 VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8), (7, 8, 9), (8, 9, 10), (9, 10, 11), (10, 11, 12)")
 	runSQL(t, "INSERT INTO _copierchkpt1_new VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "copierchkpt1")

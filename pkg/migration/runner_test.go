@@ -2,7 +2,6 @@ package migration
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"math"
 	"testing"
@@ -646,7 +645,7 @@ func TestCheckpoint(t *testing.T) {
 		r.SetLogger(testLogger)
 		// Usually we would call r.Run() but we want to step through
 		// the migration process manually.
-		r.db, err = sql.Open("mysql", r.dsn())
+		r.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 		assert.NoError(t, err)
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -799,7 +798,7 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.Equal(t, "initial", r.getCurrentState().String())
 	// Usually we would call r.Run() but we want to step through
 	// the migration process manually.
-	r.db, err = sql.Open("mysql", r.dsn())
+	r.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -876,7 +875,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		assert.Equal(t, "initial", m.getCurrentState().String())
 		// Usually we would call m.Run() but we want to step through
 		// the migration process manually.
-		m.db, err = sql.Open("mysql", m.dsn())
+		m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 		assert.NoError(t, err)
 		// Get Table Info
 		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
@@ -1077,7 +1076,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1199,7 +1198,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1334,7 +1333,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
 	// but no _remainingtbl_new table or _remainingtbl_chkpnt table.
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
@@ -1555,7 +1554,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
@@ -1648,7 +1647,7 @@ FROM compositevarcharpk a WHERE version='1'`)
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
@@ -1800,7 +1799,7 @@ func TestE2ERogueValues(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = sql.Open("mysql", m.dsn())
+	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1969,7 +1968,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Do the initial setup.
-	m.db, err = dbconn.New(dsn())
+	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
@@ -2057,7 +2056,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		Checksum:        true,
 	})
 	assert.NoError(t, err)
-	m.db, err = dbconn.New(dsn())
+	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))

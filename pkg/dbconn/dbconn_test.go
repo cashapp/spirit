@@ -30,50 +30,31 @@ func getVariable(trx *sql.Tx, name string, sessionScope bool) (string, error) {
 }
 
 func TestLockWaitTimeouts(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	config := NewDBConfig()
+	db, err := New(dsn(), config)
 	assert.NoError(t, err)
 	defer db.Close()
 
-	trx, err := db.Begin()
+	trx, err := db.Begin() // not strictly required.
 	assert.NoError(t, err)
 
-	globalLockWaitTimeout, err := getVariable(trx, "lock_wait_timeout", false)
+	lockWaitTimeout, err := getVariable(trx, "lock_wait_timeout", true)
 	assert.NoError(t, err)
-	globalInnodbLockWaitTimeout, err := getVariable(trx, "innodb_lock_wait_timeout", false)
-	assert.NoError(t, err)
+	assert.Equal(t, fmt.Sprint(config.LockWaitTimeout), lockWaitTimeout)
 
-	// Check lock wait timeout and innodb lock wait timeout
-	// match the global values.
-	mysqlVar, err := getVariable(trx, "lock_wait_timeout", true)
+	innodbLockWaitTimeout, err := getVariable(trx, "innodb_lock_wait_timeout", true)
 	assert.NoError(t, err)
-	assert.Equal(t, globalLockWaitTimeout, mysqlVar)
-	mysqlVar, err = getVariable(trx, "innodb_lock_wait_timeout", true)
-	assert.NoError(t, err)
-	assert.Equal(t, globalInnodbLockWaitTimeout, mysqlVar)
-
-	config := NewDBConfig()
-	config.LockWaitTimeout = 10
-
-	err = standardizeTrx(context.Background(), trx, config)
-	assert.NoError(t, err)
-
-	// Check the timeouts are shorter
-	mysqlVar, err = getVariable(trx, "lock_wait_timeout", true)
-	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(config.LockWaitTimeout), mysqlVar)
-	mysqlVar, err = getVariable(trx, "innodb_lock_wait_timeout", true)
-	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(config.InnodbLockWaitTimeout), mysqlVar)
+	assert.Equal(t, fmt.Sprint(config.InnodbLockWaitTimeout), innodbLockWaitTimeout)
 }
 
 func TestRetryableTrx(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	config := NewDBConfig()
+	db, err := New(dsn(), config)
 	assert.NoError(t, err)
 	defer db.Close()
-	config := NewDBConfig()
-	err = DBExec(context.Background(), db, config, "DROP TABLE IF EXISTS test.dbexec")
+	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.dbexec")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, config, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = DBExec(context.Background(), db, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{
@@ -98,6 +79,9 @@ func TestRetryableTrx(t *testing.T) {
 	// start a transaction, acquire a lock for long enough that the first attempt times out
 	// but a retry is successful.
 	config.InnodbLockWaitTimeout = 1
+	db, err = New(dsn(), config)
+	assert.NoError(t, err)
+
 	trx, err := db.Begin()
 	assert.NoError(t, err)
 	_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 1 FOR UPDATE")
@@ -113,6 +97,9 @@ func TestRetryableTrx(t *testing.T) {
 	// Same again, but make the retry unsuccessful
 	config.InnodbLockWaitTimeout = 1
 	config.MaxRetries = 2
+	db, err = New(dsn(), config)
+	assert.NoError(t, err)
+
 	trx, err = db.Begin()
 	assert.NoError(t, err)
 	_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")

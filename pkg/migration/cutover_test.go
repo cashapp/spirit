@@ -42,7 +42,7 @@ func TestCutOver(t *testing.T) {
 	// we can differentiate after the cutover.
 	runSQL(t, `INSERT INTO cutovert1 VALUES (1, 2), (2,2)`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
@@ -96,7 +96,7 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	// we can differentiate after the cutover.
 	runSQL(t, `INSERT INTO cutoverghostt1 VALUES (1, 2), (2,2)`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "cutoverghostt1")
@@ -157,7 +157,7 @@ func TestMDLLockFails(t *testing.T) {
 	// we can differentiate after the cutover.
 	runSQL(t, `INSERT INTO mdllocks VALUES (1, 2), (2,2)`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	config := dbconn.NewDBConfig()
@@ -196,7 +196,7 @@ func TestMDLLockFails(t *testing.T) {
 }
 
 func TestInvalidOptions(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	logger := logrus.New()
 

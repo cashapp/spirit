@@ -4,10 +4,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"fmt"
+	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/squareup/spirit/pkg/utils"
 )
 
 const (
@@ -67,7 +71,8 @@ func initRDSTLS() error {
 // newDSN returns a new DSN to be used to connect to MySQL.
 // It accepts a DSN as input and appends TLS configuration
 // if the host is an Amazon RDS hostname.
-func newDSN(dsn string) (string, error) {
+func newDSN(dsn string, config *DBConfig) (string, error) {
+	var ops []string
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return "", err
@@ -76,15 +81,56 @@ func newDSN(dsn string) (string, error) {
 		if err = initRDSTLS(); err != nil {
 			return "", err
 		}
-		dsn += "?tls=" + rdsTLSConfigName
+		ops = append(ops, fmt.Sprintf("%s=%s", "tls", url.QueryEscape(rdsTLSConfigName)))
 	}
+
+	// Setting sql_mode looks ill-advised, but unfortunately it's required.
+	// A user might have set their SQL mode to empty even if the
+	// server has it enabled. After they've inserted data,
+	// we need to be able to produce the same when copying.
+	// If you look at standard packages like wordpress, drupal etc.
+	// they all change the SQL mode. If you look at mysqldump, etc.
+	// they all unset the SQL mode just like this.
+	ops = append(ops, fmt.Sprintf("%s=%s", "sql_mode", url.QueryEscape(`""`)))
+	ops = append(ops, fmt.Sprintf("%s=%s", "time_zone", url.QueryEscape(`"+00:00"`)))
+	ops = append(ops, fmt.Sprintf("%s=%s", "innodb_lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.InnodbLockWaitTimeout))))
+	ops = append(ops, fmt.Sprintf("%s=%s", "lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.LockWaitTimeout))))
+	if config.Aurora20Compatible {
+		ops = append(ops, fmt.Sprintf("%s=%s", "tx_isolation", url.QueryEscape(`"read-committed"`))) // Aurora 2.0
+	} else {
+		ops = append(ops, fmt.Sprintf("%s=%s", "transaction_isolation", url.QueryEscape(`"read-committed"`))) // MySQL 8.0
+	}
+	// go driver options, should set:
+	// character_set_client, character_set_connection, character_set_results
+	ops = append(ops, fmt.Sprintf("%s=%s", "charset", "binary"))
+	ops = append(ops, fmt.Sprintf("%s=%s", "collation", "binary"))
+	dsn = fmt.Sprintf("%s?%s", dsn, strings.Join(ops, "&"))
 	return dsn, nil
 }
 
-func New(dsn string) (*sql.DB, error) {
-	dsn, err := newDSN(dsn)
+// New is similar to sql.Open except we take the inputDSN and
+// append additional options to it to standardize the connection.
+// It will also ping the connection to ensure it is valid.
+func New(inputDSN string, config *DBConfig) (*sql.DB, error) {
+	dsn, err := newDSN(inputDSN, config)
 	if err != nil {
 		return nil, err
 	}
-	return sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		utils.ErrInErr(db.Close())
+		if config.Aurora20Compatible {
+			return nil, err // Already tried it, didn't work.
+		}
+		// This could be because of transaction_isolation vs. tx_isolation.
+		// Try changing to Aurora 2.0 compatible mode and retrying.
+		// because config is a pointer, it will update future calls too.
+		config.Aurora20Compatible = true
+		return New(inputDSN, config)
+	}
+	db.SetMaxOpenConns(config.MaxOpenConnections)
+	return db, nil
 }

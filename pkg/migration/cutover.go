@@ -156,7 +156,7 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	}
 	// Start the RENAME TABLE trx. This connection is
 	// described as C20 in the gh-ost docs.
-	trx, connectionID, err := dbconn.BeginStandardTrx(ctx, c.db, c.dbConfig, nil)
+	trx, connectionID, err := dbconn.BeginStandardTrx(ctx, c.db, nil)
 	if err != nil {
 		return err
 	}
