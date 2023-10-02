@@ -2,7 +2,6 @@ package checksum
 
 import (
 	"context"
-	"database/sql"
 	"os"
 	"testing"
 
@@ -11,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
 )
@@ -24,7 +24,7 @@ func dsn() string {
 }
 
 func runSQL(t *testing.T, stmt string) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	_, err = db.Exec(stmt)
@@ -39,7 +39,7 @@ func TestBasicChecksum(t *testing.T) {
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -74,7 +74,7 @@ func TestBasicValidation(t *testing.T) {
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -111,7 +111,7 @@ func TestCorruptChecksum(t *testing.T) {
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
 	runSQL(t, "INSERT INTO t2 VALUES (2, 2, 3)") // corrupt
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -142,7 +142,7 @@ func TestBoundaryCases(t *testing.T) {
 	runSQL(t, "INSERT INTO t1 VALUES (1, 2.2, '')")   // null vs empty string
 	runSQL(t, "INSERT INTO t2 VALUES (1, 2.2, NULL)") // should not compare
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -206,7 +206,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	// The checkpoint table is required for blockwait, structure doesn't matter.
 	runSQL(t, "CREATE TABLE IF NOT EXISTS _tdatetime_chkpnt (id int)")
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")

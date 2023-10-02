@@ -32,7 +32,6 @@ const (
 	// we probably shouldn't set this any larger than about 1K. It will also use
 	// multiple-flush-threads, which should help it group commit and still be fast.
 	DefaultBatchSize = 1000
-	flushThreads     = 16
 	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in the future.
@@ -478,12 +477,12 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 			return err
 		}
 	} else {
-		// Execute the statements in parallel up to 16 threads.
+		// Execute the statements in parallel
 		// They should not conflict and order should not matter
 		// because they come from a consistent view of a map,
 		// which is distinct keys.
 		g, errGrpCtx := errgroup.WithContext(ctx)
-		g.SetLimit(flushThreads)
+		g.SetLimit(c.concurrency)
 		for _, stmt := range stmts {
 			s := stmt
 			g.Go(func() error {

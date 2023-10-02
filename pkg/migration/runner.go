@@ -153,15 +153,23 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// Create a database connection
 	// It will be closed in r.Close()
 	var err error
-	r.db, err = dbconn.New(r.dsn())
+	r.dbConfig = dbconn.NewDBConfig()
+	r.dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
+	// The copier and checker will use Threads to limit N tasks concurrently,
+	// but we also set it at the DB pool level with +1. Because the copier and
+	// the replication applier use the same pool, it allows for some natural throttling
+	// of the copier if the replication applier is lagging. Because it's +1 it
+	// means that the replication applier can always make progress immediately,
+	// and does not need to wait for free slots from the copier *until* it needs
+	// copy in more than 1 thread.
+	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
+	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
 	if err != nil {
 		return err
 	}
 	if err := r.db.Ping(); err != nil {
 		return err
 	}
-	r.dbConfig = dbconn.NewDBConfig()
-	r.dbConfig.LockWaitTimeout = int(r.migration.LockWaitTimeout.Seconds())
 
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -288,7 +296,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateAnalyzeTable)
 	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", analyze)
-	if err := dbconn.DBExec(ctx, r.db, r.dbConfig, analyze); err != nil {
+	if err := dbconn.DBExec(ctx, r.db, analyze); err != nil {
 		return err
 	}
 
@@ -421,7 +429,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// Otherwise, it will default to the NOOP throttler.
 	var err error
 	if r.migration.ReplicaDSN != "" {
-		r.replica, err = dbconn.New(r.migration.ReplicaDSN)
+		r.replica, err = dbconn.New(r.migration.ReplicaDSN, r.dbConfig)
 		if err != nil {
 			return err
 		}

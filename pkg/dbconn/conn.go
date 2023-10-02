@@ -4,7 +4,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"fmt"
+	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/go-sql-driver/mysql"
@@ -67,7 +70,8 @@ func initRDSTLS() error {
 // newDSN returns a new DSN to be used to connect to MySQL.
 // It accepts a DSN as input and appends TLS configuration
 // if the host is an Amazon RDS hostname.
-func newDSN(dsn string) (string, error) {
+func newDSN(dsn string, config *DBConfig) (string, error) {
+	var ops []string
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return "", err
@@ -76,15 +80,37 @@ func newDSN(dsn string) (string, error) {
 		if err = initRDSTLS(); err != nil {
 			return "", err
 		}
-		dsn += "?tls=" + rdsTLSConfigName
+		ops = append(ops, fmt.Sprintf("%s=%s", "tls", url.QueryEscape(rdsTLSConfigName)))
 	}
+
+	// Setting sql_mode looks ill-advised, but unfortunately it's required.
+	// A user might have set their SQL mode to empty even if the
+	// server has it enabled. After they've inserted data,
+	// we need to be able to produce the same when copying.
+	// If you look at standard packages like wordpress, drupal etc.
+	// they all change the SQL mode. If you look at mysqldump, etc.
+	// they all unset the SQL mode just like this.
+	ops = append(ops, fmt.Sprintf("%s=%s", "sql_mode", url.QueryEscape(`""`)))
+	ops = append(ops, fmt.Sprintf("%s=%s", "time_zone", url.QueryEscape(`"+00:00"`)))
+	ops = append(ops, fmt.Sprintf("%s=%s", "innodb_lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.InnodbLockWaitTimeout))))
+	ops = append(ops, fmt.Sprintf("%s=%s", "lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.LockWaitTimeout))))
+	// go driver options, should set:
+	// character_set_client, character_set_connection, character_set_results
+	ops = append(ops, fmt.Sprintf("%s=%s", "charset", "binary"))
+	ops = append(ops, fmt.Sprintf("%s=%s", "collation", "binary"))
+	dsn = fmt.Sprintf("%s?%s", dsn, strings.Join(ops, "&"))
 	return dsn, nil
 }
 
-func New(dsn string) (*sql.DB, error) {
-	dsn, err := newDSN(dsn)
+func New(dsn string, config *DBConfig) (*sql.DB, error) {
+	dsn, err := newDSN(dsn, config)
 	if err != nil {
 		return nil, err
 	}
-	return sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(config.MaxOpenConnections)
+	return db, nil
 }

@@ -25,6 +25,7 @@ type DBConfig struct {
 	LockWaitTimeout       int
 	InnodbLockWaitTimeout int
 	MaxRetries            int
+	MaxOpenConnections    int
 }
 
 func NewDBConfig() *DBConfig {
@@ -32,38 +33,8 @@ func NewDBConfig() *DBConfig {
 		LockWaitTimeout:       30,
 		InnodbLockWaitTimeout: 3,
 		MaxRetries:            5,
+		MaxOpenConnections:    5,
 	}
-}
-
-func standardizeTrx(ctx context.Context, trx *sql.Tx, config *DBConfig) error {
-	_, err := trx.ExecContext(ctx, "SET time_zone='+00:00'")
-	if err != nil {
-		return err
-	}
-	// This looks ill-advised, but unfortunately it's required.
-	// A user might have set their SQL mode to empty even if the
-	// server has it enabled. After they've inserted data,
-	// we need to be able to produce the same when copying.
-	// If you look at standard packages like wordpress, drupal etc.
-	// they all change the SQL mode. If you look at mysqldump, etc.
-	// they all unset the SQL mode just like this.
-	_, err = trx.ExecContext(ctx, "SET sql_mode=''")
-	if err != nil {
-		return err
-	}
-	_, err = trx.ExecContext(ctx, "SET NAMES 'binary'")
-	if err != nil {
-		return err
-	}
-	_, err = trx.ExecContext(ctx, "SET innodb_lock_wait_timeout=?", config.InnodbLockWaitTimeout)
-	if err != nil {
-		return err
-	}
-	_, err = trx.ExecContext(ctx, "SET lock_wait_timeout=?", config.LockWaitTimeout)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // canRetryError looks at the MySQL error and decides if it is considered
@@ -95,12 +66,6 @@ RETRYLOOP:
 	for i := 0; i < config.MaxRetries; i++ {
 		// Start a transaction
 		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
-			backoff(i)
-			continue RETRYLOOP // retry
-		}
-		// Standardize it.
-		if err = standardizeTrx(ctx, trx, config); err != nil {
-			utils.ErrInErr(trx.Rollback()) // Rollback
 			backoff(i)
 			continue RETRYLOOP // retry
 		}
@@ -184,27 +149,18 @@ func backoff(i int) {
 
 // DBExec is like db.Exec but sets the lock timeout to low in advance.
 // Does not require retry, or return a result.
-func DBExec(ctx context.Context, db *sql.DB, config *DBConfig, query string) error {
+func DBExec(ctx context.Context, db *sql.DB, query string) error {
 	trx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
-		return err
-	}
-	if err := standardizeTrx(ctx, trx, config); err != nil {
 		return err
 	}
 	_, err = trx.ExecContext(ctx, query)
 	return err
 }
 
-// BeginStandardTrx is like db.BeginTx but it does the lock setting changes in advance,
-// and as a bonus returns the connection id.
-func BeginStandardTrx(ctx context.Context, db *sql.DB, config *DBConfig, opts *sql.TxOptions) (*sql.Tx, int, error) {
+// BeginStandardTrx is like db.BeginTx but returns the connection id.
+func BeginStandardTrx(ctx context.Context, db *sql.DB, opts *sql.TxOptions) (*sql.Tx, int, error) {
 	trx, err := db.BeginTx(ctx, opts)
-	if err != nil {
-		return nil, 0, err
-	}
-	// standardize it.
-	err = standardizeTrx(ctx, trx, config)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -16,7 +16,7 @@ func init() {
 
 func versionCheck(_ context.Context, r Resources, _ loggers.Advanced) error {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/", r.Username, r.Password, r.Host)
-	db, err := dbconn.New(dsn)
+	db, err := dbconn.New(dsn, dbconn.NewDBConfig())
 	if err != nil {
 		return err
 	}
