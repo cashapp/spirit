@@ -26,6 +26,7 @@ type DBConfig struct {
 	InnodbLockWaitTimeout int
 	MaxRetries            int
 	MaxOpenConnections    int
+	Aurora20Compatible    bool // use tx_isolation instead of transaction_isolation
 }
 
 func NewDBConfig() *DBConfig {
@@ -65,7 +66,7 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 RETRYLOOP:
 	for i := 0; i < config.MaxRetries; i++ {
 		// Start a transaction
-		if trx, err = db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted}); err != nil {
+		if trx, err = db.BeginTx(ctx, nil); err != nil {
 			backoff(i)
 			continue RETRYLOOP // retry
 		}
@@ -147,14 +148,10 @@ func backoff(i int) {
 	time.Sleep(time.Duration(randFactor))
 }
 
-// DBExec is like db.Exec but sets the lock timeout to low in advance.
-// Does not require retry, or return a result.
+// DBExec is like db.Exec but only returns an error.
+// This makes it a little bit easier to use in error handling.
 func DBExec(ctx context.Context, db *sql.DB, query string) error {
-	trx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	if err != nil {
-		return err
-	}
-	_, err = trx.ExecContext(ctx, query)
+	_, err := db.ExecContext(ctx, query)
 	return err
 }
 

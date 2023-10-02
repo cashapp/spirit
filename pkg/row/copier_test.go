@@ -239,12 +239,14 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS lock2t1, lock2t2")
 	runSQL(t, "CREATE TABLE lock2t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	runSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO lock2t1 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO lock2t1 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO lock2t2 VALUES (1, 2, 3)")
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
+	config.InnodbLockWaitTimeout = 1
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(dsn(), config)
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "lock2t1")
@@ -253,8 +255,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	// Lock again but for 60 seconds.
-	// This will cause a failure because the retry is:
-	// 5*1 second + 5* back off (~10ms randomized).
+	// This will cause a failure because the retry is less than this (2 retries * 1 sec + backoff)
 	var wg sync.WaitGroup
 	wg.Add(1) // wait for the goroutine to acquire the lock
 	go func() {

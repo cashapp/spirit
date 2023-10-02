@@ -94,6 +94,11 @@ func newDSN(dsn string, config *DBConfig) (string, error) {
 	ops = append(ops, fmt.Sprintf("%s=%s", "time_zone", url.QueryEscape(`"+00:00"`)))
 	ops = append(ops, fmt.Sprintf("%s=%s", "innodb_lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.InnodbLockWaitTimeout))))
 	ops = append(ops, fmt.Sprintf("%s=%s", "lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.LockWaitTimeout))))
+	if config.Aurora20Compatible {
+		ops = append(ops, fmt.Sprintf("%s=%s", "tx_isolation", url.QueryEscape(`"read-committed"`))) // Aurora 2.0
+	} else {
+		ops = append(ops, fmt.Sprintf("%s=%s", "transaction_isolation", url.QueryEscape(`"read-committed"`))) // MySQL 8.0
+	}
 	// go driver options, should set:
 	// character_set_client, character_set_connection, character_set_results
 	ops = append(ops, fmt.Sprintf("%s=%s", "charset", "binary"))

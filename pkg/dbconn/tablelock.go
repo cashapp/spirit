@@ -25,10 +25,6 @@ type TableLock struct {
 // and acquire the lock again.
 func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, writeLock bool, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
 	lockTxn, _ := db.BeginTx(ctx, nil)
-	_, err := lockTxn.ExecContext(ctx, "SET SESSION lock_wait_timeout = ?", config.LockWaitTimeout)
-	if err != nil {
-		return nil, err // could not change timeout.
-	}
 	lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
 	if writeLock {
 		lockStmt = fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
@@ -36,6 +32,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 			table.SchemaName, table.TableName,
 		)
 	}
+	var err error
 	for i := 0; i < config.MaxRetries; i++ {
 		// In gh-ost they lock the _old table name as well.
 		// this might prevent a weird case that we don't handle yet.
