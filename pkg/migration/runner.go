@@ -165,15 +165,6 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
 	if err != nil {
-		// This could be because of transaction_isolation vs. tx_isolation.
-		// Try changing to Aurora 2.0 compatible mode and retrying.
-		r.dbConfig.Aurora20Compatible = true
-		r.db, err = dbconn.New(r.dsn(), r.dbConfig)
-		if err != nil {
-			return err
-		}
-	}
-	if err := r.db.Ping(); err != nil {
 		return err
 	}
 

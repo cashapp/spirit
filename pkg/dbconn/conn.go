@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/squareup/spirit/pkg/utils"
 )
 
 const (
@@ -107,14 +108,28 @@ func newDSN(dsn string, config *DBConfig) (string, error) {
 	return dsn, nil
 }
 
-func New(dsn string, config *DBConfig) (*sql.DB, error) {
-	dsn, err := newDSN(dsn, config)
+// New is similar to sql.Open except we take the inputDSN and
+// append additional options to it to standardize the connection.
+// It will also ping the connection to ensure it is valid.
+func New(inputDSN string, config *DBConfig) (*sql.DB, error) {
+	dsn, err := newDSN(inputDSN, config)
 	if err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		utils.ErrInErr(db.Close())
+		if config.Aurora20Compatible {
+			return nil, err // Already tried it, didn't work.
+		}
+		// This could be because of transaction_isolation vs. tx_isolation.
+		// Try changing to Aurora 2.0 compatible mode and retrying.
+		// because config is a pointer, it will update future calls too.
+		config.Aurora20Compatible = true
+		return New(inputDSN, config)
 	}
 	db.SetMaxOpenConns(config.MaxOpenConnections)
 	return db, nil
