@@ -44,6 +44,7 @@ func TestCutOver(t *testing.T) {
 
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
@@ -63,6 +64,8 @@ func TestCutOver(t *testing.T) {
 
 	err = cutover.Run(context.Background())
 	assert.NoError(t, err)
+
+	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
 
 	// Verify that t1 has no rows (its lost because we only did cutover, not copy-rows)
 	// and t1_old has 2 row.
@@ -99,6 +102,8 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
+	assert.Equal(t, 0, db.Stats().InUse) // no connections in use
+
 	t1 := table.NewTableInfo(db, "test", "cutoverghostt1")
 	err = t1.SetInfo(context.Background())
 	assert.NoError(t, err)
@@ -125,6 +130,8 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	}
 	err = cutover.Run(context.Background())
 	assert.NoError(t, err)
+
+	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
 
 	// Verify that t1 has no rows (its lost because we only did cutover, not copy-rows)
 	// and t1_old has 2 row.
