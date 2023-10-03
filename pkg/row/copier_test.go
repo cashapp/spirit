@@ -114,6 +114,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "copieruniqt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -137,6 +138,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 	copier, err = NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, copier.Run(context.Background())) // works
+	require.Equal(t, 0, db.Stats().InUse)               // no connections in use.
 }
 
 func TestCopierLossyDataTypeConversion(t *testing.T) {
@@ -170,6 +172,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "null2notnullt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -181,6 +184,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 
 func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
@@ -275,7 +279,6 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 		time.Sleep(10 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
-		require.Equal(t, 0, db.Stats().InUse) // ensure conns are free
 	}()
 
 	wg.Wait() // Wait only for the lock to be acquired.
