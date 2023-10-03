@@ -261,7 +261,6 @@ func (r *Runner) Run(originalCtx context.Context) error {
 			r.logger.Info("successfully dropped old table")
 		}
 	}
-
 	checksumTime := time.Duration(0)
 	if r.checker != nil {
 		checksumTime = r.checker.ExecTime
@@ -588,6 +587,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer trxPool.Close()
 	// Instead of checker.Run we call checker.ChecksumChunk directly
 	// since we only care about a specifically crafted chunk.
 	chunk := &table.Chunk{
