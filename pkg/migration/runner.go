@@ -162,6 +162,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// means that the replication applier can always make progress immediately,
 	// and does not need to wait for free slots from the copier *until* it needs
 	// copy in more than 1 thread.
+	// A MySQL 5.7 cutover also requires a minimum of 3 connections:
+	// - The LOCK TABLES connection
+	// - The Flush() connection(s)
+	// - The blocking rename connection
+	// We could extend the +1 to +2, but instead we increase the pool size
+	// during the cutover procedure.
 	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
 	if err != nil {

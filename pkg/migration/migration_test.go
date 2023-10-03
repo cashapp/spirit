@@ -40,7 +40,7 @@ func TestE2ENullAlterEmpty(t *testing.T) {
 	migration.Username = cfg.User
 	migration.Password = cfg.Passwd
 	migration.Database = cfg.DBName
-	migration.Threads = 16
+	migration.Threads = 1
 	migration.Checksum = true
 	migration.Table = "t1"
 	migration.Alter = "ENGINE=InnoDB"
