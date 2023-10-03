@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/squareup/spirit/pkg/utils"
@@ -16,6 +17,7 @@ import (
 
 const (
 	rdsTLSConfigName = "rds"
+	maxConnLifetime  = time.Minute * 3
 )
 
 // rdsAddr matches Amazon RDS hostnames with optional :port suffix.
@@ -132,5 +134,6 @@ func New(inputDSN string, config *DBConfig) (*sql.DB, error) {
 		return New(inputDSN, config)
 	}
 	db.SetMaxOpenConns(config.MaxOpenConnections)
+	db.SetConnMaxLifetime(maxConnLifetime)
 	return db, nil
 }

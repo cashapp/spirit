@@ -14,6 +14,7 @@ import (
 	"github.com/squareup/spirit/pkg/table"
 	"github.com/squareup/spirit/pkg/throttler"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func dsn() string {
@@ -53,6 +54,7 @@ func TestCopier(t *testing.T) {
 
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "copiert1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -75,6 +77,7 @@ func TestCopier(t *testing.T) {
 	// Verify that testMetricsSink.Send was called >0 times
 	// It will be 1 with the composite chunker, 3 with optimistic.
 	assert.True(t, testMetricsSink.called > 0)
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 
 func TestThrottler(t *testing.T) {
@@ -144,6 +147,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 
 	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "datatpt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -155,6 +159,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
 	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
+	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 
 func TestCopierNullToNotNullConversion(t *testing.T) {
@@ -249,6 +254,9 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	db, err := dbconn.New(dsn(), config)
 	assert.NoError(t, err)
 
+	require.Equal(t, config.MaxOpenConnections, db.Stats().MaxOpenConnections)
+	require.Equal(t, 0, db.Stats().InUse)
+
 	t1 := table.NewTableInfo(db, "test", "lock2t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 	t2 := table.NewTableInfo(db, "test", "lock2t2")
@@ -264,9 +272,10 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
 		wg.Done()
-		time.Sleep(60 * time.Second)
+		time.Sleep(10 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
+		require.Equal(t, 0, db.Stats().InUse) // ensure conns are free
 	}()
 
 	wg.Wait() // Wait only for the lock to be acquired.

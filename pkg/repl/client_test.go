@@ -233,6 +233,7 @@ func TestReplClientOpts(t *testing.T) {
 		Concurrency: 4,
 		BatchSize:   10000,
 	})
+	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 	assert.NoError(t, client.Run())
 	defer client.Close()
 
@@ -250,6 +251,7 @@ func TestReplClientOpts(t *testing.T) {
 	go client.StartPeriodicFlush(context.TODO(), 1*time.Second)
 	time.Sleep(2 * time.Second)
 	client.StopPeriodicFlush()
+	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
 
 	assert.Equal(t, client.GetDeltaLen(), 0)
 

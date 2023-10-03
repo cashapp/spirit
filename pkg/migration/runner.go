@@ -266,13 +266,14 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	if r.checker != nil {
 		checksumTime = r.checker.ExecTime
 	}
-	r.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v total-chunks=%v copy-rows-time=%s checksum-time=%s total-time=%s",
+	r.logger.Infof("apply complete: instant-ddl=%v inplace-ddl=%v total-chunks=%v copy-rows-time=%s checksum-time=%s total-time=%s conns-in-use=%d",
 		r.usedInstantDDL,
 		r.usedInplaceDDL,
 		r.copier.CopyChunksCount,
 		r.copier.ExecTime.Round(time.Second),
 		checksumTime.Round(time.Second),
 		time.Since(r.startTime).Round(time.Second),
+		r.db.Stats().InUse,
 	)
 	return r.cleanup(ctx)
 }
@@ -900,7 +901,7 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 			case stateCopyRows:
 				// Status for copy rows
 
-				r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v",
+				r.logger.Infof("migration status: state=%s copy-progress=%s binlog-deltas=%v total-time=%s copier-time=%s copier-remaining-time=%v copier-is-throttled=%v conns-in-use=%d",
 					r.getCurrentState().String(),
 					r.copier.GetProgress(),
 					r.replClient.GetDeltaLen(),
@@ -908,25 +909,28 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					time.Since(r.copier.StartTime()).Round(time.Second),
 					r.copier.GetETA(),
 					r.copier.Throttler.IsThrottled(),
+					r.db.Stats().InUse,
 				)
 			case stateApplyChangeset, statePostChecksum:
 				// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
 				// proceeding to the checksum and then the final cutover.
-				r.logger.Infof("migration status: state=%s binlog-deltas=%v total-time=%s",
+				r.logger.Infof("migration status: state=%s binlog-deltas=%v total-time=%s conns-in-use=%d",
 					r.getCurrentState().String(),
 					r.replClient.GetDeltaLen(),
 					time.Since(r.startTime).Round(time.Second),
+					r.db.Stats().InUse,
 				)
 			case stateChecksum:
 				// This could take a while if it's a large table. We just have to show approximate progress.
 				// This is a little bit harder for checksum because it doesn't have returned rows
 				// so we just show a "recent value" over the "maximum value".
-				r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-time=%s checksum-time=%s",
+				r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-time=%s checksum-time=%s conns-in-use=%d",
 					r.getCurrentState().String(),
 					r.checker.RecentValue(), r.table.MaxValue(),
 					r.replClient.GetDeltaLen(),
 					time.Since(r.startTime).Round(time.Second),
 					time.Since(r.checker.StartTime()).Round(time.Second),
+					r.db.Stats().InUse,
 				)
 			default:
 				// For the linter:

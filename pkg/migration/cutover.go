@@ -72,6 +72,14 @@ func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client,
 
 func (c *CutOver) Run(ctx context.Context) error {
 	var err error
+	if c.dbConfig.MaxOpenConnections < 5 {
+		// The gh-ost cutover algorithm requires a minimum of 3 connections:
+		// - The LOCK TABLES connection
+		// - The RENAME TABLE connection
+		// - The Flush() threads
+		// Because we want to safely flush quickly, we set the limit to 5.
+		c.db.SetMaxOpenConns(5)
+	}
 	for i := 0; i < c.dbConfig.MaxRetries; i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -135,14 +143,6 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 // algorithmGhost is the gh-ost cutover algorithm
 // as defined at https://github.com/github/gh-ost/issues/82
 func (c *CutOver) algorithmGhost(ctx context.Context) error {
-	if c.dbConfig.MaxOpenConnections < 5 {
-		// The gh-ost cutover algorithm requires a minimum of 3 connections:
-		// - The LOCK TABLES connection
-		// - The RENAME TABLE connection
-		// - The Flush() threads
-		// Because we want to safely flush quickly, we set the limit to 5.
-		c.db.SetMaxOpenConns(5)
-	}
 	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
 	if err != nil {
 		return err
