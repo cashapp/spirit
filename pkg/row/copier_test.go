@@ -276,7 +276,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
 		wg.Done()
-		time.Sleep(10 * time.Second)
+		time.Sleep(60 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
 	}()
