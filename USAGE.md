@@ -60,9 +60,14 @@ The alter table command to perform. The default value is a _null alter table_, w
 - Default value: `4`
 - Range: `1-64`
 
-The number of parallel threads for use during both the copy and checksum phases of the schema change.
+Spirit uses `threads` to set the parallelism of:
+- The copier task
+- The checksum task
+- The replication applier task
 
-You may want to wrap this in some automation and set it to a percentage of the cores of your database server. For example, if you have a 32-core machine you may choose to set this to `8`. Approximately 25% is a good starting point, making sure you always leave plenty of free cores for regular database operations. If your migration is IO bound and/or your IO latency is high (such as Aurora) you may even go higher than 25%.
+Internal to Spirit, the database pool size is set to `threads + 1`. This is intentional because the replication applier runs concurrently to the copier and checksum tasks, and using a shared-pool prevents the worst case of `threads * 2` being used. The tradeoff of `+1` allows the replication applier to always make some progress, while not bursting too far beyond the user's intended concurrency limit.
+
+You may want to wrap `threads` in automation and set it to a percentage of the cores of your database server. For example, if you have a 32-core machine you may choose to set this to `8`. Approximately 25% is a good starting point, making sure you always leave plenty of free cores for regular database operations. If your migration is IO bound and/or your IO latency is high (such as Aurora) you may even go higher than 25%.
 
 Note that Spirit does not support dynamically adjusting the number of threads while running, but it does support automatically resuming from a checkpoint if it is killed. This means that if you find that you've misjudged the number of threads (or [target-chunk-time](#target-chunk-time)), you can simply kill the Spirit process and start it again with different values.
 
@@ -98,7 +103,7 @@ When set to `TRUE`, Spirit will attempt to perform the schema change using MySQL
 
 When set to `TRUE`, Spirit will perform a checksum of the data in the table after the copy phase. This is a good way to ensure that the copy phase was successful, but it does add some overhead to the process. When you resume-from-checkpoint, Spirit will only run with the checksum enabled (regardless of your configuration). This is because it can not rely on duplicate-key errors to detect issues in the copy phase if the DDL included adding a new `UNIQUE` key.
 
-The checksum typically adds about 10-20% of additional time to the migration, but it is recommended to always leave it enabled. A failed checksum will cause spirit to exit with a non-zero exit code, and means that there is either:
+The checksum typically adds about 10-20% of additional time to the migration, but it is recommended to always leave it enabled. A failed checksum will cause Spirit to exit with a non-zero exit code, and means that there is either:
 - A bug in Spirit
 - A bug in MySQL
 - Hardware errors
@@ -121,7 +126,7 @@ Used in combination with [replica-max-lag](#replica-max-lag). This is the host w
 
 Used in combination with [replica-dsn](#replica-dsn). This is the maximum lag that the replica is allowed to have before Spirit will throttle the copy phase to ensure that the replica does not fall too far behind. Spirit **does not support read-replicas** and throttling is only intended to ensure that replicas do not fall so far behind that disaster recovery will be affected. If you require a high fidelity for replicas, you should consider using `gh-ost` instead of Spirit.
 
-It is recommended that you use Spirit in combination with either parallel replication (which gets much better in MySQL 8.0) or non-binary log based replicas such as Aurora. If you are **using the default single threaded replication** and specifying a `replica-dsn` + `replica-max-lag`, you should expect to **constantly be throttled**.
+It is recommended that you use Spirit in combination with either parallel replication (which is much better in MySQL 8.0) or non-binary log based replicas such as Aurora. If you are **using the default single threaded replication** and specifying a `replica-dsn` + `replica-max-lag`, you should expect to **constantly be throttled**.
 
 The replication throttler only affects the copy-rows operation, and does not apply to changes which arrive via the replication client. This is intentional, as if replication changes can not be applied fast enough the migration will never be able to complete. On a busy system (with single-threaded or insufficiently configured parallel replication) it is possible that the changes from the replication applier may be sufficiently high that they cause the copier process to perpetually be throttled. In this case, you may have to do something more drastic for the migration to complete. In approximate order of preference, you may consider:
 
