@@ -1,6 +1,6 @@
 # What is this?
 
-Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
+Spirit is a _reimplementation_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
 
 It works very similar to gh-ost except:
 - It only supports MySQL 8.0
@@ -50,6 +50,12 @@ While Spirit does not support read-replicas, it still tries to keep replication 
 Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change.
 
 **Note:** This feature has been contributed to `gh-ost` by the same authors of Spirit. It is disabled by default, and [only in the master branch](https://github.com/github/gh-ost/blob/master/doc/command-line-flags.md#attempt-instant-ddl).
+
+### Resume from Checkpoint
+
+Spirit periodically saves the progress of a schema change to an internal checkpoint table. If the migration is interrupted, it can be resumed with only about the last minute of progress lost. There are no flags required to enable this feature; it will apply automatically provided that Spirit is invoked with an identical `ALTER` statement and the required binary logs are still available.
+
+When you consider that many migrations are best measured in _days_, this feature can save you a lot of lost work and improves the predictability of large-table schema migrations.
 
 ## Performance
 
