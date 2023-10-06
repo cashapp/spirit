@@ -1,39 +1,39 @@
 # What is this?
 
-Spirit is a _clone_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
+Spirit is a _reimplementation_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
 
 It works very similar to gh-ost except:
 - It only supports MySQL 8.0
 - It is multi-threaded in both the row-copying and the binlog applying phase
 - It supports resume-from-checkpoint
 
-The goal of spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
+The goal of Spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
 - You use read-replicas to serve traffic
 - You require support for older versions of MySQL
 
 If this is the case, `gh-ost` remains a fine choice.
 
-See [USAGE](USAGE.md) for more information on how to use spirit.
+See [USAGE](USAGE.md) for more information on how to use Spirit.
 
 ## Optimizations
 
-The following are some of the optimizations that make spirit faster than gh-ost:
+The following are some of the optimizations that make Spirit faster than gh-ost:
 
 ### Dynamic Chunking
 
-Rather than accept a fixed chunk size (such as 1000 rows), spirit instead takes a target chunk time (such as 500ms). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
+Rather than accept a fixed chunk size (such as 1000 rows), Spirit instead takes a target chunk time (such as 500ms). It then dynamically adjusts the chunk size to meet this target. This is both safer for very wide tables with a lot of indexes and faster for smaller tables.
 
-500ms is quite "high" for traditional MySQL environments, but remember _spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
+500ms is quite "high" for traditional MySQL environments, but remember _Spirit does not support read-replicas_. This helps it copy chunks as efficiently as possible.
 
 ### Ignore Key Above Watermark
 
-As spirit is copying rows, it keeps track of the highest key-value that either has been copied, or could be in the process of being copied. This is called the "high watermark". As rows are discovered from the binary log, they can be discarded if the key is above the high watermark. This is because once the copier reaches this point, it is guaranteed it will copy the latest version of the row.
+As Spirit is copying rows, it keeps track of the highest key-value that either has been copied, or could be in the process of being copied. This is called the "high watermark". As rows are discovered from the binary log, they can be discarded if the key is above the high watermark. This is because once the copier reaches this point, it is guaranteed it will copy the latest version of the row.
 
 For now, this optimization _only applies_ well when your table has an `auto_increment` `PRIMARY KEY`. It is a lot more complicated with composite keys, or keys that could support collations (i.e. `VARCHAR`).
 
 ### Change Row Map
 
-As spirit discovers rows that have been changed via the binary log, it stores them in a map. Or rather, it stores the key, and if the last operation was a `DELETE` or any other operation. This is called the "change row map". Periodically it then flushes the change row map by batching a large `REPLACE INTO new_table .. SELECT FROM old_table` and `DELETE FROM new_table WHERE pk IN (..)` statement.
+As Spirit discovers rows that have been changed via the binary log, it stores them in a map. Or rather, it stores the key, and if the last operation was a `DELETE` or any other operation. This is called the "change row map". Periodically it then flushes the change row map by batching a large `REPLACE INTO new_table .. SELECT FROM old_table` and `DELETE FROM new_table WHERE pk IN (..)` statement.
 
 In some workloads this can result in significant performance improvements, because updates from the binary log are merged and de-duplicated. i.e. if a row is updated 10 times, it will only be copied once.
 
@@ -43,13 +43,19 @@ In some workloads this can result in significant performance improvements, becau
 
 Spirit will copy rows in multiple threads. This optimization really requires MySQL 8.0+ to make sense, which has much better support for multi-threaded replication.
 
-While spirit does not support read-replicas, it still tries to keep replication mostly up to date (with support for reading a replica every 2 seconds and observing lag). The replication monitor is not intended to be as high fidelity as gh-ost, and only used to ensure that DR functionality is not impacted.
+While Spirit does not support read-replicas, it still tries to keep replication mostly up to date (with support for reading a replica every 2 seconds and observing lag). The replication monitor is not intended to be as high fidelity as gh-ost, and only used to ensure that DR functionality is not impacted.
 
 ### Attempt Instant DDL
 
 Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change.
 
 **Note:** This feature has been contributed to `gh-ost` by the same authors of Spirit. It is disabled by default, and [only in the master branch](https://github.com/github/gh-ost/blob/master/doc/command-line-flags.md#attempt-instant-ddl).
+
+### Resume from Checkpoint
+
+Spirit periodically saves the progress of a schema change to an internal checkpoint table. If the migration is interrupted, it can be resumed with only about the last minute of progress lost. There are no flags required to enable this feature; it will apply automatically provided that Spirit is invoked with an identical `ALTER` statement and the required binary logs are still available.
+
+When you consider that many migrations are best measured in _days_, this feature can save you a lot of lost work and improves the predictability of large-table schema migrations.
 
 ## Performance
 
@@ -80,7 +86,9 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 ## Unsupported Features
 
 - **`RENAME` column**. Spirit only supports `RENAME` if it applies via the `INSTANT` DDL algorithm (MySQL 8.0+). This might mean that you need to break up some schema changes to perform the `RENAME` operations first, and then the non-`INSTANT` DDL changes after. From a code perspective: rename is tricky to add support for, because the copier can no longer take a simple intersection of columns between the old-and-new table. If you consider more complex DDLs that include a `RENAME` and an `ADD COLUMN` (i.e. `RENAME COLUMN c1 TO n1, ADD COLUMN c1 varchar(100)`) it's easy to get these wrong, leading to data corruption. This is why we do not intend to support this feature.
-- **`ALTER` PRIMARY KEY**. Spirit requires the table to have a primary key, and the primary key can not be altered by the schema change. There might be some flexibility to support UNIQUE keys and some modifications of the primary key in future, but it is not a priority for now.
+- **`ALTER`/NO PRIMARY KEY**. Spirit requires the table to have a primary key, and the primary key can not be altered by the schema change. There might be some flexibility to support UNIQUE keys and some modifications of the primary key in future, but it is not a priority for now.
+- **Lossy conversions**. Spirit does not support adding a `UNIQUE` index on non unique data, shortening a `VARCHAR` to a size less than the longest value, or adding a new `NOT NULL` column without a default value. To perform these changes you must fix the data, and then run the migration.
+- **`FOREIGN KEYS`** or **`TRIGGERS`**. Spirit does not support migrating tables that have `FOREIGN KEYS` or `TRIGGERS`.
 
 ## Risks and Limitations
 
