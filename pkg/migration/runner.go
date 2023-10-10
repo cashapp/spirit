@@ -579,6 +579,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.dbConfig,
 		Logger:          r.logger,
+		Resolver:        &checksum.NoopResolver{},
 	})
 	if err != nil {
 		return err
@@ -804,23 +805,37 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 // checksum creates the checksum which opens the read view.
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
+
+	// The checksum keeps the pool threads open, so we need to extend
+	// by more than +1 on threads as we did previously. We have:
+	// - resolver DB connections
+	// - background flushing
+	// The bg stats updating should be disabled by now.
+	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
-	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
-		Concurrency:     r.migration.Threads,
-		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.dbConfig,
-		Logger:          r.logger,
-	})
-	if err != nil {
-		return err
-	}
-	if err := r.checker.Run(ctx); err != nil {
-		// This is really not expected to happen. Previously we panic'ed here,
-		// but this prevented our automation from retrying the migration
-		// in gh-ost. After we return the error, our automation will call
-		// Close() which frees resources, and Close() no longer cleans
-		// up artifacts that are created by Run(), so we can still inspect it.
-		return err
+	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
+		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+			Concurrency:     r.migration.Threads,
+			TargetChunkTime: r.migration.TargetChunkTime,
+			DBConfig:        r.dbConfig,
+			Logger:          r.logger,
+			Resolver:        &checksum.ReplaceResolver{},
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.checker.Run(ctx); err != nil {
+			// This is really not expected to happen. The checksum should always pass.
+			// If it doesn't, we have a resolver.
+			return err
+		}
+		// If we are here, the checksum passed.
+		// But we don't know if a resolver was invoked.
+		// We want to know it passed without one.
+		if !r.checker.ResolverWasInvoked() {
+			break // success!
+		}
+		r.logger.Errorf("checksum required a resolver to pass. retrying.")
 	}
 	r.logger.Info("checksum passed")
 

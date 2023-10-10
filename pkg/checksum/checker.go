@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/siddontang/loggers"
@@ -23,19 +24,21 @@ import (
 
 type Checker struct {
 	sync.Mutex
-	table       *table.TableInfo
-	newTable    *table.TableInfo
-	concurrency int
-	feed        *repl.Client
-	db          *sql.DB
-	trxPool     *dbconn.TrxPool
-	isInvalid   bool
-	chunker     table.Chunker
-	startTime   time.Time
-	ExecTime    time.Duration
-	recentValue interface{} // used for status
-	dbConfig    *dbconn.DBConfig
-	logger      loggers.Advanced
+	table              *table.TableInfo
+	newTable           *table.TableInfo
+	concurrency        int
+	feed               *repl.Client
+	db                 *sql.DB
+	trxPool            *dbconn.TrxPool
+	isInvalid          bool
+	chunker            table.Chunker
+	startTime          time.Time
+	ExecTime           time.Duration
+	recentValue        interface{} // used for status
+	dbConfig           *dbconn.DBConfig
+	logger             loggers.Advanced
+	resolver           Resolver
+	resolverWasInvoked atomic.Bool // indicates if we should checksum again.
 }
 
 type CheckerConfig struct {
@@ -43,6 +46,7 @@ type CheckerConfig struct {
 	TargetChunkTime time.Duration
 	DBConfig        *dbconn.DBConfig
 	Logger          loggers.Advanced
+	Resolver        Resolver
 }
 
 func NewCheckerDefaultConfig() *CheckerConfig {
@@ -51,6 +55,7 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 		TargetChunkTime: 1000 * time.Millisecond,
 		DBConfig:        dbconn.NewDBConfig(),
 		Logger:          logrus.New(),
+		Resolver:        &NoopResolver{},
 	}
 }
 
@@ -78,6 +83,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		chunker:     chunker,
 		dbConfig:    config.DBConfig,
 		logger:      config.Logger,
+		resolver:    config.Resolver,
 	}
 	return checksum, nil
 }
@@ -110,7 +116,14 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 		return err
 	}
 	if sourceChecksum != targetChecksum {
-		return fmt.Errorf("checksum mismatch: %v != %v, sourceSQL: %s", sourceChecksum, targetChecksum, source)
+		// The checksums do not match, so we need to resolve.
+		// In most cases this will mean returning an error (NoopResolver)
+		// but we leave it up to an interface to manage that.
+		c.resolverWasInvoked.Store(true)
+		err = c.resolver.Resolve(trx, chunk, sourceChecksum, targetChecksum)
+		if err != nil {
+			return err
+		}
 	}
 	if chunk.LowerBound != nil {
 		c.Lock()
@@ -121,6 +134,11 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	c.chunker.Feedback(chunk, time.Since(startTime))
 	return nil
 }
+
+func (c *Checker) ResolverWasInvoked() bool {
+	return c.resolverWasInvoked.Load()
+}
+
 func (c *Checker) RecentValue() string {
 	c.Lock()
 	defer c.Unlock()
@@ -158,6 +176,9 @@ func (c *Checker) Run(ctx context.Context) error {
 		c.ExecTime = time.Since(c.startTime)
 	}()
 	if err := c.chunker.Open(); err != nil {
+		return err
+	}
+	if err := c.resolver.Open(c.db, c.table, c.newTable, c.logger); err != nil {
 		return err
 	}
 	c.Unlock()
