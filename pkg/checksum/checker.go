@@ -207,6 +207,9 @@ SELECT source.row_checksum as source_row_checksum, target.row_checksum as target
 			c.logger.Warnf("inspection revealed row checksum mismatch for pk: %s: source %s != target %s", pk, sourceRowChecksum.String, targetRowChecksum.String)
 		}
 	}
+	if res.Err() != nil {
+		return res.Err()
+	}
 	return nil // managed to inspect differences
 }
 
@@ -220,7 +223,7 @@ func (c *Checker) replaceChunk(chunk *table.Chunk) error {
 		c.table.QuotedName,
 		chunk.String(),
 	)
-	_, err := dbconn.RetryableTransaction(context.TODO(), c.db, false, dbconn.NewDBConfig(), deleteStmt, replaceStmt) //nolint: contextcheck
+	_, err := dbconn.RetryableTransaction(context.TODO(), c.db, false, dbconn.NewDBConfig(), deleteStmt, replaceStmt)
 	return err
 }
 

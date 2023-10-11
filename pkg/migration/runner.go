@@ -608,7 +608,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 			Inclusive: true,
 		},
 	}
-	if err := checker.ChecksumChunk(trxPool, chunk); err != nil {
+	if err := checker.ChecksumChunk(trxPool, chunk); err != nil { //nolint: contextcheck
 		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
 		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
 			oldTable.QuotedName,

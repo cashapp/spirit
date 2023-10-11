@@ -117,6 +117,10 @@ RETRYLOOP:
 					return rowsAffected, fmt.Errorf("unsafe warning migrating chunk: %s, query: %s", message, stmt)
 				}
 			}
+			if warningRes.Err() != nil {
+				utils.ErrInErr(trx.Rollback())
+				return rowsAffected, warningRes.Err()
+			}
 			// As long as it is a statement that supports affected rows (err == nil)
 			// Get the number of rows affected and add it to the total balance.
 			count, err := res.RowsAffected()

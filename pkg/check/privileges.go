@@ -55,6 +55,9 @@ func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) 
 			foundDBAll = true
 		}
 	}
+	if rows.Err() != nil {
+		return rows.Err()
+	}
 	if foundAll {
 		return nil
 	}

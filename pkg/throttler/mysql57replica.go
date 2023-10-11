@@ -79,6 +79,9 @@ func (l *MySQL57Replica) UpdateLag() error {
 			l.logger.Warnf("replication delayed, copier is now being throttled. lag: %v tolerance: %v", atomic.LoadInt64(&l.currentLagInMs), l.lagTolerance)
 		}
 	}
+	if res.Err() != nil {
+		return res.Err()
+	}
 	return nil
 }
 

@@ -81,6 +81,10 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 			UpperBound: &Boundary{[]Datum{maxVal}, false},
 		}, nil
 	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
 	// If there were no rows, it means we are indeed
 	// on the final chunk.
 	t.finalChunkSent = true

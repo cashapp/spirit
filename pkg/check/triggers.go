@@ -28,6 +28,9 @@ func hasTriggersCheck(ctx context.Context, r Resources, logger loggers.Advanced)
 	if rows.Next() {
 		return errors.New("tables with triggers associated are not supported")
 	}
+	if rows.Err() != nil {
+		return rows.Err()
+	}
 	return nil
 }
 
