@@ -102,6 +102,49 @@ func TestBasicValidation(t *testing.T) {
 	assert.EqualError(t, err, "feed must be non-nil")
 }
 
+func TestFixCorrupt(t *testing.T) {
+	runSQL(t, "DROP TABLE IF EXISTS fixcorruption_t1, fixcorruption_t2, _fixcorruption_t1_chkpnt")
+	runSQL(t, "CREATE TABLE fixcorruption_t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE fixcorruption_t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	runSQL(t, "CREATE TABLE _fixcorruption_t1_chkpnt (a INT)") // for binlog advancement
+	runSQL(t, "INSERT INTO fixcorruption_t1 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO fixcorruption_t2 VALUES (1, 2, 3)")
+	runSQL(t, "INSERT INTO fixcorruption_t2 VALUES (2, 2, 3)") // corrupt
+
+	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "fixcorruption_t1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "fixcorruption_t2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+	logger := logrus.New()
+
+	cfg, err := mysql.ParseDSN(dsn())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:      logger,
+		Concurrency: 4,
+		BatchSize:   10000,
+	})
+	assert.NoError(t, feed.Run())
+
+	config := NewCheckerDefaultConfig()
+	config.FixDifferences = true
+	checker, err := NewChecker(db, t1, t2, feed, config)
+	assert.NoError(t, err)
+	err = checker.Run(context.Background())
+	assert.NoError(t, err) // yes there is corruption, but it was fixed.
+	assert.Equal(t, uint64(1), checker.DifferencesFound())
+
+	// If we run the checker again, it will report zero differences.
+	checker2, err := NewChecker(db, t1, t2, feed, config)
+	assert.NoError(t, err)
+	err = checker2.Run(context.Background())
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(0), checker2.DifferencesFound())
+}
+
 func TestCorruptChecksum(t *testing.T) {
 	runSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_chkpnt")
 	runSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")

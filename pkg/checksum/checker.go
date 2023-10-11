@@ -19,26 +19,27 @@ import (
 	"github.com/squareup/spirit/pkg/dbconn"
 	"github.com/squareup/spirit/pkg/repl"
 	"github.com/squareup/spirit/pkg/table"
+	"github.com/squareup/spirit/pkg/utils"
 	"golang.org/x/sync/errgroup"
 )
 
 type Checker struct {
 	sync.Mutex
-	table              *table.TableInfo
-	newTable           *table.TableInfo
-	concurrency        int
-	feed               *repl.Client
-	db                 *sql.DB
-	trxPool            *dbconn.TrxPool
-	isInvalid          bool
-	chunker            table.Chunker
-	startTime          time.Time
-	ExecTime           time.Duration
-	recentValue        interface{} // used for status
-	dbConfig           *dbconn.DBConfig
-	logger             loggers.Advanced
-	resolver           Resolver
-	resolverWasInvoked atomic.Bool // indicates if we should checksum again.
+	table            *table.TableInfo
+	newTable         *table.TableInfo
+	concurrency      int
+	feed             *repl.Client
+	db               *sql.DB
+	trxPool          *dbconn.TrxPool
+	isInvalid        bool
+	chunker          table.Chunker
+	startTime        time.Time
+	ExecTime         time.Duration
+	recentValue      interface{} // used for status
+	dbConfig         *dbconn.DBConfig
+	logger           loggers.Advanced
+	fixDifferences   bool
+	differencesFound atomic.Uint64
 }
 
 type CheckerConfig struct {
@@ -46,7 +47,7 @@ type CheckerConfig struct {
 	TargetChunkTime time.Duration
 	DBConfig        *dbconn.DBConfig
 	Logger          loggers.Advanced
-	Resolver        Resolver
+	FixDifferences  bool
 }
 
 func NewCheckerDefaultConfig() *CheckerConfig {
@@ -55,7 +56,7 @@ func NewCheckerDefaultConfig() *CheckerConfig {
 		TargetChunkTime: 1000 * time.Millisecond,
 		DBConfig:        dbconn.NewDBConfig(),
 		Logger:          logrus.New(),
-		Resolver:        &NoopResolver{},
+		FixDifferences:  false,
 	}
 }
 
@@ -75,15 +76,15 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		return nil, err
 	}
 	checksum := &Checker{
-		table:       tbl,
-		newTable:    newTable,
-		concurrency: config.Concurrency,
-		db:          db,
-		feed:        feed,
-		chunker:     chunker,
-		dbConfig:    config.DBConfig,
-		logger:      config.Logger,
-		resolver:    config.Resolver,
+		table:          tbl,
+		newTable:       newTable,
+		concurrency:    config.Concurrency,
+		db:             db,
+		feed:           feed,
+		chunker:        chunker,
+		dbConfig:       config.DBConfig,
+		logger:         config.Logger,
+		fixDifferences: config.FixDifferences,
 	}
 	return checksum, nil
 }
@@ -116,12 +117,20 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 		return err
 	}
 	if sourceChecksum != targetChecksum {
-		// The checksums do not match, so we need to resolve.
-		// In most cases this will mean returning an error (NoopResolver)
-		// but we leave it up to an interface to manage that.
-		c.resolverWasInvoked.Store(true)
-		err = c.resolver.Resolve(trx, chunk, sourceChecksum, targetChecksum)
-		if err != nil {
+		// The checksums do not match, so we first need
+		// to inspect closely and report on the differences.
+		c.differencesFound.Add(1)
+		c.logger.Warnf("checksum mismatch for chunk %s: source %d != target %d", chunk.String(), sourceChecksum, targetChecksum)
+		if err := c.inspectDifferences(trx, chunk); err != nil {
+			return err
+		}
+		// Are we allowed to fix the differences? If not, return an error.
+		// This is mostly used by the test-suite.
+		if !c.fixDifferences {
+			return errors.New("checksum mismatch")
+		}
+		// Since we can fix differences, replace the chunk.
+		if err = c.replaceChunk(chunk); err != nil {
 			return err
 		}
 	}
@@ -135,8 +144,8 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 	return nil
 }
 
-func (c *Checker) ResolverWasInvoked() bool {
-	return c.resolverWasInvoked.Load()
+func (c *Checker) DifferencesFound() uint64 {
+	return c.differencesFound.Load()
 }
 
 func (c *Checker) RecentValue() string {
@@ -146,6 +155,73 @@ func (c *Checker) RecentValue() string {
 		return "TBD"
 	}
 	return fmt.Sprintf("%v", c.recentValue)
+}
+
+func (c *Checker) inspectDifferences(trx *sql.Tx, chunk *table.Chunk) error {
+	sourceSubquery := fmt.Sprintf("SELECT CRC32(CONCAT(%s)) as row_checksum, %s FROM %s WHERE %s",
+		c.intersectColumns(),
+		strings.Join(c.table.KeyColumns, ", "),
+		c.table.QuotedName,
+		chunk.String(),
+	)
+	targetSubquery := fmt.Sprintf("SELECT CRC32(CONCAT(%s)) as row_checksum, %s FROM %s WHERE %s",
+		c.intersectColumns(),
+		strings.Join(c.newTable.KeyColumns, ", "),
+		c.newTable.QuotedName,
+		chunk.String(),
+	)
+	// In MySQL 8.0 we could do this as a CTE, but because we kinda support
+	// MySQL 5.7 we have to do it as a subquery. It should be a small amount of data
+	// because its one chunk. Note: we technically have to do this twice, since
+	// extra rows could exist on either side and we can't rely on FULL OUTER JOIN existing.
+	stmt := fmt.Sprintf(`SELECT source.row_checksum as source_row_checksum, target.row_checksum as target_row_checksum, CONCAT_WS(",", %s) as pk FROM (%s) AS source LEFT JOIN (%s) AS target USING (%s) WHERE source.row_checksum != target.row_checksum OR target.row_checksum IS NULL
+UNION
+SELECT source.row_checksum as source_row_checksum, target.row_checksum as target_row_checksum, CONCAT_WS(",", %s) as pk FROM (%s) AS source RIGHT JOIN (%s) AS target USING (%s) WHERE source.row_checksum != target.row_checksum OR source.row_checksum IS NULL
+`,
+		strings.Join(c.table.KeyColumns, ", "),
+		sourceSubquery,
+		targetSubquery,
+		strings.Join(c.table.KeyColumns, ", "),
+		strings.Join(c.table.KeyColumns, ", "),
+		sourceSubquery,
+		targetSubquery,
+		strings.Join(c.table.KeyColumns, ", "),
+	)
+	res, err := trx.Query(stmt)
+	if err != nil {
+		return err // can not debug issue
+	}
+	defer res.Close()
+	var sourceRowChecksum, targetRowChecksum sql.NullString
+	var pk string
+	for res.Next() {
+		err = res.Scan(&sourceRowChecksum, &targetRowChecksum, &pk)
+		if err != nil {
+			return err // can not debug issue
+		}
+		if sourceRowChecksum.Valid && !targetRowChecksum.Valid {
+			c.logger.Warnf("inspection revealed row does not exist in target for pk: %s", pk)
+		} else if !sourceRowChecksum.Valid && targetRowChecksum.Valid {
+			c.logger.Warnf("inspection revealed row does not exist in source for pk: %s", pk)
+		} else {
+			c.logger.Warnf("inspection revealed row checksum mismatch for pk: %s: source %s != target %s", pk, sourceRowChecksum.String, targetRowChecksum.String)
+		}
+	}
+	return nil // managed to inspect differences
+}
+
+func (c *Checker) replaceChunk(chunk *table.Chunk) error {
+	c.logger.Warnf("recopying chunk: %s", chunk.String())
+	deleteStmt := "DELETE FROM " + c.newTable.QuotedName + " WHERE " + chunk.String()
+	replaceStmt := fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE %s",
+		c.newTable.QuotedName,
+		utils.IntersectColumns(c.table, c.newTable),
+		utils.IntersectColumns(c.table, c.newTable),
+		c.table.QuotedName,
+		chunk.String(),
+	)
+	_, err := dbconn.RetryableTransaction(context.TODO(), c.db, false, dbconn.NewDBConfig(), deleteStmt, replaceStmt) //nolint: contextcheck
+	return err
 }
 
 func (c *Checker) isHealthy(ctx context.Context) bool {
@@ -176,9 +252,6 @@ func (c *Checker) Run(ctx context.Context) error {
 		c.ExecTime = time.Since(c.startTime)
 	}()
 	if err := c.chunker.Open(); err != nil {
-		return err
-	}
-	if err := c.resolver.Open(c.db, c.table, c.newTable, c.logger); err != nil {
 		return err
 	}
 	c.Unlock()

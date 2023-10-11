@@ -579,7 +579,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.dbConfig,
 		Logger:          r.logger,
-		Resolver:        &checksum.NoopResolver{},
+		FixDifferences:  false, // this is an audit; very much don't want to fix differences here.
 	})
 	if err != nil {
 		return err
@@ -805,12 +805,11 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 // checksum creates the checksum which opens the read view.
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
-
 	// The checksum keeps the pool threads open, so we need to extend
 	// by more than +1 on threads as we did previously. We have:
-	// - resolver DB connections
 	// - background flushing
-	// The bg stats updating should be disabled by now.
+	// - checkpoint thread
+	// - checksum "replaceChunk" DB connections
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
 	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
@@ -819,7 +818,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			TargetChunkTime: r.migration.TargetChunkTime,
 			DBConfig:        r.dbConfig,
 			Logger:          r.logger,
-			Resolver:        &checksum.ReplaceResolver{},
+			FixDifferences:  true, // we want to repair the differences.
 		})
 		if err != nil {
 			return err
@@ -830,19 +829,18 @@ func (r *Runner) checksum(ctx context.Context) error {
 			return err
 		}
 		// If we are here, the checksum passed.
-		// But we don't know if a resolver was invoked.
+		// But we don't know if differences were found and chunks were recopied.
 		// We want to know it passed without one.
-		if !r.checker.ResolverWasInvoked() {
+		if r.checker.DifferencesFound() == 0 {
 			break // success!
 		}
-		r.logger.Errorf("checksum required a resolver to pass. retrying.")
+		r.logger.Errorf("The checksum failed process failed. This likely indicates either a bug in Spirit, or manual modification to the _new table outside of Spirit. This error is not fatal; the chunks of data that mismatched have been recopied. The checksum process will be repeated until it completes without any errors. Retrying %d/%d times", i+1, 3)
 	}
 	r.logger.Info("checksum passed")
 
 	// A long checksum extends the binlog deltas
 	// So if we've called this optional checksum, we need one more state
 	// of applying the binlog deltas.
-
 	r.setCurrentState(statePostChecksum)
 	return r.replClient.Flush(ctx)
 }
