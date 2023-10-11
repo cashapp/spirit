@@ -213,6 +213,12 @@ SELECT source.row_checksum as source_row_checksum, target.row_checksum as target
 	return nil // managed to inspect differences
 }
 
+// replaceChunk recopies the data from table to newTable for a given chunk.
+// Note that the chunk is dynamically sized based on the target-time that it took
+// to *read* data in the checksum. This could be substantially longer than the time
+// that it takes to copy the data. Maybe in future we could consider splitting
+// the chunk here, but this is expected to be a very rare situation, so a small
+// stall from an XL sized chunk is considered acceptable.
 func (c *Checker) replaceChunk(chunk *table.Chunk) error {
 	c.logger.Warnf("recopying chunk: %s", chunk.String())
 	deleteStmt := "DELETE FROM " + c.newTable.QuotedName + " WHERE " + chunk.String()
