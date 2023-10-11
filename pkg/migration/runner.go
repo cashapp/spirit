@@ -834,7 +834,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 		if r.checker.DifferencesFound() == 0 {
 			break // success!
 		}
-		if i >= 3 {
+		if i >= 2 {
 			return fmt.Errorf("checksum failed after 3 attempts. Please report this error to the Spirit developers")
 		}
 		r.logger.Errorf("The checksum failed process failed. This likely indicates either a bug in Spirit, or manual modification to the _new table outside of Spirit. This error is not fatal; the chunks of data that mismatched have been recopied. The checksum process will be repeated until it completes without any errors. Retrying %d/%d times", i+1, 3)
