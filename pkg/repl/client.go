@@ -312,6 +312,9 @@ func (c *Client) binlogPositionIsImpossible() bool {
 			return false // We just need presence of the log file for success
 		}
 	}
+	if rows.Err() != nil {
+		return true // can't determine.
+	}
 	return true
 }
 

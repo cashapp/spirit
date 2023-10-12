@@ -156,6 +156,9 @@ func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 			return nil, err
 		}
 	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
 	// If no rows were found we can early-return here.
 	if !rowsFound {
 		return nil, nil

@@ -118,6 +118,9 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 		t.Columns = append(t.Columns, col)
 		t.columnsMySQLTps[col] = tp
 	}
+	if rows.Err() != nil {
+		return rows.Err()
+	}
 	return nil
 }
 
@@ -140,6 +143,9 @@ func (t *TableInfo) DescIndex(keyName string) ([]string, error) {
 		}
 		cols = append(cols, col)
 	}
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
 	return cols, nil
 }
 
@@ -161,6 +167,9 @@ func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 			return err
 		}
 		t.KeyColumns = append(t.KeyColumns, col)
+	}
+	if rows.Err() != nil {
+		return rows.Err()
 	}
 	if len(t.KeyColumns) == 0 {
 		return errors.New("no primary key found (not supported)")

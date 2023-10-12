@@ -579,6 +579,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		DBConfig:        r.dbConfig,
 		Logger:          r.logger,
+		FixDifferences:  false, // this is an audit; very much don't want to fix differences here.
 	})
 	if err != nil {
 		return err
@@ -607,7 +608,7 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 			Inclusive: true,
 		},
 	}
-	if err := checker.ChecksumChunk(trxPool, chunk); err != nil {
+	if err := checker.ChecksumChunk(trxPool, chunk); err != nil { //nolint: contextcheck
 		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
 		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
 			oldTable.QuotedName,
@@ -804,30 +805,45 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 // checksum creates the checksum which opens the read view.
 func (r *Runner) checksum(ctx context.Context) error {
 	r.setCurrentState(stateChecksum)
+	// The checksum keeps the pool threads open, so we need to extend
+	// by more than +1 on threads as we did previously. We have:
+	// - background flushing
+	// - checkpoint thread
+	// - checksum "replaceChunk" DB connections
+	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
-	r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
-		Concurrency:     r.migration.Threads,
-		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.dbConfig,
-		Logger:          r.logger,
-	})
-	if err != nil {
-		return err
-	}
-	if err := r.checker.Run(ctx); err != nil {
-		// This is really not expected to happen. Previously we panic'ed here,
-		// but this prevented our automation from retrying the migration
-		// in gh-ost. After we return the error, our automation will call
-		// Close() which frees resources, and Close() no longer cleans
-		// up artifacts that are created by Run(), so we can still inspect it.
-		return err
+	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
+		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
+			Concurrency:     r.migration.Threads,
+			TargetChunkTime: r.migration.TargetChunkTime,
+			DBConfig:        r.dbConfig,
+			Logger:          r.logger,
+			FixDifferences:  true, // we want to repair the differences.
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.checker.Run(ctx); err != nil {
+			// This is really not expected to happen. The checksum should always pass.
+			// If it doesn't, we have a resolver.
+			return err
+		}
+		// If we are here, the checksum passed.
+		// But we don't know if differences were found and chunks were recopied.
+		// We want to know it passed without one.
+		if r.checker.DifferencesFound() == 0 {
+			break // success!
+		}
+		if i >= 2 {
+			return fmt.Errorf("checksum failed after 3 attempts. Please report this error to the Spirit developers")
+		}
+		r.logger.Errorf("The checksum failed process failed. This likely indicates either a bug in Spirit, or manual modification to the _new table outside of Spirit. This error is not fatal; the chunks of data that mismatched have been recopied. The checksum process will be repeated until it completes without any errors. Retrying %d/%d times", i+1, 3)
 	}
 	r.logger.Info("checksum passed")
 
 	// A long checksum extends the binlog deltas
 	// So if we've called this optional checksum, we need one more state
 	// of applying the binlog deltas.
-
 	r.setCurrentState(statePostChecksum)
 	return r.replClient.Flush(ctx)
 }

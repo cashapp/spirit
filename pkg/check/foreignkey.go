@@ -30,6 +30,9 @@ func hasForeignKeysCheck(ctx context.Context, r Resources, logger loggers.Advanc
 	if rows.Next() {
 		return errors.New("tables with existing foreign key constraints are not supported")
 	}
+	if rows.Err() != nil {
+		return rows.Err()
+	}
 	return nil
 }
 
