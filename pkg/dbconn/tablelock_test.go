@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/sirupsen/logrus"
-	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 

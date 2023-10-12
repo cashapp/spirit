@@ -15,12 +15,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
-	"github.com/squareup/spirit/pkg/dbconn"
-	"github.com/squareup/spirit/pkg/table"
-	"github.com/squareup/spirit/pkg/utils"
 )
 
 const (

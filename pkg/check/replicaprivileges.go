@@ -3,8 +3,8 @@ package check
 import (
 	"context"
 
+	"github.com/cashapp/spirit/pkg/throttler"
 	"github.com/siddontang/loggers"
-	"github.com/squareup/spirit/pkg/throttler"
 )
 
 func init() {

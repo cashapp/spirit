@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/siddontang/loggers"
-	"github.com/squareup/spirit/pkg/dbconn"
-	"github.com/squareup/spirit/pkg/utils"
 )
 
 func init() {

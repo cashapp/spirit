@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/alecthomas/kong"
-	"github.com/squareup/spirit/pkg/migration"
+	"github.com/cashapp/spirit/pkg/migration"
 )
 
 var cli struct {

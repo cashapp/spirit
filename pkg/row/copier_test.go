@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/squareup/spirit/pkg/dbconn"
-	"github.com/squareup/spirit/pkg/metrics"
+	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/metrics"
 
+	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/throttler"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/squareup/spirit/pkg/table"
-	"github.com/squareup/spirit/pkg/throttler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

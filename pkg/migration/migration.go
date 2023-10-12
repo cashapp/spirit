@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/squareup/spirit/pkg/check"
+	"github.com/cashapp/spirit/pkg/check"
 )
 
 type Migration struct {
