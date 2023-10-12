@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/siddontang/loggers"
-	"github.com/squareup/spirit/pkg/table"
 )
 
 // ScopeFlag scopes a check

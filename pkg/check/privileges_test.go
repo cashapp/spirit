@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
-	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 

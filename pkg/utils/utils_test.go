@@ -3,7 +3,7 @@ package utils
 import (
 	"testing"
 
-	"github.com/squareup/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 

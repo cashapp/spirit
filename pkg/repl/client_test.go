@@ -12,8 +12,8 @@ import (
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 
-	"github.com/squareup/spirit/pkg/row"
-	"github.com/squareup/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/row"
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 

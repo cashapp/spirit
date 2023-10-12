@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
-	"github.com/squareup/spirit/pkg/utils"
 )
 
 const (

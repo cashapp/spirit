@@ -10,10 +10,10 @@ import (
 
 	"github.com/siddontang/loggers"
 
-	"github.com/squareup/spirit/pkg/dbconn"
-	"github.com/squareup/spirit/pkg/repl"
-	"github.com/squareup/spirit/pkg/table"
-	"github.com/squareup/spirit/pkg/utils"
+	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/repl"
+	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/utils"
 )
 
 type CutoverAlgorithm int

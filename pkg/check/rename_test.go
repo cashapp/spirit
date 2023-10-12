@@ -6,8 +6,8 @@ import (
 
 	_ "github.com/pingcap/tidb/parser/test_driver"
 
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/sirupsen/logrus"
-	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 

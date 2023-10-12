@@ -6,11 +6,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/repl"
+	"github.com/cashapp/spirit/pkg/table"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
-	"github.com/squareup/spirit/pkg/dbconn"
-	"github.com/squareup/spirit/pkg/repl"
-	"github.com/squareup/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 
