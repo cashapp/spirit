@@ -277,7 +277,7 @@ func TestStatisticsUpdate(t *testing.T) {
 	}
 	t1.statisticsLastUpdated = time.Now()
 
-	go t1.AutoUpdateStatistics(context.Background(), time.Millisecond*10, logrus.New())
+	t1.AutoUpdateStatisticsContinuosly(context.Background(), time.Millisecond*10, logrus.New())
 	time.Sleep(time.Millisecond * 100)
 
 	t1.Close()

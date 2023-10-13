@@ -464,7 +464,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// These will both be stopped when the copier finishes
 	// and checksum starts, although the PeriodicFlush
 	// will be restarted again after.
-	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
+	r.table.AutoUpdateStatisticsContinuosly(ctx, tableStatUpdateInterval, r.logger)
 	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
 	return nil
 }

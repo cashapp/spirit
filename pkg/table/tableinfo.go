@@ -240,25 +240,36 @@ func (t *TableInfo) Close() error {
 	return nil
 }
 
-// AutoUpdateStatistics runs a loop that updates the table statistics every interval.
-// This will continue until Close() is called on the tableInfo, or t.DisableAutoUpdateStatistics is set to true.
-func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		if t.DisableAutoUpdateStatistics.Load() {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := t.updateTableStatistics(ctx); err != nil {
-				logger.Errorf("error updating table statistics: %v", err)
-			}
-			logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
-		}
+func (t *TableInfo) updateStatisticsOnce(ctx context.Context, logger loggers.Advanced) {
+	if err := t.updateTableStatistics(ctx); err != nil {
+		logger.Errorf("error updating table statistics: %v", err)
 	}
+	logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
+}
+
+// AutoUpdateStatisticsContinuosly runs a loop that updates the table statistics every interval.
+// This will continue until Close() is called on the tableInfo, or t.DisableAutoUpdateStatistics is set to true.
+func (t *TableInfo) AutoUpdateStatisticsContinuosly(ctx context.Context, interval time.Duration, logger loggers.Advanced) {
+	if t.DisableAutoUpdateStatistics.Load() {
+		return
+	}
+	t.updateStatisticsOnce(ctx, logger)
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			if t.DisableAutoUpdateStatistics.Load() {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				t.updateStatisticsOnce(ctx, logger)
+			}
+		}
+	}()
 }
 
 // statisticsNeedUpdating returns true if the statistics are considered order than a threshold.
