@@ -8,7 +8,7 @@ It works very similar to gh-ost except:
 - It supports resume-from-checkpoint
 
 The goal of Spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
-- You use read-replicas to serve traffic
+- You require read replicas to be less than 10s behind the writer
 - You require support for older versions of MySQL
 
 If this is the case, `gh-ost` remains a fine choice.
