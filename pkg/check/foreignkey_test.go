@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/pingcap/tidb/parser/test_driver"
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/sirupsen/logrus"
