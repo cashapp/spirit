@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+
+	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 type datumTp int
@@ -165,7 +167,7 @@ func (d Datum) Range(d2 Datum) uint64 {
 // String returns the datum as a SQL escaped string
 func (d Datum) String() string {
 	if !d.IsNumeric() {
-		return "\"" + mysqlRealEscapeString(d.Val.(string)) + "\""
+		return "\"" + sqlescape.EscapeString(d.Val.(string)) + "\""
 	}
 	return fmt.Sprintf("%v", d.Val)
 }

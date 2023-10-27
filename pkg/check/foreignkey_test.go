@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 
 	"github.com/cashapp/spirit/pkg/table"
@@ -31,7 +33,7 @@ func TestAddForeignKey(t *testing.T) {
 }
 
 func TestHasForeignKey(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
 	_, err = db.Exec(`drop table if exists customers, customer_contacts`)

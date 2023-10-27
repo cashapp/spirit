@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestConfiguration(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
 	r := Resources{

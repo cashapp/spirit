@@ -3,7 +3,10 @@ package check
 import (
 	"context"
 	"database/sql"
+
 	"testing"
+
+	"github.com/cashapp/spirit/pkg/testutils"
 
 	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
@@ -12,9 +15,9 @@ import (
 )
 
 func TestVersion(t *testing.T) {
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	r := Resources{
 		Host:     cfg.Addr,
