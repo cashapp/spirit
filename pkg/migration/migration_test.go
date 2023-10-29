@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
 
@@ -16,24 +17,16 @@ func TestMain(m *testing.M) {
 	checkpointDumpInterval = 100 * time.Millisecond
 }
 
-func runSQL(t *testing.T, stmt string) {
-	db, err := sql.Open("mysql", dsn())
-	assert.NoError(t, err)
-	defer db.Close()
-	_, err = db.Exec(stmt)
-	assert.NoError(t, err)
-}
-
 func TestE2ENullAlterEmpty(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = cfg.Addr
@@ -51,15 +44,15 @@ func TestE2ENullAlterEmpty(t *testing.T) {
 }
 
 func TestMissingAlter(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = cfg.Addr
@@ -78,15 +71,15 @@ func TestMissingAlter(t *testing.T) {
 }
 
 func TestBadDatabaseCredentials(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = "127.0.0.1:9999"
@@ -105,16 +98,16 @@ func TestBadDatabaseCredentials(t *testing.T) {
 }
 
 func TestE2ENullAlter1Row(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
 	table := `CREATE TABLE t1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into t1 (id,name) values (1, 'aaa')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into t1 (id,name) values (1, 'aaa')`)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = cfg.Addr
@@ -136,15 +129,15 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 	if replicaDSN == "" {
 		t.Skip("skipping replica tests because REPLICA_DSN not set")
 	}
-	runSQL(t, `DROP TABLE IF EXISTS replicatest, _replicatest_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS replicatest, _replicatest_new`)
 	table := `CREATE TABLE replicatest (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = cfg.Addr
@@ -168,21 +161,21 @@ func TestE2ENullAlterWithReplicas(t *testing.T) {
 // the rename check applies. It's only when it needs to actually migrate
 // that it won't allow renames.
 func TestRenameInMySQL80(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 	if !utils.IsMySQL8(db) {
 		t.Skip("rename tests only runs on MySQL 8.0")
 	}
-	runSQL(t, `DROP TABLE IF EXISTS renamet1, _renamet1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS renamet1, _renamet1_new`)
 	table := `CREATE TABLE renamet1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	migration.Host = cfg.Addr

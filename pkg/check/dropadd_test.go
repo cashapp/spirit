@@ -4,9 +4,8 @@ import (
 	"context"
 	"testing"
 
-	_ "github.com/pingcap/tidb/parser/test_driver"
-
 	"github.com/cashapp/spirit/pkg/table"
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
