@@ -1,3 +1,5 @@
+// Package testutils contains some common utilities used exclusively
+// by the test suite.
 package testutils
 
 import (

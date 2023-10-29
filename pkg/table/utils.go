@@ -83,6 +83,23 @@ func QuoteColumns(cols []string) string {
 	return strings.Join(q, ", ")
 }
 
+// mysqlRealEscapeString escapes a string for use in a query.
+// usually the string is a primary key, so the likelihood of a quote is low.
+func mysqlRealEscapeString(value string) string {
+	var sb strings.Builder
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		switch c {
+		case '\\', 0, '\n', '\r', '\'', '"':
+			sb.WriteByte('\\')
+			sb.WriteByte(c)
+		default:
+			sb.WriteByte(c)
+		}
+	}
+	return sb.String()
+}
+
 // expandRowConstructorComparison is a workaround for MySQL
 // not always optimizing conditions such as (a,b,c) > (1,2,3).
 // This limitation is still current in 8.0, and was not fixed

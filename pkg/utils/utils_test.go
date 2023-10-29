@@ -24,6 +24,12 @@ func TestIntersectColumns(t *testing.T) {
 	assert.Equal(t, "`a`, `c`", str)
 }
 
+func TestMySQLRealEscapeString(t *testing.T) {
+	assert.Equal(t, "abc", MysqlRealEscapeString("abc"))
+	assert.Equal(t, `o\'test`, MysqlRealEscapeString(`o'test`))
+	assert.Equal(t, `o\\\'test`, MysqlRealEscapeString(`o\'test`))
+}
+
 func TestHashAndUnhashKey(t *testing.T) {
 	// This func helps put composite keys in a map.
 	key := []interface{}{"1234", "ACDC", "12"}

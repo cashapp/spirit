@@ -80,6 +80,13 @@ func TestQuoteCols(t *testing.T) {
 	assert.Equal(t, "`a`", QuoteColumns(cols))
 }
 
+func TestMySQLRealEscapeString(t *testing.T) {
+	assert.Equal(t, "abc", mysqlRealEscapeString("abc"))
+	assert.Equal(t, `o\'test`, mysqlRealEscapeString(`o'test`))
+	assert.Equal(t, `o\\\'test`, mysqlRealEscapeString(`o\'test`))
+	assert.Equal(t, `o\"test`, mysqlRealEscapeString(`o"test`))
+}
+
 func TestExpandRowConstructorComparison(t *testing.T) {
 	assert.Equal(t, "((`a` > 1)\n OR (`a` = 1 AND `b` >= 2))",
 		expandRowConstructorComparison([]string{"a", "b"},
