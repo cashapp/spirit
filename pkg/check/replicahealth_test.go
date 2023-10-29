@@ -6,9 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cashapp/spirit/pkg/testutils"
-
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
