@@ -37,6 +37,32 @@ func TestTableLock(t *testing.T) {
 	assert.NoError(t, lock2.Close())
 }
 
+func TestExecUnderLock(t *testing.T) {
+	db, err := New(dsn(), NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	config := NewDBConfig()
+	config.LockWaitTimeout = 2
+	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS testunderlock, _testunderlock_new")
+	assert.NoError(t, err)
+	err = DBExec(context.Background(), db, "CREATE TABLE testunderlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	assert.NoError(t, err)
+	err = DBExec(context.Background(), db, "CREATE TABLE _testunderlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
+	assert.NoError(t, err)
+
+	tbl := &table.TableInfo{SchemaName: "test", TableName: "testunderlock", QuotedName: "`test`.`testunderlock`"}
+	lock1, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	assert.NoError(t, err)
+	err = lock1.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)"})
+	assert.ErrorContains(t, err, "Error 1099") // fail, under read lock.
+	assert.NoError(t, lock1.Close())
+
+	lock2, err := NewTableLock(context.Background(), db, tbl, true, config, logrus.New())
+	assert.NoError(t, err)
+	err = lock2.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)"})
+	assert.NoError(t, err) // pass, under write lock.
+}
+
 func TestTableLockFail(t *testing.T) {
 	db, err := New(dsn(), NewDBConfig())
 	assert.NoError(t, err)
