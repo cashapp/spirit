@@ -14,9 +14,9 @@ func TestTrxPool(t *testing.T) {
 	defer db.Close()
 	config := NewDBConfig()
 	config.LockWaitTimeout = 10
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.trxpool")
+	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.trxpool")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.trxpool (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(context.Background(), db, "CREATE TABLE test.trxpool (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{

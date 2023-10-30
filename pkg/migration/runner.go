@@ -299,7 +299,7 @@ func (r *Runner) prepareForCutover(ctx context.Context) error {
 	r.setCurrentState(stateAnalyzeTable)
 	analyze := fmt.Sprintf("ANALYZE TABLE %s", r.newTable.QuotedName)
 	r.logger.Infof("Running: %s", analyze)
-	if err := dbconn.DBExec(ctx, r.db, analyze); err != nil {
+	if err := dbconn.Exec(ctx, r.db, analyze); err != nil {
 		return err
 	}
 
@@ -491,11 +491,7 @@ func (r *Runner) tableChangeNotification() {
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
 	query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.checkpointTable.QuotedName)
-	_, err := r.db.ExecContext(ctx, query)
-	if err != nil {
-		return err
-	}
-	return nil
+	return dbconn.Exec(ctx, r.db, query)
 }
 
 func (r *Runner) createNewTable(ctx context.Context) error {
@@ -505,13 +501,11 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 	}
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, newName)
-	_, err := r.db.ExecContext(ctx, query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` LIKE %s", r.table.SchemaName, newName, r.table.QuotedName)
-	_, err = r.db.ExecContext(ctx, query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return err
 	}
 	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
@@ -525,8 +519,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (r *Runner) alterNewTable(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s", r.newTable.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return err
 	}
 	// Call GetInfo on the table again, since the columns
@@ -630,54 +623,44 @@ func (r *Runner) postCutoverCheck(ctx context.Context) error {
 func (r *Runner) dropOldTable(ctx context.Context) error {
 	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, oldName)
-	_, err := r.db.ExecContext(ctx, query)
-	return err
+	return dbconn.Exec(ctx, r.db, query)
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INSTANT", r.table.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
-	return err
+	return dbconn.Exec(ctx, r.db, query)
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 	query := fmt.Sprintf("ALTER TABLE %s %s, ALGORITHM=INPLACE, LOCK=NONE", r.table.QuotedName, r.migration.Alter)
-	_, err := r.db.ExecContext(ctx, query)
-	return err
+	return dbconn.Exec(ctx, r.db, query)
 }
 
 func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
 	// drop both if we've decided to call this func.
 	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", r.table.SchemaName, cpName)
-	_, err := r.db.ExecContext(ctx, query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return err
 	}
 	query = fmt.Sprintf("CREATE TABLE `%s`.`%s` (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
 		r.table.SchemaName, cpName)
-	_, err = r.db.ExecContext(ctx, query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return err
 	}
 	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
 func (r *Runner) cleanup(ctx context.Context) error {
 	if r.newTable != nil {
 		query := fmt.Sprintf("DROP TABLE IF EXISTS %s", r.newTable.QuotedName)
-		_, err := r.db.ExecContext(ctx, query)
-		if err != nil {
+		if err := dbconn.Exec(ctx, r.db, query); err != nil {
 			return err
 		}
 	}
 	if r.checkpointTable != nil {
-		err := r.dropCheckpoint(ctx)
-		if err != nil {
+		if err := r.dropCheckpoint(ctx); err != nil {
 			return err
 		}
 	}
@@ -728,8 +711,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Make sure we can read from the new table.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 1",
 		r.migration.Database, newName)
-	_, err := r.db.Exec(query)
-	if err != nil {
+	if err := dbconn.Exec(ctx, r.db, query); err != nil {
 		return fmt.Errorf("could not read from table '%s'", newName)
 	}
 
@@ -738,7 +720,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	var lowWatermark, binlogName, alterStatement string
 	var binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
-	err = r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
+	err := r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}

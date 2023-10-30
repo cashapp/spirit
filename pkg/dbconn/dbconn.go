@@ -152,9 +152,9 @@ func backoff(i int) {
 	time.Sleep(time.Duration(randFactor))
 }
 
-// DBExec is like db.Exec but only returns an error.
+// Exec is like db.Exec but only returns an error.
 // This makes it a little bit easier to use in error handling.
-func DBExec(ctx context.Context, db *sql.DB, query string) error {
+func Exec(ctx context.Context, db *sql.DB, query string) error {
 	_, err := db.ExecContext(ctx, query)
 	return err
 }

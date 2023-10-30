@@ -628,8 +628,7 @@ func (c *Client) BlockWait(ctx context.Context) error {
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
 	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
-	_, err := c.db.ExecContext(ctx, stmt)
-	return err
+	return dbconn.Exec(ctx, c.db, stmt)
 }
 
 func (c *Client) keyHasChanged(key []interface{}, deleted bool) {

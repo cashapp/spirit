@@ -52,9 +52,9 @@ func TestRetryableTrx(t *testing.T) {
 	db, err := New(dsn(), config)
 	assert.NoError(t, err)
 	defer db.Close()
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.dbexec")
+	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.dbexec")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(context.Background(), db, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{

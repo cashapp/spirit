@@ -17,9 +17,9 @@ func TestTableLock(t *testing.T) {
 	defer db.Close()
 	config := NewDBConfig()
 	config.LockWaitTimeout = 2
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.testlock")
+	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlock")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
@@ -46,9 +46,9 @@ func TestTableLockFail(t *testing.T) {
 	config.MaxRetries = 1
 	config.LockWaitTimeout = 1
 
-	err = DBExec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")
+	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")
 	assert.NoError(t, err)
-	err = DBExec(context.Background(), db, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(context.Background(), db, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	// We acquire an exclusive lock first, so the tablelock should fail.
