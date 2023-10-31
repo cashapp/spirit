@@ -22,13 +22,20 @@ func TestConfiguration(t *testing.T) {
 	err = configurationCheck(context.Background(), r, logrus.New())
 	assert.NoError(t, err) // all looks good of course.
 
+	// Current binlog row image format.
+	var binlogRowImage string
+	assert.NoError(t, db.QueryRow("SELECT @@global.binlog_row_image").Scan(&binlogRowImage))
+
 	// Binlog row image is dynamic, so we can change it.
-	_, err = db.Exec("SET GLOBAL binlog_row_image = 'MINIMAL'")
+	// We could probably support NOBLOB with some testing, but it's not
+	// used commonly so its useful for testing.
+	_, err = db.Exec("SET GLOBAL binlog_row_image = 'NOBLOB'")
 	assert.NoError(t, err)
 
 	err = configurationCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err)
 
-	_, err = db.Exec("SET GLOBAL binlog_row_image = 'FULL'")
+	// restore the binlog row image format.
+	_, err = db.Exec("SET GLOBAL binlog_row_image = ?", binlogRowImage)
 	assert.NoError(t, err)
 }
