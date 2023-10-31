@@ -7,13 +7,14 @@ import (
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPrivileges(t *testing.T) {
-	config, err := mysql.ParseDSN(dsn())
+	config, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	config.User = "root" // needs grant privilege
 	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s)/%s", config.User, config.Passwd, config.Addr, config.DBName))
@@ -25,7 +26,7 @@ func TestPrivileges(t *testing.T) {
 	_, err = db.Exec("CREATE USER testprivsuser")
 	assert.NoError(t, err)
 
-	config, err = mysql.ParseDSN(dsn())
+	config, err = mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	config.User = "testprivsuser"
 	config.Passwd = ""

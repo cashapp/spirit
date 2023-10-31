@@ -3,10 +3,12 @@ package check
 import (
 	"context"
 	"database/sql"
+
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
-	_ "github.com/pingcap/tidb/parser/test_driver"
+	"github.com/cashapp/spirit/pkg/testutils"
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/sirupsen/logrus"
 
 	"github.com/stretchr/testify/assert"
@@ -31,7 +33,7 @@ func TestAddTriggers(t *testing.T) {
 }
 
 func TestHasTriggers(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
 	_, err = db.Exec(`drop table if exists account`)

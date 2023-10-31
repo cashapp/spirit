@@ -3,9 +3,10 @@ package table
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 	"time"
+
+	"github.com/cashapp/spirit/pkg/testutils"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -57,38 +58,22 @@ func TestCallingNextChunkWithoutOpen(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func dsn() string {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
-	}
-	return dsn
-}
-
 func newTableInfo4Test(schema, table string) *TableInfo { //nolint: unparam
 	t1 := NewTableInfo(nil, schema, table)
 	return t1
 }
 
-func runSQL(t *testing.T, stmt string) {
-	db, err := sql.Open("mysql", dsn())
-	assert.NoError(t, err)
-	defer db.Close()
-	_, err = db.Exec(stmt)
-	assert.NoError(t, err)
-}
-
 func TestDiscovery(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS discoveryt1`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS discoveryt1`)
 	table := `CREATE TABLE discoveryt1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into discoveryt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into discoveryt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -114,16 +99,16 @@ func TestDiscovery(t *testing.T) {
 }
 
 func TestDiscoveryUInt(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS discoveryuintt1`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS discoveryuintt1`)
 	table := `CREATE TABLE discoveryuintt1 (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into discoveryuintt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into discoveryuintt1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -144,15 +129,15 @@ func TestDiscoveryUInt(t *testing.T) {
 }
 
 func TestDiscoveryNoKeyColumnsOrNoTable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS discoverynokeyst1`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS discoverynokeyst1`)
 	table := `CREATE TABLE discoverynokeyst1 (
 		id int(11) NOT NULL,
 		name varchar(255) NOT NULL
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into discoverynokeyst1 values (1, 'a'), (2, 'b'), (3, 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into discoverynokeyst1 values (1, 'a'), (2, 'b'), (3, 'c')`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -183,10 +168,10 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 		UNIQUE KEY b_token (b_token),
 		KEY c_token (c_token)
 	  ) ENGINE=InnoDB AUTO_INCREMENT=3000001 DEFAULT CHARSET=utf8mb4`
-	runSQL(t, `drop table if exists balances`)
-	runSQL(t, table)
+	testutils.RunSQL(t, `drop table if exists balances`)
+	testutils.RunSQL(t, table)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -208,16 +193,16 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 }
 
 func TestDiscoveryCompositeNonComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS compnoncomparable`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS compnoncomparable`)
 	table := `CREATE TABLE compnoncomparable (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id, name)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into compnoncomparable values (1, 'a'), (2, 'b'), (3, 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into compnoncomparable values (1, 'a'), (2, 'b'), (3, 'c')`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -227,16 +212,16 @@ func TestDiscoveryCompositeNonComparable(t *testing.T) {
 }
 
 func TestDiscoveryCompositeComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS compcomparable`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS compcomparable`)
 	table := `CREATE TABLE compcomparable (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		age int(11) NOT NULL,
 		PRIMARY KEY (id, age)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into compcomparable values (1, 1), (2, 2), (3, 3)`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into compcomparable values (1, 1), (2, 2), (3, 3)`)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -249,17 +234,17 @@ func TestDiscoveryCompositeComparable(t *testing.T) {
 }
 
 func TestStatisticsUpdate(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS statsupdate`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS statsupdate`)
 	table := `CREATE TABLE statsupdate (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id, name)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into statsupdate values (1, 'a'), (2, 'b'), (3, 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into statsupdate values (1, 'a'), (2, 'b'), (3, 'c')`)
 
 	t1 := &TableInfo{
 		minValue:          newDatum(1, signedType),
@@ -284,19 +269,19 @@ func TestStatisticsUpdate(t *testing.T) {
 }
 
 func TestKeyColumnsValuesExtraction(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
-	runSQL(t, `DROP TABLE IF EXISTS colvaluest1`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS colvaluest1`)
 	table := `CREATE TABLE colvaluest1 (
 		id int(11) unsigned NOT NULL AUTO_INCREMENT,
 		name varchar(115),
 		age int(11) NOT NULL,
 		PRIMARY KEY (id, age)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into colvaluest1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into colvaluest1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
 
 	t1 := NewTableInfo(db, "test", "colvaluest1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))

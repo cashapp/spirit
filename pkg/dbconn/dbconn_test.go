@@ -4,20 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/stretchr/testify/assert"
 )
-
-func dsn() string {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
-	}
-	return dsn
-}
 
 func getVariable(trx *sql.Tx, name string, sessionScope bool) (string, error) {
 	var value string
@@ -31,7 +24,7 @@ func getVariable(trx *sql.Tx, name string, sessionScope bool) (string, error) {
 
 func TestLockWaitTimeouts(t *testing.T) {
 	config := NewDBConfig()
-	db, err := New(dsn(), config)
+	db, err := New(testutils.DSN(), config)
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -49,7 +42,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 
 func TestRetryableTrx(t *testing.T) {
 	config := NewDBConfig()
-	db, err := New(dsn(), config)
+	db, err := New(testutils.DSN(), config)
 	assert.NoError(t, err)
 	defer db.Close()
 	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.dbexec")
@@ -79,7 +72,7 @@ func TestRetryableTrx(t *testing.T) {
 	// start a transaction, acquire a lock for long enough that the first attempt times out
 	// but a retry is successful.
 	config.InnodbLockWaitTimeout = 1
-	db, err = New(dsn(), config)
+	db, err = New(testutils.DSN(), config)
 	assert.NoError(t, err)
 
 	trx, err := db.Begin()
@@ -97,7 +90,7 @@ func TestRetryableTrx(t *testing.T) {
 	// Same again, but make the retry unsuccessful
 	config.InnodbLockWaitTimeout = 1
 	config.MaxRetries = 2
-	db, err = New(dsn(), config)
+	db, err = New(testutils.DSN(), config)
 	assert.NoError(t, err)
 
 	trx, err = db.Begin()
@@ -108,4 +101,18 @@ func TestRetryableTrx(t *testing.T) {
 	assert.Error(t, err)
 	err = trx.Rollback() // now we can rollback.
 	assert.NoError(t, err)
+}
+
+func TestStandardTrx(t *testing.T) {
+	config := NewDBConfig()
+	db, err := New(testutils.DSN(), config)
+	assert.NoError(t, err)
+	defer db.Close()
+
+	trx, connID, err := BeginStandardTrx(context.Background(), db, nil)
+	assert.NoError(t, err)
+	var observedConnID int
+	err = trx.QueryRow("SELECT connection_id()").Scan(&observedConnID)
+	assert.NoError(t, err)
+	assert.Equal(t, connID, observedConnID)
 }

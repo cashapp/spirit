@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTrxPool(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 	config := NewDBConfig()
