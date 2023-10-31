@@ -3,53 +3,45 @@ package migration
 import (
 	"context"
 	"database/sql"
-	"os"
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
-func dsn() string {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
-	}
-	return dsn
-}
-
 func TestCutOver(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_new, _cutovert1_old, _cutovert1_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cutovert1, _cutovert1_new, _cutovert1_old, _cutovert1_chkpnt`)
 	tbl := `CREATE TABLE cutovert1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
+	testutils.RunSQL(t, tbl)
 	tbl = `CREATE TABLE _cutovert1_new (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
-	runSQL(t, `CREATE TABLE _cutovert1_chkpnt (a int)`) // for binlog advancement
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `CREATE TABLE _cutovert1_chkpnt (a int)`) // for binlog advancement
 
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
-	runSQL(t, `INSERT INTO cutovert1 VALUES (1, 2), (2,2)`)
+	testutils.RunSQL(t, `INSERT INTO cutovert1 VALUES (1, 2), (2,2)`)
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
 	logger := logrus.New()
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
@@ -80,26 +72,26 @@ func TestCutOver(t *testing.T) {
 }
 
 func TestCutOverGhostAlgorithm(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cutoverghostt1, _cutoverghostt1_new, _cutoverghostt1_old, _cutoverghostt1_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cutoverghostt1, _cutoverghostt1_new, _cutoverghostt1_old, _cutoverghostt1_chkpnt`)
 	tbl := `CREATE TABLE cutoverghostt1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
+	testutils.RunSQL(t, tbl)
 	tbl = `CREATE TABLE _cutoverghostt1_new (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
-	runSQL(t, `CREATE TABLE _cutoverghostt1_chkpnt (a int)`) // for binlog advancement
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `CREATE TABLE _cutoverghostt1_chkpnt (a int)`) // for binlog advancement
 
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
-	runSQL(t, `INSERT INTO cutoverghostt1 VALUES (1, 2), (2,2)`)
+	testutils.RunSQL(t, `INSERT INTO cutoverghostt1 VALUES (1, 2), (2,2)`)
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use
@@ -109,7 +101,7 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 	assert.NoError(t, err)
 	t1new := table.NewTableInfo(db, "test", "_cutoverghostt1_new")
 	logger := logrus.New()
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
@@ -146,25 +138,25 @@ func TestCutOverGhostAlgorithm(t *testing.T) {
 }
 
 func TestMDLLockFails(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_new, _mdllocks_old, _mdllocks_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS mdllocks, _mdllocks_new, _mdllocks_old, _mdllocks_chkpnt`)
 	tbl := `CREATE TABLE mdllocks (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
+	testutils.RunSQL(t, tbl)
 	tbl = `CREATE TABLE _mdllocks_new (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
-	runSQL(t, `CREATE TABLE _mdllocks_chkpnt (a int)`) // for binlog advancement
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `CREATE TABLE _mdllocks_chkpnt (a int)`) // for binlog advancement
 	// The structure is the same, but insert 2 rows in t1 so
 	// we can differentiate after the cutover.
-	runSQL(t, `INSERT INTO mdllocks VALUES (1, 2), (2,2)`)
+	testutils.RunSQL(t, `INSERT INTO mdllocks VALUES (1, 2), (2,2)`)
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	config := dbconn.NewDBConfig()
@@ -174,7 +166,7 @@ func TestMDLLockFails(t *testing.T) {
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
 	logger := logrus.New()
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,
@@ -203,7 +195,7 @@ func TestMDLLockFails(t *testing.T) {
 }
 
 func TestInvalidOptions(t *testing.T) {
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	logger := logrus.New()
 
@@ -212,7 +204,7 @@ func TestInvalidOptions(t *testing.T) {
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:      logger,

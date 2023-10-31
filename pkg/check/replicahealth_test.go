@@ -6,9 +6,8 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/pingcap/tidb/parser/test_driver"
-
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -22,7 +21,7 @@ func TestReplicaHealth(t *testing.T) {
 	assert.NoError(t, err) // if no replica, it returns no error.
 
 	// use a non-replica. this will return an error.
-	r.Replica, err = sql.Open("mysql", dsn())
+	r.Replica, err = sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	err = replicaHealth(context.Background(), r, logrus.New())
 	assert.Error(t, err)

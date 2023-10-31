@@ -5,20 +5,22 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestCompositeChunker(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS composite`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS composite`)
 	table := `CREATE TABLE composite (
 		id bigint NOT NULL AUTO_INCREMENT,
 		age int(11) NOT NULL,
 		PRIMARY KEY (id, age)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -31,14 +33,14 @@ func TestCompositeChunker(t *testing.T) {
 }
 
 func TestOptimisticChunker(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS optimistic`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS optimistic`)
 	table := `CREATE TABLE optimistic (
 		id bigint NOT NULL AUTO_INCREMENT,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
@@ -51,16 +53,16 @@ func TestOptimisticChunker(t *testing.T) {
 }
 
 func TestNewCompositeChunker(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS composite`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS composite`)
 	table := `CREATE TABLE composite (
 		id bigint NOT NULL AUTO_INCREMENT,
 		age int(11) NOT NULL,
 		PRIMARY KEY (id),
         KEY age_idx (age)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 

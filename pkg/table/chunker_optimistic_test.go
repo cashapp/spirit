@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -258,37 +260,37 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 }
 
 func TestOptimisticPrefetchChunking(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
 
-	runSQL(t, `DROP TABLE IF EXISTS tprefetch`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS tprefetch`)
 	table := `CREATE TABLE tprefetch (
 		id BIGINT NOT NULL AUTO_INCREMENT,
 		created_at DATETIME(3) NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
 	// insert about 11K rows.
-	runSQL(t, `INSERT INTO tprefetch (created_at) VALUES (NULL)`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 10000`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) VALUES (NULL)`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b JOIN tprefetch c`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 10000`)
 
 	// the max id should be able 11040
 	// lets insert one far off ID: 300B
 	// and then continue inserting at greater than the max dynamic chunk size.
-	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (300000000000, NULL)`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (300000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
 
 	// and then another big gap
 	// and then continue inserting at greater than the max dynamic chunk size.
-	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (600000000000, NULL)`)
-	runSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (600000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (created_at) SELECT NULL FROM tprefetch a JOIN tprefetch b LIMIT 300000`)
 	// and then one final value which is way out there.
-	runSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (900000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO tprefetch (id, created_at) VALUES (900000000000, NULL)`)
 
 	t1 := newTableInfo4Test("test", "tprefetch")
 	t1.db = db

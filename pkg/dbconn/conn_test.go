@@ -3,6 +3,8 @@ package dbconn
 import (
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -43,7 +45,7 @@ func TestNewConn(t *testing.T) {
 	assert.Error(t, err)
 	assert.Nil(t, db)
 
-	db, err = New(dsn(), NewDBConfig())
+	db, err = New(testutils.DSN(), NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 

@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
+
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTableLock(t *testing.T) {
-	db, err := New(dsn(), NewDBConfig())
+	db, err := New(testutils.DSN(), NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	config := NewDBConfig()
@@ -64,7 +66,7 @@ func TestExecUnderLock(t *testing.T) {
 }
 
 func TestTableLockFail(t *testing.T) {
-	db, err := New(dsn(), NewDBConfig())
+	db, err := New(testutils.DSN(), NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 

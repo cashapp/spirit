@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -17,30 +17,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func dsn() string {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
-	}
-	return dsn
-}
-
-func runSQL(t *testing.T, stmt string) {
-	db, err := sql.Open("mysql", dsn())
-	assert.NoError(t, err)
-	defer db.Close()
-	_, err = db.Exec(stmt)
-	assert.NoError(t, err)
-}
-
 func TestReplClient(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
-	runSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _replt1_chkpnt (a int)") // just used to advance binlog
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _replt1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo(db, "test", "replt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -48,7 +32,7 @@ func TestReplClient(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
@@ -59,7 +43,7 @@ func TestReplClient(t *testing.T) {
 	defer client.Close()
 
 	// Insert into t1.
-	runSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
@@ -74,26 +58,26 @@ func TestReplClient(t *testing.T) {
 }
 
 func TestReplClientComplex(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
-	runSQL(t, "CREATE TABLE replcomplext1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replcomplext2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _replcomplext1_chkpnt (a int)") // just used to advance binlog
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE replcomplext1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replcomplext2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _replcomplext1_chkpnt (a int)") // just used to advance binlog
 
-	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
-	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
+	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replcomplext1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 	t2 := table.NewTableInfo(db, "test", "replcomplext2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
@@ -108,7 +92,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
 
 	// Insert into t1, but because there is no read yet, the key is above the watermark
-	runSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
+	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 0)
 
@@ -122,7 +106,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.Equal(t, "`a` >= 1 AND `a` < 1001", chk.String())
 
 	// Now if we delete below 1001 we should see 10 deltas accumulate
-	runSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 560")
+	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 560")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
 
@@ -130,10 +114,10 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, client.Flush(context.TODO()))
 
 	// Accumulate more deltas
-	runSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 570")
+	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 570")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
-	runSQL(t, "UPDATE replcomplext1 SET b = 213 WHERE a >= 550 AND a < 1001")
+	testutils.RunSQL(t, "UPDATE replcomplext1 SET b = 213 WHERE a >= 550 AND a < 1001")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 441, client.GetDeltaLen()) // ??
 
@@ -148,13 +132,13 @@ func TestReplClientComplex(t *testing.T) {
 }
 
 func TestReplClientResumeFromImpossible(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
-	runSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replresumet2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _replresumet1_chkpnt (a int)") // just used to advance binlog
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replresumet2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _replresumet1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo(db, "test", "replresumet1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -162,7 +146,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
@@ -178,12 +162,12 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 }
 
 func TestReplClientResumeFromPoint(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replresumepointt1, replresumepointt2")
-	runSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumepointt1, replresumepointt2")
+	testutils.RunSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	t1 := table.NewTableInfo(db, "test", "replresumepointt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -191,7 +175,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
@@ -206,19 +190,19 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 }
 
 func TestReplClientOpts(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
-	runSQL(t, "CREATE TABLE replclientoptst1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replclientoptst2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _replclientoptst1_chkpnt (a int)") // just used to advance binlog
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE replclientoptst1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replclientoptst2 (a INT NOT NULL  auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _replclientoptst1_chkpnt (a int)") // just used to advance binlog
 
-	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
-	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM dual")
+	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replclientoptst1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
@@ -226,7 +210,7 @@ func TestReplClientOpts(t *testing.T) {
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
 	logger := logrus.New()
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:      logger,
@@ -243,7 +227,7 @@ func TestReplClientOpts(t *testing.T) {
 	startingPos := client.GetBinlogApplyPosition()
 
 	// Delete more than 10000 keys so the FLUSH has to run in chunks.
-	runSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
+	testutils.RunSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 49961)
 	// Flush. We could use client.Flush() but for testing purposes lets use
@@ -260,26 +244,26 @@ func TestReplClientOpts(t *testing.T) {
 }
 
 func TestReplClientQueue(t *testing.T) {
-	db, err := sql.Open("mysql", dsn())
+	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
-	runSQL(t, "CREATE TABLE replqueuet1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE replqueuet2 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _replqueuet1_chkpnt (a int)") // just used to advance binlog
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE replqueuet1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE replqueuet2 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _replqueuet1_chkpnt (a int)") // just used to advance binlog
 
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM dual")
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM dual")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replqueuet1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
 	t2 := table.NewTableInfo(db, "test", "replqueuet2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 
-	cfg, err := mysql2.ParseDSN(dsn())
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
@@ -295,7 +279,7 @@ func TestReplClientQueue(t *testing.T) {
 
 	// Delete from the table, because there is no keyabove watermark
 	// optimization these deletes will be queued immediately.
-	runSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
+	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 1000)
 
@@ -310,7 +294,7 @@ func TestReplClientQueue(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("`a` >= %s AND `a` < %s", prevUpperBound, chk.UpperBound.Value[0].String()), chk.String())
 
 	// Accumulate more deltas
-	runSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 LIMIT 501")
+	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 LIMIT 501")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 1501, client.GetDeltaLen())
 
@@ -319,7 +303,7 @@ func TestReplClientQueue(t *testing.T) {
 	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// Accumulate more deltas
-	runSQL(t, "DELETE FROM replqueuet1 LIMIT 100")
+	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 100")
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	assert.Equal(t, 100, client.GetDeltaLen())
 
