@@ -9,6 +9,7 @@ import (
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
+	"github.com/cashapp/spirit/pkg/testutils"
 
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/row"
@@ -21,14 +22,14 @@ import (
 )
 
 func TestVarcharNonBinaryComparable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS nonbinarycompatt1, _nonbinarycompatt1_new`)
 	table := `CREATE TABLE nonbinarycompatt1 (
 		uuid varchar(40) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (uuid)
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -46,15 +47,15 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 }
 
 func TestVarbinary(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_new`)
 	table := `CREATE TABLE varbinaryt1 (
 		uuid varbinary(40) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (uuid)
 	)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO varbinaryt1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO varbinaryt1 (uuid, name) VALUES (UUID(), REPEAT('a', 200))")
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -73,15 +74,15 @@ func TestVarbinary(t *testing.T) {
 
 // TestDataFromBadSqlMode tests that data previously inserted like 0000-00-00 can still be migrated.
 func TestDataFromBadSqlMode(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS badsqlt1, _badsqlt1_new`)
 	table := `CREATE TABLE badsqlt1 (
 		id int not null primary key auto_increment,
 		d date NOT NULL,
 		t timestamp NOT NULL
 	)`
-	runSQL(t, table)
-	runSQL(t, "INSERT IGNORE INTO badsqlt1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT IGNORE INTO badsqlt1 (d, t) VALUES ('0000-00-00', '0000-00-00 00:00:00'),('2020-02-00', '2020-02-30 00:00:00')")
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -99,15 +100,15 @@ func TestDataFromBadSqlMode(t *testing.T) {
 }
 
 func TestChangeDatatypeNoData(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cdatatypemytable`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cdatatypemytable`)
 	table := `CREATE TABLE cdatatypemytable (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -125,16 +126,16 @@ func TestChangeDatatypeNoData(t *testing.T) {
 }
 
 func TestChangeDatatypeDataLoss(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS cdatalossmytable`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cdatalossmytable`)
 	table := `CREATE TABLE cdatalossmytable (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO cdatalossmytable (name, b) VALUES ('a', 'b')")
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO cdatalossmytable (name, b) VALUES ('a', 'b')")
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -151,15 +152,15 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 }
 
 func TestOnline(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS testonline`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline`)
 	table := `CREATE TABLE testonline (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -176,14 +177,14 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Create another table.
-	runSQL(t, `DROP TABLE IF EXISTS testonline2`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline2`)
 	table = `CREATE TABLE testonline2 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	m, err = NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Username: cfg.User,
@@ -203,14 +204,14 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, m.Close())
 
 	// Finally, this will work.
-	runSQL(t, `DROP TABLE IF EXISTS testonline3`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline3`)
 	table = `CREATE TABLE testonline3 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		b varchar(255) NOT NULL, -- should be an int
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	m, err = NewRunner(&Migration{
 		Host:              cfg.Addr,
 		Username:          cfg.User,
@@ -230,14 +231,14 @@ func TestOnline(t *testing.T) {
 }
 
 func TestTableLength(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS thisisareallylongtablenamethisisareallylongtablename60charac`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS thisisareallylongtablenamethisisareallylongtablename60charac`)
 	table := `CREATE TABLE thisisareallylongtablenamethisisareallylongtablename60charac (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -287,7 +288,7 @@ func TestBadOptions(t *testing.T) {
 	_, err := NewRunner(&Migration{})
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "host is required")
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	_, err = NewRunner(&Migration{
@@ -311,20 +312,20 @@ func TestBadOptions(t *testing.T) {
 }
 
 func TestBadAlter(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS bot1, bot2`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS bot1, bot2`)
 	table := `CREATE TABLE bot1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	table = `CREATE TABLE bot2 (
 		id int(11) NOT NULL,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -418,18 +419,18 @@ func TestBadAlter(t *testing.T) {
 // currently runs in 0.4 seconds which is "acceptable" for chunker performance.
 // The generated number of chunks should also be very low because of prefetching.
 func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS lossychange2`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS lossychange2`)
 	table := `CREATE TABLE lossychange2 (
 					id BIGINT NOT NULL,
 					name varchar(255) NOT NULL,
 					b varchar(255) NOT NULL,
 					PRIMARY KEY (id)
 				)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (1, 'a', REPEAT('a', 200))")          // will pass in migration
-	runSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))") // will fail in migration
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (1, 'a', REPEAT('a', 200))")          // will pass in migration
+	testutils.RunSQL(t, "INSERT INTO lossychange2 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))") // will fail in migration
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -451,18 +452,18 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 // TestChangeDatatypeLossy3 has a data type change that is "lossy" but
 // given the current stored data set does not cause errors.
 func TestChangeDatatypeLossless(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS lossychange3`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS lossychange3`)
 	table := `CREATE TABLE lossychange3 (
 				id BIGINT NOT NULL AUTO_INCREMENT,
 				name varchar(255) NOT NULL,
 				b varchar(255) NULL,
 				PRIMARY KEY (id)
 			)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO lossychange3 (name, b) VALUES ('a', REPEAT('a', 200))")
-	runSQL(t, "INSERT INTO lossychange3 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO lossychange3 (name, b) VALUES ('a', REPEAT('a', 200))")
+	testutils.RunSQL(t, "INSERT INTO lossychange3 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -487,18 +488,18 @@ func TestChangeDatatypeLossless(t *testing.T) {
 // [1, 8589934592] / 1000 = 8589934.592 chunks
 
 func TestChangeDatatypeLossyFailEarly(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS lossychange4`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS lossychange4`)
 	table := `CREATE TABLE lossychange4 (
 				id BIGINT NOT NULL AUTO_INCREMENT,
 				name varchar(255) NOT NULL,
 				b varchar(255) NULL,
 				PRIMARY KEY (id)
 			)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO lossychange4 (name) VALUES ('a')")
-	runSQL(t, "INSERT INTO lossychange4 (name, b) VALUES ('a', REPEAT('a', 200))")
-	runSQL(t, "INSERT INTO lossychange4 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO lossychange4 (name) VALUES ('a')")
+	testutils.RunSQL(t, "INSERT INTO lossychange4 (name, b) VALUES ('a', REPEAT('a', 200))")
+	testutils.RunSQL(t, "INSERT INTO lossychange4 (id, name, b) VALUES (8589934592, 'a', REPEAT('a', 200))")
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -521,20 +522,20 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 // 1) *FORCE* checksum to be enabled on resume from checkpoint
 // 2) If checksum is not enabled, duplicate key errors are elevated to errors.
 func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS uniqmytable`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS uniqmytable`)
 	table := `CREATE TABLE uniqmytable (
 				id int(11) NOT NULL AUTO_INCREMENT,
 				name varchar(255) NOT NULL,
 				b varchar(255) NOT NULL,
 				PRIMARY KEY (id)
 			)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))")
-	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('b', 200))")
-	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('c', 200))")
-	runSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))") // duplicate
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))")
+	testutils.RunSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('b', 200))")
+	testutils.RunSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('c', 200))")
+	testutils.RunSQL(t, "INSERT INTO uniqmytable (name, b) VALUES ('a', REPEAT('a', 200))") // duplicate
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -550,7 +551,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	assert.Error(t, err)         // not unique
 	assert.NoError(t, m.Close()) // need to close now otherwise we'll get an error on re-opening it.
 
-	runSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
+	testutils.RunSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Username: cfg.User,
@@ -569,15 +570,15 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 // Test a non-integer primary key.
 
 func TestChangeNonIntPK(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS nonintpk`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS nonintpk`)
 	table := `CREATE TABLE nonintpk (
 			pk varbinary(36) NOT NULL PRIMARY KEY,
 			name varchar(255) NOT NULL,
 			b varchar(10) NOT NULL -- change to varchar(255)
 		)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO nonintpk (pk, name, b) VALUES (UUID(), 'a', REPEAT('a', 5))")
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO nonintpk (pk, name, b) VALUES (UUID(), 'a', REPEAT('a', 5))")
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -616,16 +617,16 @@ func TestCheckpoint(t *testing.T) {
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_new, _cpt1_chkpnt`)
-	runSQL(t, tbl)
-	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
-	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
-	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
-	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
-	runSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cpt1, _cpt1_new, _cpt1_chkpnt`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1`)
+	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
+	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
 	testLogger := &testLogger{}
 	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
@@ -645,7 +646,7 @@ func TestCheckpoint(t *testing.T) {
 		r.SetLogger(testLogger)
 		// Usually we would call r.Run() but we want to step through
 		// the migration process manually.
-		r.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+		r.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 		assert.NoError(t, err)
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -779,11 +780,11 @@ func TestCheckpointRestore(t *testing.T) {
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt2, _cpt2_new, _cpt2_chkpnt`)
-	runSQL(t, tbl)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cpt2, _cpt2_new, _cpt2_chkpnt`)
+	testutils.RunSQL(t, tbl)
 
 	r, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -798,7 +799,7 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.Equal(t, "initial", r.getCurrentState().String())
 	// Usually we would call r.Run() but we want to step through
 	// the migration process manually.
-	r.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	r.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -851,14 +852,14 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		id2 INT NOT NULL,
 		pad VARCHAR(100) NOT NULL default 0)`
 
-	runSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_new, _cpt1difft1_chkpnt`)
-	runSQL(t, tbl)
-	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
-	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
-	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
-	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
-	runSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 LIMIT 100000`) // ~100k rows
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cpt1difft1, cpt1difft1_new, _cpt1difft1_chkpnt`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1`)
+	testutils.RunSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
+	testutils.RunSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 b JOIN cpt1difft1 c`)
+	testutils.RunSQL(t, `insert into cpt1difft1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1difft1 a JOIN cpt1difft1 LIMIT 100000`) // ~100k rows
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	preSetup := func(alter string) *Runner {
@@ -875,7 +876,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		assert.Equal(t, "initial", m.getCurrentState().String())
 		// Usually we would call m.Run() but we want to step through
 		// the migration process manually.
-		m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+		m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 		assert.NoError(t, err)
 		// Get Table Info
 		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
@@ -968,12 +969,12 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		id2 int not null,
 		pad int NOT NULL  default 0,
 		PRIMARY KEY (id1, id2))`
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
-	runSQL(t, tbl)
-	runSQL(t, `insert into e2et1 (id1, id2) values (1,1),(2,1),(3,1),(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS e2et1, _e2et1_new`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (1,1),(2,1),(3,1),(4,1),(5,1),(6,1),(7,1),(8,1),(9,1),(10,1),
 	(11,1),(12,1),(13,1),(14,1),(15,1),(16,1),(17,1),(18,1),(19,1),(20,1),(21,1),(22,1),(23,1),(24,1),(25,1),(26,1),
 	(27,1),(28,1),(29,1),(30,1),(31,1),(32,1),(33,1),(34,1),(35,1),(36,1),(37,1),(38,1),(39,1),(40,1),(41,1),(42,1),
 	(43,1),(44,1),(45,1),(46,1),(47,1),(48,1),(49,1),(50,1),(51,1),(52,1),(53,1),(54,1),(55,1),(56,1),(57,1),(58,1),
@@ -1076,7 +1077,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1129,7 +1130,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
 
 	// Now insert some data.
-	runSQL(t, `insert into e2et1 (id1, id2) values (1002, 2)`)
+	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (1002, 2)`)
 
 	// The composite chunker does not support keyAboveHighWatermark
 	// so it will show up as a delta.
@@ -1145,18 +1146,18 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
-	runSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
+	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
-	runSQL(t, `delete from e2et1 where id1 = 1`)
+	testutils.RunSQL(t, `delete from e2et1 where id1 = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Some data is inserted later, even though the last chunk is done.
 	// We still care to pick it up because it could be inserted during checkpoint.
-	runSQL(t, `insert into e2et1 (id1, id2) values (5000, 1)`)
+	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (5000, 1)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
 
 	// Now that copy rows is done, we flush the changeset until trivial.
@@ -1179,14 +1180,14 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		pad int NOT NULL default 0)`
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2et2, _e2et2_new`)
-	runSQL(t, tbl)
-	runSQL(t, `insert into e2et2 (id) values (1)`)
-	runSQL(t, `insert into e2et2 (id) values (2)`)
-	runSQL(t, `insert into e2et2 (id) values (3)`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS e2et2, _e2et2_new`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (1)`)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (2)`)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (3)`)
 
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -1202,7 +1203,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1258,7 +1259,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// Now insert some data.
 	// This will be ignored by the binlog subscription.
 	// Because it's ahead of the high watermark.
-	runSQL(t, `insert into e2et2 (id) values (4)`)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (4)`)
 	assert.True(t, m.copier.KeyAboveHighWatermark(4))
 
 	// Give it a chance, since we need to read from the binary log to populate this
@@ -1275,12 +1276,12 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
-	runSQL(t, `insert into e2et2 (id) values (5)`)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (5)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
-	runSQL(t, `delete from e2et2 where id = 1`)
+	testutils.RunSQL(t, `delete from e2et2 where id = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
@@ -1294,7 +1295,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Some data is inserted later, even though the last chunk is done.
 	// We still care to pick it up because it could be inserted during checkpoint.
-	runSQL(t, `insert into e2et2 (id) values (6)`)
+	testutils.RunSQL(t, `insert into e2et2 (id) values (6)`)
 	// the pointer should be at maxint64 for safety. this ensures
 	// that any keyAboveHighWatermark checks return false
 	assert.False(t, m.copier.KeyAboveHighWatermark(int64(math.MaxInt64)))
@@ -1313,13 +1314,13 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 // TestForRemainingTableArtifacts tests that the table is left after
 // the migration is complete, but no _chkpnt or _new or _old table.
 func TestForRemainingTableArtifacts(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS remainingtbl, _remainingtbl_new, _remainingtbl_old, _remainingtbl_chkpnt`)
 	table := `CREATE TABLE remainingtbl (
 		id INT NOT NULL PRIMARY KEY,
 		name varchar(255) NOT NULL
 	)`
-	runSQL(t, table)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1337,7 +1338,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
 	// but no _remainingtbl_new table or _remainingtbl_chkpnt table.
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	stmt := `SELECT GROUP_CONCAT(table_name) FROM information_schema.tables where table_schema='test' and table_name LIKE '%remainingtbl%' ORDER BY table_name;`
@@ -1347,7 +1348,7 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 }
 
 func TestDropColumn(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS dropcol, _dropcol_new`)
 	table := `CREATE TABLE dropcol (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		a varchar(255) NOT NULL,
@@ -1355,10 +1356,10 @@ func TestDropColumn(t *testing.T) {
 		c varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, `insert into dropcol (id, a,b,c) values (1, 'a', 'b', 'c')`)
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into dropcol (id, a,b,c) values (1, 'a', 'b', 'c')`)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1393,15 +1394,15 @@ func TestDefaultPort(t *testing.T) {
 }
 
 func TestNullToNotNull(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS autodatetime`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS autodatetime`)
 	table := `CREATE TABLE autodatetime (
 		id INT NOT NULL AUTO_INCREMENT,
 		created_at DATETIME(3) NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
-	runSQL(t, `INSERT INTO autodatetime (created_at) VALUES (NULL)`)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `INSERT INTO autodatetime (created_at) VALUES (NULL)`)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1421,34 +1422,34 @@ func TestNullToNotNull(t *testing.T) {
 }
 
 func TestChunkerPrefetching(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS prefetchtest`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS prefetchtest`)
 	table := `CREATE TABLE prefetchtest (
 		id BIGINT NOT NULL AUTO_INCREMENT,
 		created_at DATETIME(3) NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	// insert about 11K rows.
-	runSQL(t, `INSERT INTO prefetchtest (created_at) VALUES (NULL)`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 10000`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) VALUES (NULL)`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b JOIN prefetchtest c`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 10000`)
 
 	// the max id should be able 11040
 	// lets insert one far off ID: 300B
 	// and then continue inserting at greater than the max dynamic chunk size.
-	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (300000000000, NULL)`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (300000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
 
 	// and then another big gap
 	// and then continue inserting at greater than the max dynamic chunk size.
-	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (600000000000, NULL)`)
-	runSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (600000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (created_at) SELECT NULL FROM prefetchtest a JOIN prefetchtest b LIMIT 300000`)
 	// and then one final value which is way out there.
-	runSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (900000000000, NULL)`)
+	testutils.RunSQL(t, `INSERT INTO prefetchtest (id, created_at) VALUES (900000000000, NULL)`)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1467,8 +1468,8 @@ func TestChunkerPrefetching(t *testing.T) {
 }
 
 func TestTpConversion(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS tpconvert")
-	runSQL(t, `CREATE TABLE tpconvert (
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS tpconvert")
+	testutils.RunSQL(t, `CREATE TABLE tpconvert (
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1478,7 +1479,7 @@ func TestTpConversion(t *testing.T) {
 	intasstring varchar(255) NULL DEFAULT NULL,
 	floatcol FLOAT NULL DEFAULT NULL
 	)`)
-	runSQL(t, `INSERT INTO tpconvert (created_at, updated_at, issued_at, activated_at, deactivated_at, intasstring, floatcol) VALUES
+	testutils.RunSQL(t, `INSERT INTO tpconvert (created_at, updated_at, issued_at, activated_at, deactivated_at, intasstring, floatcol) VALUES
 	('2023-05-18 09:28:46', '2023-05-18 09:33:27', '2023-05-18 09:28:45', '2023-05-18 09:28:45', NULL, '0001', 9.3),
 	('2023-05-18 09:34:38', '2023-05-24 07:38:25', '2023-05-18 09:34:37', '2023-05-18 09:34:37', '2023-05-24 07:38:25', '10', 9.3),
 	('2023-05-24 07:34:36', '2023-05-24 07:34:36', '2023-05-24 07:34:35', NULL, null, '01234', 9.3),
@@ -1492,7 +1493,7 @@ func TestTpConversion(t *testing.T) {
 	('2023-05-28 23:46:07', '2023-05-29 00:57:55', '2023-05-28 23:46:05', '2023-05-28 23:46:05', NULL, '10', 9.3),
 	('2023-05-28 23:53:34', '2023-05-29 00:57:56', '2023-05-28 23:53:33', '2023-05-28 23:58:09', NULL, '10', 9.3);`)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1517,23 +1518,23 @@ func TestTpConversion(t *testing.T) {
 }
 
 func TestResumeFromCheckpointE2E(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS chkpresumetest, _chkpresumetest_old, _chkpresumetest_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS chkpresumetest, _chkpresumetest_old, _chkpresumetest_chkpnt`)
 	table := `CREATE TABLE chkpresumetest (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		pad varbinary(1024) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 	migration := &Migration{}
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	// Insert dummy data.
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest a, chkpresumetest b, chkpresumetest c LIMIT 100000")
 	alterSQL := "ADD INDEX(pad);"
 	// use as slow as possible here: we want the copy to be still running
 	// when we kill it once we have a checkpoint saved.
@@ -1558,7 +1559,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
@@ -1576,7 +1577,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	assert.NoError(t, runner.Close())
 
 	// Insert some more dummy data
-	runSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest LIMIT 1000")
+	testutils.RunSQL(t, "INSERT INTO chkpresumetest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest LIMIT 1000")
 	// Start a new migration with the same parameters.
 	// Let it complete.
 	newmigration := &Migration{}
@@ -1601,8 +1602,8 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 }
 
 func TestResumeFromCheckpointE2ECompositeVarcharPK(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS compositevarcharpk, _compositevarcharpk_chkpnt`)
-	runSQL(t, `CREATE TABLE compositevarcharpk (
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS compositevarcharpk, _compositevarcharpk_chkpnt`)
+	testutils.RunSQL(t, `CREATE TABLE compositevarcharpk (
   token varchar(128) NOT NULL,
   version varchar(255) NOT NULL,
   state varchar(255) NOT NULL,
@@ -1611,25 +1612,25 @@ func TestResumeFromCheckpointE2ECompositeVarcharPK(t *testing.T) {
   updated_at datetime(3) NOT NULL,
   PRIMARY KEY (token,version)
 	);`)
-	runSQL(t, `INSERT INTO compositevarcharpk VALUES
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk VALUES
  (HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3))`)
-	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk SELECT
  HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
 FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
-	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk SELECT
  HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
 FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
-	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk SELECT
  HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
 FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
-	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk SELECT
  HEX(RANDOM_BYTES(60)), '1', 'active', 'test', NOW(3), NOW(3)
 FROM compositevarcharpk a JOIN compositevarcharpk b JOIN compositevarcharpk c LIMIT 10000`)
-	runSQL(t, `INSERT INTO compositevarcharpk SELECT
+	testutils.RunSQL(t, `INSERT INTO compositevarcharpk SELECT
  a.token, '2', 'active', 'test', NOW(3), NOW(3)
 FROM compositevarcharpk a WHERE version='1'`)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	migration := &Migration{
 		Host:            cfg.Addr,
@@ -1651,7 +1652,7 @@ FROM compositevarcharpk a WHERE version='1'`)
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	for {
@@ -1695,12 +1696,12 @@ FROM compositevarcharpk a WHERE version='1'`)
 func TestE2ERogueValues(t *testing.T) {
 	// table cointains a reserved word too.
 	tbl := "CREATE TABLE e2erogue ( `datetime` varbinary(40) NOT NULL,`col2` int NOT NULL  default 0, primary key (`datetime`, `col2`))"
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	runSQL(t, `DROP TABLE IF EXISTS e2erogue, _e2erogue_new`)
-	runSQL(t, tbl)
-	runSQL(t, `insert into e2erogue values ("1 \". ",1),("2 \". ",1),("3 \". ",1),("4 \". ",1),("5 \". ",1),("6 \". ",1),("7 \". ",1),("8 \". ",1),("9 \". ",1),("10 \". ",1),("11 \". ",1),("12 \". ",1),("13 \". ",1),("14 \". ",1),("15 \". ",1),("16 \". ",1),
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS e2erogue, _e2erogue_new`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `insert into e2erogue values ("1 \". ",1),("2 \". ",1),("3 \". ",1),("4 \". ",1),("5 \". ",1),("6 \". ",1),("7 \". ",1),("8 \". ",1),("9 \". ",1),("10 \". ",1),("11 \". ",1),("12 \". ",1),("13 \". ",1),("14 \". ",1),("15 \". ",1),("16 \". ",1),
 	("17 \". ",1),("18 \". ",1),("19 \". ",1),("'20 \". ",1),("21 \". ",1),("22 \". ",1),("23 \". ",1),("24 \". ",1),("25 \". ",1),("26 \". ",1),("27 \". ",1),("28 \". ",1),("29 \". ",1),("30 \". ",1),("31 \". ",1),
 	("32 \". ",1),("33 \". ",1),("34 \". ",1),("35 \". ",1),("3'6 \". ",1),("37 \". ",1),("38 \". ",1),("39 \". ",1),("40 \". ",1),("41 \". ",1),("42 \". ",1),("43 \". ",1),("44 \". ",1),("45 \". ",1),("46 \". ",1),
 	("47 \". ",1),("48 \". ",1),("49 \". ",1),("50 \". ",1),("51 \". ",1),("52 \". ",1),("53 \". ",1),("54 \". ",1),("55 \". ",1),("56 \". ",1),("57 \". ",1),("58 \". ",1),("59 \". ",1),("60 \". ",1),("61 \". ",1),
@@ -1803,7 +1804,7 @@ func TestE2ERogueValues(t *testing.T) {
 
 	// Usually we would call m.Run() but we want to step through
 	// the migration process manually.
-	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer m.db.Close()
 	// Get Table Info
@@ -1856,7 +1857,7 @@ func TestE2ERogueValues(t *testing.T) {
 
 	// Now insert some data, for binary type it will always say its
 	// below the watermark.
-	runSQL(t, `insert into e2erogue values ("zz'z\"z", 2)`)
+	testutils.RunSQL(t, `insert into e2erogue values ("zz'z\"z", 2)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark("zz'z\"z"))
 
 	// Second chunk
@@ -1867,12 +1868,12 @@ func TestE2ERogueValues(t *testing.T) {
 
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
-	runSQL(t, `insert into e2erogue values (5, 2)`)
+	testutils.RunSQL(t, `insert into e2erogue values (5, 2)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
-	runSQL(t, "delete from e2erogue where `datetime` like '819%'")
+	testutils.RunSQL(t, "delete from e2erogue where `datetime` like '819%'")
 	assert.NoError(t, m.replClient.BlockWait(context.Background()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
@@ -1888,7 +1889,7 @@ func TestE2ERogueValues(t *testing.T) {
 }
 
 func TestPartitionedTable(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS part1, _part1_new`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS part1, _part1_new`)
 	table := `CREATE TABLE part1 (
 			id bigint(20) NOT NULL AUTO_INCREMENT,
 			partition_id smallint(6) NOT NULL,
@@ -1910,10 +1911,10 @@ func TestPartitionedTable(t *testing.T) {
 		   PARTITION p5 VALUES IN (5) ENGINE = InnoDB,
 		   PARTITION p6 VALUES IN (6) ENGINE = InnoDB,
 		   PARTITION p7 VALUES IN (7) ENGINE = InnoDB) */`
-	runSQL(t, table)
-	runSQL(t, `insert into part1 values (1, 1, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 2, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 3, NOW(), NOW(), NOW(), 1, 'type', 'token2')`) //nolint: dupword
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into part1 values (1, 1, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 2, NOW(), NOW(), NOW(), 1, 'type', 'token'),(1, 3, NOW(), NOW(), NOW(), 1, 'type', 'token2')`) //nolint: dupword
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	m, err := NewRunner(&Migration{
@@ -1943,20 +1944,20 @@ func TestPartitionedTable(t *testing.T) {
 // - When resuming from checkpoint, we need to initialize the high watermark from a SELECT MAX(key) FROM the _new table.
 // - If this is done correctly, then on resume the DELETE will no longer be ignored.
 func TestResumeFromCheckpointPhantom(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS phantomtest, _phantomtest_old, _phantomtest_chkpnt`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS phantomtest, _phantomtest_old, _phantomtest_chkpnt`)
 	tbl := `CREATE TABLE phantomtest (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		pad varbinary(1024) NOT NULL,
 		PRIMARY KEY (id)
 	)`
-	runSQL(t, tbl)
-	cfg, err := mysql.ParseDSN(dsn())
+	testutils.RunSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
 	// Insert dummy data.
-	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
-	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
-	runSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	testutils.RunSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO phantomtest (pad) SELECT RANDOM_BYTES(1024) FROM phantomtest a, phantomtest b, phantomtest c LIMIT 100000")
 
 	m, err := NewRunner(&Migration{
 		Host:            cfg.Addr,
@@ -1972,7 +1973,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Do the initial setup.
-	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
@@ -2024,14 +2025,14 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, err)
 
 	// now we insert a row in the range of the third chunk
-	runSQL(t, "INSERT INTO phantomtest (id, pad) VALUES (1002, RANDOM_BYTES(1024))")
+	testutils.RunSQL(t, "INSERT INTO phantomtest (id, pad) VALUES (1002, RANDOM_BYTES(1024))")
 
 	// we copy it but we don't feedback it (a hack)
-	runSQL(t, "INSERT INTO _phantomtest_new (id, pad) SELECT * FROM phantomtest WHERE id = 1002")
+	testutils.RunSQL(t, "INSERT INTO _phantomtest_new (id, pad) SELECT * FROM phantomtest WHERE id = 1002")
 
 	// delete the row (but not from the _new table)
 	// when it gets to recopy it will not be there.
-	runSQL(t, "DELETE FROM phantomtest WHERE id = 1002")
+	testutils.RunSQL(t, "DELETE FROM phantomtest WHERE id = 1002")
 
 	// then we save the checkpoint without the feedback.
 	assert.NoError(t, m.dumpCheckpoint(ctx))
@@ -2060,7 +2061,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		Checksum:        true,
 	})
 	assert.NoError(t, err)
-	m.db, err = dbconn.New(dsn(), dbconn.NewDBConfig())
+	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
@@ -2087,20 +2088,20 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 }
 
 func TestVarcharE2E(t *testing.T) {
-	runSQL(t, `DROP TABLE IF EXISTS varchart1`)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS varchart1`)
 	table := `CREATE TABLE varchart1 (
 				pk varchar(255) NOT NULL,
 				b varchar(255) NOT NULL,
 				PRIMARY KEY (pk)
 			)`
-	runSQL(t, table)
-	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM dual ")
-	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
-	runSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM dual ")
+	testutils.RunSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO varchart1 SELECT UUID(), 'abcd' FROM varchart1 a, varchart1 b, varchart1 c LIMIT 100000")
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -2121,15 +2122,15 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
 	)`, tableName)
 
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:                 cfg.Addr,
@@ -2159,15 +2160,15 @@ func TestDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	runSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
 	)`, tableName)
 
-	runSQL(t, table)
+	testutils.RunSQL(t, table)
 
-	cfg, err := mysql.ParseDSN(dsn())
+	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	m, err := NewRunner(&Migration{
 		Host:                 cfg.Addr,

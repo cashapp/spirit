@@ -2,13 +2,13 @@ package row
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
+	"github.com/cashapp/spirit/pkg/testutils"
 
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/throttler"
@@ -16,23 +16,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func dsn() string {
-	dsn := os.Getenv("MYSQL_DSN")
-	if dsn == "" {
-		// DSN is not set, use the default.
-		return "msandbox:msandbox@tcp(127.0.0.1:8030)/test"
-	}
-	return dsn
-}
-
-func runSQL(t *testing.T, stmt string) {
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
-	assert.NoError(t, err)
-	defer db.Close()
-	_, err = db.Exec(stmt)
-	assert.NoError(t, err)
-}
 
 type TestMetricsSink struct {
 	sync.Mutex
@@ -47,12 +30,12 @@ func (t *TestMetricsSink) Send(ctx context.Context, m *metrics.Metrics) error {
 }
 
 func TestCopier(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS copiert1, copiert2")
-	runSQL(t, "CREATE TABLE copiert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE copiert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO copiert1 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS copiert1, copiert2")
+	testutils.RunSQL(t, "CREATE TABLE copiert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE copiert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO copiert1 VALUES (1, 2, 3)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
@@ -81,12 +64,12 @@ func TestCopier(t *testing.T) {
 }
 
 func TestThrottler(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS throttlert1, throttlert2")
-	runSQL(t, "CREATE TABLE throttlert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE throttlert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO throttlert1 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS throttlert1, throttlert2")
+	testutils.RunSQL(t, "CREATE TABLE throttlert1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE throttlert2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO throttlert1 VALUES (1, 2, 3)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "throttlert1")
@@ -107,12 +90,12 @@ func TestThrottler(t *testing.T) {
 }
 
 func TestCopierUniqueDestination(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS copieruniqt1, copieruniqt2")
-	runSQL(t, "CREATE TABLE copieruniqt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE copieruniqt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a), UNIQUE(b))")
-	runSQL(t, "INSERT INTO copieruniqt1 VALUES (1, 2, 3), (2,2,3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS copieruniqt1, copieruniqt2")
+	testutils.RunSQL(t, "CREATE TABLE copieruniqt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE copieruniqt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a), UNIQUE(b))")
+	testutils.RunSQL(t, "INSERT INTO copieruniqt1 VALUES (1, 2, 3), (2,2,3)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
@@ -142,12 +125,12 @@ func TestCopierUniqueDestination(t *testing.T) {
 }
 
 func TestCopierLossyDataTypeConversion(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS datatpt1, datatpt2")
-	runSQL(t, "CREATE TABLE datatpt1 (a INT NOT NULL, b INT, c VARCHAR(255), PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE datatpt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO datatpt1 VALUES (1, 2, 'aaa'), (2,2,'bbb')")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS datatpt1, datatpt2")
+	testutils.RunSQL(t, "CREATE TABLE datatpt1 (a INT NOT NULL, b INT, c VARCHAR(255), PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE datatpt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO datatpt1 VALUES (1, 2, 'aaa'), (2,2,'bbb')")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
@@ -165,12 +148,12 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 }
 
 func TestCopierNullToNotNullConversion(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS null2notnullt1, null2notnullt2")
-	runSQL(t, "CREATE TABLE null2notnullt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE null2notnullt2 (a INT NOT NULL, b INT, c INT NOT NULL, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO null2notnullt1 VALUES (1, 2, 123), (2,2,NULL)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS null2notnullt1, null2notnullt2")
+	testutils.RunSQL(t, "CREATE TABLE null2notnullt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE null2notnullt2 (a INT NOT NULL, b INT, c INT NOT NULL, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO null2notnullt1 VALUES (1, 2, 123), (2,2,NULL)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
@@ -188,12 +171,12 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 }
 
 func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS invaliddt1, invaliddt2")
-	runSQL(t, "CREATE TABLE invaliddt1 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE invaliddt2 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO invaliddt1 VALUES (1, 2, '0000-00-00')")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS invaliddt1, invaliddt2")
+	testutils.RunSQL(t, "CREATE TABLE invaliddt1 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE invaliddt2 (a INT NOT NULL, b INT, c DATETIME, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT IGNORE INTO invaliddt1 VALUES (1, 2, '0000-00-00')")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "invaliddt1")
@@ -214,12 +197,12 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 }
 
 func TestLockWaitTimeoutIsRetyable(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS lockt1, lockt2")
-	runSQL(t, "CREATE TABLE lockt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE lockt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT IGNORE INTO lockt1 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS lockt1, lockt2")
+	testutils.RunSQL(t, "CREATE TABLE lockt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE lockt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT IGNORE INTO lockt1 VALUES (1, 2, 3)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "lockt1")
@@ -245,17 +228,17 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 }
 
 func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS lock2t1, lock2t2")
-	runSQL(t, "CREATE TABLE lock2t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO lock2t1 VALUES (1, 2, 3)")
-	runSQL(t, "INSERT INTO lock2t2 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS lock2t1, lock2t2")
+	testutils.RunSQL(t, "CREATE TABLE lock2t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE lock2t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO lock2t1 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO lock2t2 VALUES (1, 2, 3)")
 
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
 	config.InnodbLockWaitTimeout = 1
 
-	db, err := dbconn.New(dsn(), config)
+	db, err := dbconn.New(testutils.DSN(), config)
 	assert.NoError(t, err)
 
 	require.Equal(t, config.MaxOpenConnections, db.Stats().MaxOpenConnections)
@@ -289,7 +272,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 }
 
 func TestCopierValidation(t *testing.T) {
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
@@ -300,15 +283,15 @@ func TestCopierValidation(t *testing.T) {
 }
 
 func TestETA(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS testeta1, testeta2, _testeta1_new, _testeta2_new")
-	runSQL(t, "CREATE TABLE testeta1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE testeta2 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _testeta1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _testeta2_new (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS testeta1, testeta2, _testeta1_new, _testeta2_new")
+	testutils.RunSQL(t, "CREATE TABLE testeta1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE testeta2 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _testeta1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _testeta2_new (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
 	// high max value
-	runSQL(t, "INSERT IGNORE INTO testeta2 VALUES (10000, 2, 3)")
+	testutils.RunSQL(t, "INSERT IGNORE INTO testeta2 VALUES (10000, 2, 3)")
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "testeta1")
@@ -364,13 +347,13 @@ func TestETA(t *testing.T) {
 }
 
 func TestCopierFromCheckpoint(t *testing.T) {
-	runSQL(t, "DROP TABLE IF EXISTS copierchkpt1, _copierchkpt1_new")
-	runSQL(t, "CREATE TABLE copierchkpt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "CREATE TABLE _copierchkpt1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	runSQL(t, "INSERT INTO copierchkpt1 VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8), (7, 8, 9), (8, 9, 10), (9, 10, 11), (10, 11, 12)")
-	runSQL(t, "INSERT INTO _copierchkpt1_new VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS copierchkpt1, _copierchkpt1_new")
+	testutils.RunSQL(t, "CREATE TABLE copierchkpt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _copierchkpt1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "INSERT INTO copierchkpt1 VALUES (1, 2, 3), (2, 3, 4), (3, 4, 5), (4, 5, 6), (5, 6, 7), (6, 7, 8), (7, 8, 9), (8, 9, 10), (9, 10, 11), (10, 11, 12)")
+	testutils.RunSQL(t, "INSERT INTO _copierchkpt1_new VALUES (1, 2, 3),(2,3,4),(3,4,5)") // 1-3 row is already copied
 
-	db, err := dbconn.New(dsn(), dbconn.NewDBConfig())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "copierchkpt1")
