@@ -53,4 +53,9 @@ func TestNewConn(t *testing.T) {
 	err = db.QueryRow("SELECT 1").Scan(&resp)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, resp)
+
+	// New on syntactically valid but won't respond to ping.
+	db, err = New("root:wrongpassword@tcp(127.0.0.1)/doesnotexist", NewDBConfig())
+	assert.Error(t, err)
+	assert.Nil(t, db)
 }

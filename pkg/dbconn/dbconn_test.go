@@ -102,3 +102,17 @@ func TestRetryableTrx(t *testing.T) {
 	err = trx.Rollback() // now we can rollback.
 	assert.NoError(t, err)
 }
+
+func TestStandardTrx(t *testing.T) {
+	config := NewDBConfig()
+	db, err := New(testutils.DSN(), config)
+	assert.NoError(t, err)
+	defer db.Close()
+
+	trx, connID, err := BeginStandardTrx(context.Background(), db, nil)
+	assert.NoError(t, err)
+	var observedConnID int
+	err = trx.QueryRow("SELECT connection_id()").Scan(&observedConnID)
+	assert.NoError(t, err)
+	assert.Equal(t, connID, observedConnID)
+}

@@ -8,7 +8,6 @@ import (
 	"github.com/siddontang/loggers"
 
 	"github.com/cashapp/spirit/pkg/table"
-	"github.com/cashapp/spirit/pkg/utils"
 )
 
 type TableLock struct {
@@ -24,7 +23,6 @@ type TableLock struct {
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
 func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, writeLock bool, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
-	lockTxn, _ := db.BeginTx(ctx, nil)
 	lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
 	if writeLock {
 		lockStmt = fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
@@ -33,34 +31,46 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 		)
 	}
 	var err error
+	var isFatal bool
+	var lockTxn *sql.Tx
 	for i := 0; i < config.MaxRetries; i++ {
-		// In gh-ost they lock the _old table name as well.
-		// this might prevent a weird case that we don't handle yet.
-		// instead, we DROP IF EXISTS just before the rename, which
-		// has a brief race.
-		logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
-		_, err = lockTxn.ExecContext(ctx, lockStmt)
-		if err != nil {
-			// See if the error is retryable, many are
-			if canRetryError(err) {
+		func() {
+			lockTxn, _ = db.BeginTx(ctx, nil)
+			defer func() {
+				if err != nil {
+					_ = lockTxn.Rollback()
+					if i < config.MaxRetries-1 && !isFatal {
+						backoff(i)
+					}
+				}
+			}()
+			// In gh-ost they lock the _old table name as well.
+			// this might prevent a weird case that we don't handle yet.
+			// instead, we DROP IF EXISTS just before the rename, which
+			// has a brief race.
+			logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
+			_, err = lockTxn.ExecContext(ctx, lockStmt)
+			if err != nil {
+				// See if the error is retryable, many are
+				if !canRetryError(err) {
+					isFatal = true
+					return
+				}
 				logger.Warnf("failed trying to acquire table lock, backing off and retrying: %v", err)
-				backoff(i)
-				continue
+				return
 			}
-			// else not retryable
-			return nil, err
+		}()
+		// check if successful
+		if err == nil {
+			logger.Warn("table lock acquired")
+			return &TableLock{
+				table:   table,
+				lockTxn: lockTxn,
+				logger:  logger,
+			}, nil
 		}
-		// else success!
-		logger.Warn("table lock acquired")
-		return &TableLock{
-			table:   table,
-			lockTxn: lockTxn,
-			logger:  logger,
-		}, nil
 	}
-	// The loop ended without success.
-	// Return the last error
-	utils.ErrInErr(lockTxn.Rollback())
+	// retries exhausted, return the last error
 	return nil, err
 }
 

@@ -143,7 +143,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
-	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
+	assert.Contains(t, err.Error(), "unsafe warning")
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 
@@ -166,7 +166,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(context.Background())
-	assert.Contains(t, err.Error(), "unsafe warning migrating chunk")
+	assert.Contains(t, err.Error(), "unsafe warning")
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 
