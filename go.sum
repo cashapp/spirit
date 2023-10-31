@@ -47,10 +47,14 @@ github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c/go.mod h1:4qGtCB
 github.com/pingcap/log v0.0.0-20210625125904-98ed8e2eb1c7/go.mod h1:8AanEdAHATuRurdGxZXBz0At+9avep+ub7U1AGYLIMM=
 github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22 h1:2SOzvGvE8beiC1Y4g9Onkvu6UmuBBOeWRGQEjJaT/JY=
 github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22/go.mod h1:DWQW5jICDR7UJh4HtxXSM20Churx4CQL0fwL/SoOSA4=
+github.com/pingcap/tidb v1.1.0-beta.0.20231031161236-4667ed9e1684 h1:PrwizJozFsET9b0Wn6G7Cmg/9axyy+Tfm4xCRR5fyTg=
+github.com/pingcap/tidb v1.1.0-beta.0.20231031161236-4667ed9e1684/go.mod h1:qt6W0FB2RthjM734Uuuc6HfMh6ky6O14Lt2iviKbNxM=
 github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d h1:1DyyRrgYeNjqPkgjrdEsaIbX+kHpuTTk5ZOCtrcRFcQ=
 github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d/go.mod h1:ElJiub4lRy6UZDb+0JHDkGEdr6aOli+ykhyej7VCLoI=
 github.com/pingcap/tidb/pkg/parser v0.0.0-20231027131104-30288c77c7e8 h1:tzCEh6Zyajgyw/gdWk5Z1nAom+31MmZhIBfeEzwqMeM=
 github.com/pingcap/tidb/pkg/parser v0.0.0-20231027131104-30288c77c7e8/go.mod h1:5s4ZS7VJ9W8ed0/hHpXZ9eKt3URTYQAsOLtgX6ysy/U=
+github.com/pingcap/tidb/pkg/parser v0.0.0-20231031161236-4667ed9e1684 h1:2XFwjqpXcww8rFZBEfOtbBUlXUXP0Is/+B9Xc0zprgQ=
+github.com/pingcap/tidb/pkg/parser v0.0.0-20231031161236-4667ed9e1684/go.mod h1:5s4ZS7VJ9W8ed0/hHpXZ9eKt3URTYQAsOLtgX6ysy/U=
 github.com/pkg/diff v0.0.0-20210226163009-20ebb0f2a09e/go.mod h1:pJLUxLENpZxwdsKMEsNbx1VGcRFpLqf3715MtcvvzbA=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=

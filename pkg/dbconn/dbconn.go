@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 const (
@@ -166,10 +167,16 @@ func backoff(i int) {
 	time.Sleep(time.Duration(randFactor))
 }
 
-// DBExec is like db.Exec but only returns an error.
+// Exec is like db.Exec but only returns an error.
 // This makes it a little bit easier to use in error handling.
-func DBExec(ctx context.Context, db *sql.DB, query string) error {
-	_, err := db.ExecContext(ctx, query)
+// It accepts args which are escaped client side using the TiDB escape library.
+// i.e. %n is an identifier, %? is automatic type conversion on a variable.
+func Exec(ctx context.Context, db *sql.DB, stmt string, args ...interface{}) error {
+	stmt, err := sqlescape.EscapeSQL(stmt, args...)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, stmt)
 	return err
 }
 
