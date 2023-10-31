@@ -7,28 +7,12 @@ import (
 	"strings"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 const (
 	PrimaryKeySeparator = "-#-" // used to hash a composite primary key
 )
-
-// MysqlRealEscapeString escapes a string for use in a query.
-// usually the string is a primary key, so the likelihood of a quote is low.
-func MysqlRealEscapeString(value string) string {
-	var sb strings.Builder
-	for i := 0; i < len(value); i++ {
-		c := value[i]
-		switch c {
-		case '\\', 0, '\n', '\r', '\'', '"':
-			sb.WriteByte('\\')
-			sb.WriteByte(c)
-		default:
-			sb.WriteByte(c)
-		}
-	}
-	return sb.String()
-}
 
 // HashKey is used to convert a composite key into a string
 // so that it can be placed in a map.
@@ -57,10 +41,10 @@ func IntersectColumns(t1, t2 *table.TableInfo) string {
 func UnhashKey(key string) string {
 	str := strings.Split(key, PrimaryKeySeparator)
 	if len(str) == 1 {
-		return "'" + MysqlRealEscapeString(str[0]) + "'"
+		return "'" + sqlescape.EscapeString(str[0]) + "'"
 	}
 	for i, v := range str {
-		str[i] = "'" + MysqlRealEscapeString(v) + "'"
+		str[i] = "'" + sqlescape.EscapeString(v) + "'"
 	}
 	return "(" + strings.Join(str, ",") + ")"
 }

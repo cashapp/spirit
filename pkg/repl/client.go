@@ -627,8 +627,8 @@ func (c *Client) BlockWait(ctx context.Context) error {
 // Note: We can not update the table or the newTable, because this intentionally
 // causes a panic (c.tableChanged() is called).
 func (c *Client) injectBinlogNoise(ctx context.Context) error {
-	stmt := fmt.Sprintf("ALTER TABLE _%s_chkpnt AUTO_INCREMENT=0", c.table.TableName)
-	return dbconn.Exec(ctx, c.db, stmt)
+	tblName := fmt.Sprintf("_%s_chkpnt", c.table.TableName)
+	return dbconn.Exec(ctx, c.db, "ALTER TABLE %n.%n AUTO_INCREMENT=0", c.table.SchemaName, tblName)
 }
 
 func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
