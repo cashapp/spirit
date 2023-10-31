@@ -8,7 +8,7 @@ It works very similar to gh-ost except:
 - It supports resume-from-checkpoint
 
 The goal of Spirit is to apply schema changes much faster than gh-ost. This makes it unsuitable in the following scenarios:
-- You use read-replicas to serve traffic
+- You require read replicas to be less than 10s behind the writer
 - You require support for older versions of MySQL
 
 If this is the case, `gh-ost` remains a fine choice.
@@ -89,6 +89,28 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 - **`ALTER`/NO PRIMARY KEY**. Spirit requires the table to have a primary key, and the primary key can not be altered by the schema change. There might be some flexibility to support UNIQUE keys and some modifications of the primary key in future, but it is not a priority for now.
 - **Lossy conversions**. Spirit does not support adding a `UNIQUE` index on non unique data, shortening a `VARCHAR` to a size less than the longest value, or adding a new `NOT NULL` column without a default value. To perform these changes you must fix the data, and then run the migration.
 - **`FOREIGN KEYS`** or **`TRIGGERS`**. Spirit does not support migrating tables that have `FOREIGN KEYS` or `TRIGGERS`.
+
+## Requirements
+
+Spirit works with the default configuration of MySQL 8.0, but checks that you have not changed the following settings:
+  - `log-bin`
+  - `binlog_format=ROW`
+  - `binlog_row_image=FULL` (see [issue #221](https://github.com/cashapp/spirit/issues/221))
+  - `innodb_autoinc_lock_mode=2`
+  - `log_slave_updates=1`
+
+Spirit requires an account with these privileges:
+
+* `ALTER, CREATE, DELETE, DROP, INDEX, INSERT, LOCK TABLES, SELECT, TRIGGER, UPDATE` on the schema where the table is being migrated.
+* Either `SUPER, REPLICATION SLAVE on *.*` or `REPLICATION CLIENT, REPLICATION SLAVE on *.*`.
+
+For replica throttling, Spirit requires:
+
+```sql
+GRANT SELECT on performance_schema.replication_applier_status_by_worker TO 'throttler';
+```
+
+(i.e. Replica throttling does not use `SHOW SLAVE STATUS`.)
 
 ## Risks and Limitations
 
