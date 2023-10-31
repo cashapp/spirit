@@ -40,7 +40,7 @@ func TestTableLock(t *testing.T) {
 }
 
 func TestExecUnderLock(t *testing.T) {
-	db, err := New(dsn(), NewDBConfig())
+	db, err := New(testutils.DSN(), NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
 	config := NewDBConfig()

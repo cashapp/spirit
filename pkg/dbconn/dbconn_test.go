@@ -105,7 +105,7 @@ func TestRetryableTrx(t *testing.T) {
 
 func TestStandardTrx(t *testing.T) {
 	config := NewDBConfig()
-	db, err := New(dsn(), config)
+	db, err := New(testutils.DSN(), config)
 	assert.NoError(t, err)
 	defer db.Close()
 
