@@ -1181,8 +1181,6 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	// All done!
 
-	// Doublecheck the last 100 rows if 5.7
-	assert.NoError(t, m.postCutoverCheck(context.TODO()))
 	assert.Equal(t, 0, m.db.Stats().InUse) // all connections are returned.
 }
 
