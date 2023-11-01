@@ -168,6 +168,7 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer trx.Rollback() //nolint: errcheck
 	// Start the rename operation, it's OK it will block inside
 	// of this go-routine.
 	var wg sync.WaitGroup

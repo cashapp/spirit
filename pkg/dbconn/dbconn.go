@@ -36,7 +36,7 @@ func NewDBConfig() *DBConfig {
 		LockWaitTimeout:       30,
 		InnodbLockWaitTimeout: 3,
 		MaxRetries:            5,
-		MaxOpenConnections:    5,
+		MaxOpenConnections:    32, // default is high for historical tests
 	}
 }
 

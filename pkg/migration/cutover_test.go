@@ -156,12 +156,12 @@ func TestMDLLockFails(t *testing.T) {
 	// we can differentiate after the cutover.
 	testutils.RunSQL(t, `INSERT INTO mdllocks VALUES (1, 2), (2,2)`)
 
-	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
-	assert.NoError(t, err)
-
 	config := dbconn.NewDBConfig()
 	config.MaxRetries = 2
 	config.LockWaitTimeout = 1
+
+	db, err := dbconn.New(testutils.DSN(), config)
+	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")

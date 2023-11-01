@@ -782,6 +782,10 @@ func (r *Runner) checksum(ctx context.Context) error {
 	// - background flushing
 	// - checkpoint thread
 	// - checksum "replaceChunk" DB connections
+	// Handle a case in the tests not having a dbConfig
+	if r.dbConfig == nil {
+		r.dbConfig = dbconn.NewDBConfig()
+	}
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
 	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
