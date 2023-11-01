@@ -17,6 +17,7 @@ import (
 
 func TestMain(m *testing.M) {
 	checkpointDumpInterval = 100 * time.Millisecond
+	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
 	os.Exit(m.Run())
 }
 

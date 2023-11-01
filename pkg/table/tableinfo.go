@@ -70,6 +70,8 @@ func (t *TableInfo) PrimaryKeyValues(row interface{}) []interface{} {
 
 // SetInfo reads from MySQL metadata (usually infoschema) and sets the values in TableInfo.
 func (t *TableInfo) SetInfo(ctx context.Context) error {
+	t.statisticsLock.Lock()
+	defer t.statisticsLock.Unlock()
 	if err := t.setRowEstimate(ctx); err != nil {
 		return err
 	}
@@ -286,8 +288,8 @@ func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
 
 // MaxValue as a datum
 func (t *TableInfo) MaxValue() Datum {
-	t.Lock()
-	defer t.Unlock()
+	t.statisticsLock.Lock()
+	defer t.statisticsLock.Unlock()
 	return t.maxValue
 }
 
