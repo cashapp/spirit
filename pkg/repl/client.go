@@ -290,23 +290,10 @@ func (c *Client) binlogPositionIsImpossible() bool {
 	}
 	defer rows.Close()
 
-	// Get the number of columns
-	cols, err := rows.Columns()
-	if err != nil {
-		return true
-	}
 	var logname, size, encrypted string
 	for rows.Next() {
-		if len(cols) == 3 {
-			// MySQL 8.0
-			if err := rows.Scan(&logname, &size, &encrypted); err != nil {
-				return true
-			}
-		} else {
-			// MySQL 5.7
-			if err := rows.Scan(&logname, &size); err != nil {
-				return true
-			}
+		if err := rows.Scan(&logname, &size, &encrypted); err != nil {
+			return true
 		}
 		if logname == c.binlogPosSynced.Name {
 			return false // We just need presence of the log file for success

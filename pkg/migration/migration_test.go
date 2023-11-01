@@ -9,7 +9,6 @@ import (
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 
 	"github.com/cashapp/spirit/pkg/testutils"
-	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
 
 	"github.com/stretchr/testify/assert"
@@ -168,9 +167,6 @@ func TestRenameInMySQL80(t *testing.T) {
 	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
-	if !utils.IsMySQL8(db) {
-		t.Skip("rename tests only runs on MySQL 8.0")
-	}
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS renamet1, _renamet1_new`)
 	table := `CREATE TABLE renamet1 (
 		id int(11) NOT NULL AUTO_INCREMENT,
