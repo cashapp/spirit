@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -83,6 +84,7 @@ type Runner struct {
 	copier       *row.Copier
 	throttler    throttler.Throttler
 	checker      *checksum.Checker
+	checkerLock  sync.Mutex
 
 	// Track some key statistics.
 	startTime time.Time
@@ -782,9 +784,14 @@ func (r *Runner) checksum(ctx context.Context) error {
 	// - background flushing
 	// - checkpoint thread
 	// - checksum "replaceChunk" DB connections
+	// Handle a case in the tests not having a dbConfig
+	if r.dbConfig == nil {
+		r.dbConfig = dbconn.NewDBConfig()
+	}
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
 	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
+		r.checkerLock.Lock()
 		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 			Concurrency:     r.migration.Threads,
 			TargetChunkTime: r.migration.TargetChunkTime,
@@ -792,6 +799,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			Logger:          r.logger,
 			FixDifferences:  true, // we want to repair the differences.
 		})
+		r.checkerLock.Unlock()
 		if err != nil {
 			return err
 		}
@@ -912,14 +920,17 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 				// This could take a while if it's a large table. We just have to show approximate progress.
 				// This is a little bit harder for checksum because it doesn't have returned rows
 				// so we just show a "recent value" over the "maximum value".
+				r.checkerLock.Lock()
 				r.logger.Infof("migration status: state=%s checksum-progress=%s/%s binlog-deltas=%v total-time=%s checksum-time=%s conns-in-use=%d",
 					r.getCurrentState().String(),
-					r.checker.RecentValue(), r.table.MaxValue(),
+					r.checker.RecentValue(),
+					r.table.MaxValue(),
 					r.replClient.GetDeltaLen(),
 					time.Since(r.startTime).Round(time.Second),
 					time.Since(r.checker.StartTime()).Round(time.Second),
 					r.db.Stats().InUse,
 				)
+				r.checkerLock.Unlock()
 			default:
 				// For the linter:
 				// Status for all other states

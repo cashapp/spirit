@@ -321,8 +321,11 @@ func (c *Client) binlogPositionIsImpossible() bool {
 // Called as a go routine.
 func (c *Client) startCanal() {
 	// Start canal as a routine
-	c.logger.Debugf("starting binary log subscription. log-file: %s log-pos: %d", c.binlogPosSynced.Name, c.binlogPosSynced.Pos)
-	if err := c.canal.RunFrom(c.binlogPosSynced); err != nil {
+	c.Lock()
+	position := c.binlogPosSynced // avoid a data race, binlogPosSynced is always under mutex
+	c.Unlock()
+	c.logger.Debugf("starting binary log subscription. log-file: %s log-pos: %d", position.Name, position.Pos)
+	if err := c.canal.RunFrom(position); err != nil {
 		// Canal has failed! In future we might be able to reconnect and resume
 		// if canal does not do so itself. For now, we just fail the migration
 		// since we can resume from checkpoint anyway.

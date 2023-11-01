@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -596,6 +597,7 @@ func TestChangeNonIntPK(t *testing.T) {
 }
 
 type testLogger struct {
+	sync.Mutex
 	logrus.FieldLogger
 	lastInfof  string
 	lastWarnf  string
@@ -603,12 +605,18 @@ type testLogger struct {
 }
 
 func (l *testLogger) Infof(format string, args ...interface{}) {
+	l.Lock()
+	defer l.Unlock()
 	l.lastInfof = fmt.Sprintf(format, args...)
 }
 func (l *testLogger) Warnf(format string, args ...interface{}) {
+	l.Lock()
+	defer l.Unlock()
 	l.lastWarnf = fmt.Sprintf(format, args...)
 }
 func (l *testLogger) Debugf(format string, args ...interface{}) {
+	l.Lock()
+	defer l.Unlock()
 	l.lastDebugf = fmt.Sprintf(format, args...)
 }
 
@@ -629,7 +637,6 @@ func TestCheckpoint(t *testing.T) {
 	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
 	testLogger := &testLogger{}
-	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
 
 	preSetup := func() *Runner {
 		r, err := NewRunner(&Migration{
@@ -687,7 +694,9 @@ func TestCheckpoint(t *testing.T) {
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
 	time.Sleep(time.Second) // wait for status to be updated.
+	testLogger.Lock()
 	assert.Contains(t, testLogger.lastInfof, `migration status: state=copyRows copy-progress=0/101040 0.00% binlog-deltas=0`)
+	testLogger.Unlock()
 
 	// because we are not calling copier.Run() we need to manually open.
 	assert.NoError(t, r.copier.Open4Test())
@@ -717,7 +726,9 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk3))
 
 	time.Sleep(time.Second) // wait for status to be updated.
+	testLogger.Lock()
 	assert.Contains(t, testLogger.lastInfof, `migration status: state=copyRows copy-progress=3000/101040 2.97% binlog-deltas=0`)
+	testLogger.Unlock()
 
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
@@ -1170,8 +1181,6 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	// All done!
 
-	// Doublecheck the last 100 rows if 5.7
-	assert.NoError(t, m.postCutoverCheck(context.TODO()))
 	assert.Equal(t, 0, m.db.Stats().InUse) // all connections are returned.
 }
 

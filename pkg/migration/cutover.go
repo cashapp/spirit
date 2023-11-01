@@ -168,6 +168,10 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// We need to do either commit or rollback to free the connection
+	// Since the only statement was RENAME (DDL) rollback
+	// has no effect. We can just defer it to ensure it's freed.
+	defer trx.Rollback() //nolint: errcheck
 	// Start the rename operation, it's OK it will block inside
 	// of this go-routine.
 	var wg sync.WaitGroup

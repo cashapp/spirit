@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
+
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
@@ -15,6 +17,8 @@ import (
 
 func TestMain(m *testing.M) {
 	checkpointDumpInterval = 100 * time.Millisecond
+	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
+	os.Exit(m.Run())
 }
 
 func TestE2ENullAlterEmpty(t *testing.T) {
