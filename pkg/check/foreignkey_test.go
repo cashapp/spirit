@@ -7,7 +7,6 @@ import (
 
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/testutils"
-	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
