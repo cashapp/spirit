@@ -17,7 +17,5 @@ jobs:
       - name: Deploy MySQL
         run: scripts/dbdeployer_install_8028.sh
 
-      - name: Build and Run
-        run: go build ./cmd/spirit
-             ~/sandboxes/msb_8_0_28/use test -e "CREATE TABLE t1 (id INT NOT NULL PRIMARY KEY auto_increment, b INT NOT NULL, c INT NOT NULL)"
-             ./cmd/spirit/spirit -h "127.0.0.1:8028" --database=test --table=stock
+      - name: Build and Run Spirit
+        run: scripts/build_and_run.sh
