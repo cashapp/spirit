@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestReplClient(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
@@ -58,7 +59,7 @@ func TestReplClient(t *testing.T) {
 }
 
 func TestReplClientComplex(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
@@ -132,7 +133,7 @@ func TestReplClientComplex(t *testing.T) {
 }
 
 func TestReplClientResumeFromImpossible(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
@@ -190,7 +191,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 }
 
 func TestReplClientOpts(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
@@ -244,7 +245,7 @@ func TestReplClientOpts(t *testing.T) {
 }
 
 func TestReplClientQueue(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")

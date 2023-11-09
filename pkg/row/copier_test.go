@@ -372,3 +372,41 @@ func TestCopierFromCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 10, count)
 }
+
+func TestRangeOptimizationMustApply(t *testing.T) {
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS rangeoptimizertest, _rangeoptimizertest_new")
+	testutils.RunSQL(t, "CREATE TABLE rangeoptimizertest (a INT NOT NULL auto_increment, b INT NOT NULL, c INT, PRIMARY KEY (a, b))")
+	testutils.RunSQL(t, "CREATE TABLE _rangeoptimizertest_new (a INT NOT NULL, b INT NOT NULL, c INT, PRIMARY KEY (a, b))")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select null,1,1 from dual")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select null,1,1 from rangeoptimizertest a join rangeoptimizertest b join rangeoptimizertest c LIMIT 10000")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select null,1,1 from rangeoptimizertest a join rangeoptimizertest b join rangeoptimizertest c LIMIT 10000")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select null,1,1 from rangeoptimizertest a join rangeoptimizertest b join rangeoptimizertest c LIMIT 10000")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select a,2,1 from rangeoptimizertest where b=1")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select a,3,1 from rangeoptimizertest where b=1")
+	testutils.RunSQL(t, "insert into rangeoptimizertest select a,4,1 from rangeoptimizertest where b=1")
+
+	config := dbconn.NewDBConfig()
+	config.RangeOptimizerMaxMemSize = 1024 // 1KB
+	db, err := dbconn.New(testutils.DSN(), config)
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "rangeoptimizertest")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t1new := table.NewTableInfo(db, "test", "_rangeoptimizertest_new")
+	assert.NoError(t, t1new.SetInfo(context.TODO()))
+
+	copier, err := NewCopier(db, t1, t1new, NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	err = copier.Run(context.Background())
+	assert.ErrorContains(t, err, "range_optimizer_max_mem_size") // verify that spirit refuses to run if it encounters range optimizer memory limits.
+
+	// Now create a new DB config, which should default to be unlimited.
+	config = dbconn.NewDBConfig()
+	db, err = dbconn.New(testutils.DSN(), config)
+	assert.NoError(t, err)
+	testutils.RunSQL(t, "TRUNCATE _rangeoptimizertest_new")
+	copier, err = NewCopier(db, t1, t1new, NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	err = copier.Run(context.Background())
+	assert.NoError(t, err) // works now.
+}
