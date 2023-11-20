@@ -223,15 +223,14 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 	r.logger.Info("copy rows complete")
 
-	// Deferred CutOver causes spirit to block until the user
-	// drops the sentinel table that corresponds to this migration.
-	if r.migration.DeferCutOver == true {
-		// r.handleDeferredCutOver may return an error if there is
-		// some unexpected problem checking for the existence of
-		// the sentinel table OR if sentinelWaitLimit is exceeded.
-		if err := r.handleDeferredCutOver(ctx); err != nil {
-			return err
-		}
+	// r.handleDeferredCutOver may return an error if there is
+	// some unexpected problem checking for the existence of
+	// the sentinel table OR if sentinelWaitLimit is exceeded.
+	// This function is invoked even if DeferCutOver is false
+	// because it's possible that the sentinel table was created
+	// manually after the migration started.
+	if err := r.handleDeferredCutOver(ctx); err != nil {
+		return err
 	}
 
 	// Perform steps to prepare for final cutover.
@@ -422,6 +421,17 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err := r.createCheckpointTable(ctx); err != nil {
 			return err
 		}
+
+		// The sentinelTable is "registered" separately from creating it.
+		// This helps to support the case where a user manually creates
+		// the sentinel table after a migration is started.
+		r.registerSentinelTable(ctx)
+		if r.migration.DeferCutOver == true {
+			if err := r.createSentinelTable(ctx); err != nil {
+				return err
+			}
+		}
+
 		r.copier, err = row.NewCopier(r.db, r.table, r.newTable, &row.CopierConfig{
 			Concurrency:     r.migration.Threads,
 			TargetChunkTime: r.migration.TargetChunkTime,
@@ -440,13 +450,6 @@ func (r *Runner) setup(ctx context.Context) error {
 		})
 		// Start the binary log feed now
 		if err := r.replClient.Run(); err != nil {
-			return err
-		}
-	}
-
-	// If deferred cutover is enabled, create the sentinel table.
-	if r.migration.DeferCutOver == true {
-		if err := r.createSentinelTable(ctx); err != nil {
 			return err
 		}
 	}
@@ -672,16 +675,25 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) createSentinelTable(ctx context.Context) error {
+// registerSentinelTable sets the sentinelTable object. This is done separately
+// from creating the sentinelTable to support the case where an operator creates
+// the sentinel table manually after starting a migration.
+func (r *Runner) registerSentinelTable(ctx context.Context) {
 	sentinelName := fmt.Sprintf("_%s_sentinel", r.table.TableName)
-	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, sentinelName); err != nil {
-		return err
-	}
-	if err := dbconn.Exec(ctx, r.db, "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, alter_statement TEXT)",
-		r.table.SchemaName, sentinelName); err != nil {
-		return err
-	}
 	r.sentinelTable = table.NewTableInfo(r.db, r.table.SchemaName, sentinelName)
+}
+
+func (r *Runner) createSentinelTable(ctx context.Context) error {
+	if r.sentinelTable == nil {
+		r.registerSentinelTable(ctx)
+	}
+	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+		return err
+	}
+	createStmt := "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, alter_statement TEXT)"
+	if err := dbconn.Exec(ctx, r.db, createStmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -998,6 +1010,16 @@ func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 
 // Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
 func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
+
+	if sentinelExists, err := r.sentinelTableExists(ctx); err != nil {
+		return err
+	} else if !sentinelExists {
+		// Sentinel table does not exist, we can proceed with cutover
+		return nil
+	}
+
+	r.logger.Warnf("cutover deferred while sentinel table %s exists", r.sentinelTable.QuotedName)
+
 	timer := time.NewTimer(sentinelWaitLimit)
 
 	ticker := time.NewTicker(sentinelCheckInterval)
@@ -1017,7 +1039,7 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 				return nil
 			}
 		case lt := <-logticker.C:
-			r.logger.Infof("sentinel table still exists at %s", lt)
+			r.logger.Infof("cutover deferred while sentinel table %s still exists at %s", r.sentinelTable.QuotedName, lt)
 		case <-timer.C:
 			return errors.New("timed out waiting for sentinel table to be dropped")
 		}
