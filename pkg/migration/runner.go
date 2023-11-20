@@ -998,6 +998,8 @@ func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 
 // Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
 func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
+	timer := time.NewTimer(sentinelWaitLimit)
+
 	ticker := time.NewTicker(sentinelCheckInterval)
 	defer ticker.Stop()
 	logticker := time.NewTicker(5 * time.Second)
@@ -1016,7 +1018,7 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 			}
 		case lt := <-logticker.C:
 			r.logger.Infof("sentinel table still exists at %s", lt)
-		case <-time.After(sentinelWaitLimit):
+		case <-timer.C:
 			return errors.New("timed out waiting for sentinel table to be dropped")
 		}
 	}
