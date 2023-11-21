@@ -519,10 +519,6 @@ func (r *Runner) dropCheckpoint(ctx context.Context) error {
 	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.checkpointTable.SchemaName, r.checkpointTable.TableName)
 }
 
-func (r *Runner) dropSentinel(ctx context.Context) error {
-	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.checkpointTable.SchemaName, r.sentinelTable.TableName)
-}
-
 func (r *Runner) createNewTable(ctx context.Context) error {
 	newName := fmt.Sprintf("_%s_new", r.table.TableName)
 	if len(newName) > 64 {
@@ -705,11 +701,6 @@ func (r *Runner) cleanup(ctx context.Context) error {
 	}
 	if r.checkpointTable != nil {
 		if err := r.dropCheckpoint(ctx); err != nil {
-			return err
-		}
-	}
-	if r.sentinelTable != nil {
-		if err := r.dropSentinel(ctx); err != nil {
 			return err
 		}
 	}
