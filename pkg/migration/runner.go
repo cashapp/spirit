@@ -209,7 +209,6 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// Run post-setup checks
 	if err := r.runChecks(ctx, check.ScopePostSetup); err != nil {
 		return err
-
 	}
 
 	go r.dumpStatus(ctx)                 // start periodically writing status
@@ -425,8 +424,8 @@ func (r *Runner) setup(ctx context.Context) error {
 		// The sentinelTable is "registered" separately from creating it.
 		// This helps to support the case where a user manually creates
 		// the sentinel table after a migration is started.
-		r.registerSentinelTable(ctx)
-		if r.migration.DeferCutOver == true {
+		r.registerSentinelTable()
+		if r.migration.DeferCutOver {
 			if err := r.createSentinelTable(ctx); err != nil {
 				return err
 			}
@@ -674,14 +673,14 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 // registerSentinelTable sets the sentinelTable object. This is done separately
 // from creating the sentinelTable to support the case where an operator creates
 // the sentinel table manually after starting a migration.
-func (r *Runner) registerSentinelTable(ctx context.Context) {
+func (r *Runner) registerSentinelTable() {
 	sentinelName := fmt.Sprintf("_%s_sentinel", r.table.TableName)
 	r.sentinelTable = table.NewTableInfo(r.db, r.table.SchemaName, sentinelName)
 }
 
 func (r *Runner) createSentinelTable(ctx context.Context) error {
 	if r.sentinelTable == nil {
-		r.registerSentinelTable(ctx)
+		r.registerSentinelTable()
 	}
 	var stmt string
 	stmt = "DROP TABLE IF EXISTS %n.%n"
@@ -994,7 +993,7 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 
 func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 	if r.sentinelTable == nil {
-		r.registerSentinelTable(ctx)
+		r.registerSentinelTable()
 	}
 	sql := "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
 	var sentinelTableExists int
@@ -1007,7 +1006,6 @@ func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 
 // Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
 func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
-
 	if sentinelExists, err := r.sentinelTableExists(ctx); err != nil {
 		return err
 	} else if !sentinelExists {
