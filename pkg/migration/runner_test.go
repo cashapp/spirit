@@ -2296,13 +2296,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 		err = db.QueryRow(sql).Scan(&rowCount)
 		assert.NoError(t, err)
 		if rowCount > 0 {
-			// wait for a row to be inserted into the sentinel table
-			sql = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, sentinelTableName)
-			err = db.QueryRow(sql).Scan(&rowCount)
-			assert.NoError(t, err)
-			if rowCount > 0 {
-				break
-			}
+			break
 		}
 	}
 	assert.NoError(t, err)
