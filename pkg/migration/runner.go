@@ -1018,7 +1018,7 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 		return nil
 	}
 
-	r.logger.Warnf("cutover deferred while sentinel table %s exists", r.sentinelTable.QuotedName)
+	r.logger.Warnf("cutover deferred while sentinel table %s exists; will exit after %s", r.sentinelTable.QuotedName, sentinelWaitLimit)
 
 	timer := time.NewTimer(sentinelWaitLimit)
 

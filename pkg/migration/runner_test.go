@@ -2208,12 +2208,11 @@ func TestDeferCutOver(t *testing.T) {
 	newName := fmt.Sprintf("_%s_new", tableName)
 
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
-	table := fmt.Sprintf(`CREATE TABLE %s (
-		pk int UNSIGNED NOT NULL,
-		PRIMARY KEY(pk)
-	)`, tableName)
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
 
 	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -2250,12 +2249,11 @@ func TestDeferCutOverE2E(t *testing.T) {
 
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, sentinelTableName))
-	table := fmt.Sprintf(`CREATE TABLE %s (
-		pk int UNSIGNED NOT NULL,
-		PRIMARY KEY(pk)
-	)`, tableName)
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
 
 	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)

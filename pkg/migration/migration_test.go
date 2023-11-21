@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 	checkpointDumpInterval = 100 * time.Millisecond
 	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
 	sentinelCheckInterval = 100 * time.Millisecond
-	sentinelWaitLimit = 5 * time.Second
+	sentinelWaitLimit = 10 * time.Second
 	os.Exit(m.Run())
 }
 
