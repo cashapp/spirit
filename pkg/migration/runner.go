@@ -45,7 +45,7 @@ var (
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 30 * time.Second
 	sentinelCheckInterval   = 1 * time.Second
-	sentinelWaitLimit       = 1 * time.Hour
+	sentinelWaitLimit       = 48 * time.Hour
 )
 
 func (s migrationState) String() string {
@@ -997,7 +997,7 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 
 func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 	if r.sentinelTable == nil {
-		return false, errors.New("sentinel table not registered")
+		r.registerSentinelTable(ctx)
 	}
 	sql := "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
 	var sentinelTableExists int
@@ -1024,7 +1024,7 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 
 	ticker := time.NewTicker(sentinelCheckInterval)
 	defer ticker.Stop()
-	logticker := time.NewTicker(5 * time.Second)
+	logticker := time.NewTicker(10 * sentinelCheckInterval)
 	defer logticker.Stop()
 	for {
 		select {

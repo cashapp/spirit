@@ -2202,3 +2202,111 @@ func TestDropAfterCutover(t *testing.T) {
 	assert.Equal(t, tableCount, 0)
 	assert.NoError(t, m.Close())
 }
+
+func TestDeferCutOver(t *testing.T) {
+	tableName := `deferred_cutover`
+	newName := fmt.Sprintf("_%s_new", tableName)
+
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	testutils.RunSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                "deferred_cutover",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, newName)
+	var tableCount int
+	err = m.db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 1)
+	assert.NoError(t, m.Close())
+}
+func TestDeferCutOverE2E(t *testing.T) {
+	c := make(chan error)
+	tableName := `deferred_cutover_e2e`
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	oldName := fmt.Sprintf("_%s_old", tableName)
+
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, sentinelTableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		pk int UNSIGNED NOT NULL,
+		PRIMARY KEY(pk)
+	)`, tableName)
+
+	testutils.RunSQL(t, table)
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              1,
+		Table:                "deferred_cutover_e2e",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	go func() {
+		err = m.Run(context.Background())
+		assert.NoError(t, err)
+		c <- err
+	}()
+
+	// wait until the sentinel table exists
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		sql := fmt.Sprintf(
+			`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+			WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, sentinelTableName)
+		err = db.QueryRow(sql).Scan(&rowCount)
+		if err != nil {
+			continue // sentinel table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	assert.NoError(t, err)
+
+	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	assert.NoError(t, err)
+
+	<-c // wait for the migration to finish
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 0)
+	assert.NoError(t, m.Close())
+}
