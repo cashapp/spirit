@@ -83,7 +83,6 @@ type Runner struct {
 	table           *table.TableInfo
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
-	sentinelTable   *table.TableInfo
 
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
@@ -234,7 +233,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// manually after the migration started.
 	r.sentinelWaitStartTime = time.Now()
 	r.setCurrentState(stateWaitingOnSentinelTable)
-	if err := r.waitOnSentinel(ctx); err != nil {
+	if err := r.waitOnSentinelTable(ctx); err != nil {
 		return err
 	}
 
@@ -411,14 +410,6 @@ func (r *Runner) setup(ctx context.Context) error {
 	if err := r.dropOldTable(ctx); err != nil {
 		return err
 	}
-
-	// The sentinelTable is "registered" separately from creating it.
-	// This helps to support the case where a user manually creates
-	// the sentinel table after a migration is started. This is done
-	// here, before resuming from checkpoint, to avoid a race where
-	// a resumed migration already waiting on the sentinel table does
-	// not yet have the name registered.
-	r.registerSentinelTable()
 
 	// First attempt to resume from a checkpoint.
 	// It's OK if it fails, it just means it's a fresh migration.
@@ -680,29 +671,15 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	return nil
 }
 
-// registerSentinelTable sets the sentinelTable object. This is done separately
-// from creating the sentinelTable to support the case where an operator creates
-// the sentinel table manually after starting a migration.
-func (r *Runner) registerSentinelTable() {
-	sentinelName := fmt.Sprintf("_%s_sentinel", r.table.TableName)
-	r.sentinelTable = table.NewTableInfo(r.db, r.table.SchemaName, sentinelName)
+func (r *Runner) sentinelTableName() string {
+	return fmt.Sprintf("_%s_sentinel", r.table.TableName)
 }
 
 func (r *Runner) createSentinelTable(ctx context.Context) error {
-	if r.sentinelTable == nil {
-		r.registerSentinelTable()
-	}
-	var stmt string
-	stmt = "DROP TABLE IF EXISTS %n.%n"
-	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, r.sentinelTableName()); err != nil {
 		return err
 	}
-	stmt = "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, alter_statement TEXT)"
-	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
-		return err
-	}
-	stmt = "INSERT INTO %n.%n (alter_statement) VALUES (%?)"
-	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName, r.migration.Alter); err != nil {
+	if err := dbconn.Exec(ctx, r.db, "CREATE TABLE %n.%n (id int NOT NULL PRIMARY KEY)", r.table.SchemaName, r.sentinelTableName()); err != nil {
 		return err
 	}
 	return nil
@@ -994,12 +971,14 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 				)
 				r.checkerLock.Unlock()
 			case stateWaitingOnSentinelTable:
-				r.logger.Infof("migration status: state=%s sentinel-table=%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s",
+				r.logger.Infof("migration status: state=%s sentinel-table=%s.%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s conns-in-use=%d",
 					r.getCurrentState().String(),
-					r.sentinelTable.QuotedName,
+					r.table.SchemaName,
+					r.sentinelTableName(),
 					time.Since(r.startTime).Round(time.Second),
 					time.Since(r.sentinelWaitStartTime).Round(time.Second),
 					sentinelWaitLimit,
+					r.db.Stats().InUse,
 				)
 			default:
 				// For the linter:
@@ -1010,12 +989,9 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 }
 
 func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
-	if r.sentinelTable == nil {
-		r.registerSentinelTable()
-	}
 	sql := "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
 	var sentinelTableExists int
-	err := r.db.QueryRowContext(ctx, sql, r.sentinelTable.SchemaName, r.sentinelTable.TableName).Scan(&sentinelTableExists)
+	err := r.db.QueryRowContext(ctx, sql, r.table.SchemaName, r.sentinelTableName()).Scan(&sentinelTableExists)
 	if err != nil {
 		return false, err
 	}
@@ -1023,7 +999,7 @@ func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 }
 
 // Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
-func (r *Runner) waitOnSentinel(ctx context.Context) error {
+func (r *Runner) waitOnSentinelTable(ctx context.Context) error {
 	if sentinelExists, err := r.sentinelTableExists(ctx); err != nil {
 		return err
 	} else if !sentinelExists {
@@ -1031,7 +1007,7 @@ func (r *Runner) waitOnSentinel(ctx context.Context) error {
 		return nil
 	}
 
-	r.logger.Warnf("cutover deferred while sentinel table %s exists; will wait %s", r.sentinelTable.QuotedName, sentinelWaitLimit)
+	r.logger.Warnf("cutover deferred while sentinel table %s.%s exists; will wait %s", r.table.SchemaName, r.sentinelTableName(), sentinelWaitLimit)
 
 	timer := time.NewTimer(sentinelWaitLimit)
 
