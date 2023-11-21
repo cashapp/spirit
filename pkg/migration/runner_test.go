@@ -2206,8 +2206,14 @@ func TestDropAfterCutover(t *testing.T) {
 func TestDeferCutOver(t *testing.T) {
 	tableName := `deferred_cutover`
 	newName := fmt.Sprintf("_%s_new", tableName)
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
+
 	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
 
 	testutils.RunSQL(t, table)
@@ -2244,11 +2250,14 @@ func TestDeferCutOver(t *testing.T) {
 func TestDeferCutOverE2E(t *testing.T) {
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
-	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
 	oldName := fmt.Sprintf("_%s_old", tableName)
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, sentinelTableName))
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
 
 	testutils.RunSQL(t, table)
@@ -2285,11 +2294,15 @@ func TestDeferCutOverE2E(t *testing.T) {
 			`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
 			WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, sentinelTableName)
 		err = db.QueryRow(sql).Scan(&rowCount)
-		if err != nil {
-			continue // sentinel table does not exist yet
-		}
+		assert.NoError(t, err)
 		if rowCount > 0 {
-			break
+			// wait for a row to be inserted into the sentinel table
+			sql = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, sentinelTableName)
+			err = db.QueryRow(sql).Scan(&rowCount)
+			assert.NoError(t, err)
+			if rowCount > 0 {
+				break
+			}
 		}
 	}
 	assert.NoError(t, err)
@@ -2297,7 +2310,8 @@ func TestDeferCutOverE2E(t *testing.T) {
 	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
 	assert.NoError(t, err)
 
-	<-c // wait for the migration to finish
+	err = <-c // wait for the migration to finish
+	assert.NoError(t, err)
 
 	sql := fmt.Sprintf(
 		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
