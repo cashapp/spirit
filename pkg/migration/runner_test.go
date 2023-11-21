@@ -2270,7 +2270,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	go func() {
-		err = m.Run(context.Background())
+		err := m.Run(context.Background())
 		assert.NoError(t, err)
 		c <- err
 	}()
