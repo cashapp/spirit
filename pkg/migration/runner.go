@@ -683,11 +683,17 @@ func (r *Runner) createSentinelTable(ctx context.Context) error {
 	if r.sentinelTable == nil {
 		r.registerSentinelTable(ctx)
 	}
-	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+	var stmt string
+	stmt = "DROP TABLE IF EXISTS %n.%n"
+	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
 		return err
 	}
-	createStmt := "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, alter_statement TEXT)"
-	if err := dbconn.Exec(ctx, r.db, createStmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+	stmt = "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, alter_statement TEXT)"
+	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName); err != nil {
+		return err
+	}
+	stmt = "INSERT INTO %n.%n (alter_statement) VALUES (%?)"
+	if err := dbconn.Exec(ctx, r.db, stmt, r.sentinelTable.SchemaName, r.sentinelTable.TableName, r.migration.Alter); err != nil {
 		return err
 	}
 	return nil
@@ -1009,7 +1015,7 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 		return nil
 	}
 
-	r.logger.Warnf("cutover deferred while sentinel table %s exists; will exit after %s", r.sentinelTable.QuotedName, sentinelWaitLimit)
+	r.logger.Warnf("cutover deferred while sentinel table %s exists; will wait %s", r.sentinelTable.QuotedName, sentinelWaitLimit)
 
 	timer := time.NewTimer(sentinelWaitLimit)
 
