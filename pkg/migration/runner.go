@@ -34,6 +34,7 @@ const (
 	stateAnalyzeTable
 	stateChecksum
 	statePostChecksum // second mass apply
+	stateWaitingOnSentinelTable
 	stateCutOver
 	stateClose
 	stateErrCleanup
@@ -62,6 +63,8 @@ func (s migrationState) String() string {
 		return "checksum"
 	case statePostChecksum:
 		return "postChecksum"
+	case stateWaitingOnSentinelTable:
+		return "waitingOnSentinelTable"
 	case stateCutOver:
 		return "cutOver"
 	case stateClose:
@@ -90,7 +93,8 @@ type Runner struct {
 	checkerLock  sync.Mutex
 
 	// Track some key statistics.
-	startTime time.Time
+	startTime             time.Time
+	sentinelWaitStartTime time.Time
 
 	// Used by the test-suite and some post-migration output.
 	// Indicates if certain optimizations applied.
@@ -222,13 +226,15 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 	r.logger.Info("copy rows complete")
 
-	// r.handleDeferredCutOver may return an error if there is
+	// r.waitOnSentinel may return an error if there is
 	// some unexpected problem checking for the existence of
 	// the sentinel table OR if sentinelWaitLimit is exceeded.
 	// This function is invoked even if DeferCutOver is false
 	// because it's possible that the sentinel table was created
 	// manually after the migration started.
-	if err := r.handleDeferredCutOver(ctx); err != nil {
+	r.sentinelWaitStartTime = time.Now()
+	r.setCurrentState(stateWaitingOnSentinelTable)
+	if err := r.waitOnSentinel(ctx); err != nil {
 		return err
 	}
 
@@ -406,6 +412,14 @@ func (r *Runner) setup(ctx context.Context) error {
 		return err
 	}
 
+	// The sentinelTable is "registered" separately from creating it.
+	// This helps to support the case where a user manually creates
+	// the sentinel table after a migration is started. This is done
+	// here, before resuming from checkpoint, to avoid a race where
+	// a resumed migration already waiting on the sentinel table does
+	// not yet have the name registered.
+	r.registerSentinelTable()
+
 	// First attempt to resume from a checkpoint.
 	// It's OK if it fails, it just means it's a fresh migration.
 	if err := r.resumeFromCheckpoint(ctx); err != nil {
@@ -421,10 +435,6 @@ func (r *Runner) setup(ctx context.Context) error {
 			return err
 		}
 
-		// The sentinelTable is "registered" separately from creating it.
-		// This helps to support the case where a user manually creates
-		// the sentinel table after a migration is started.
-		r.registerSentinelTable()
 		if r.migration.DeferCutOver {
 			if err := r.createSentinelTable(ctx); err != nil {
 				return err
@@ -503,7 +513,7 @@ func (r *Runner) tableChangeNotification() {
 	}
 	r.setCurrentState(stateErrCleanup)
 	// Write this to the logger, so it can be captured by the initiator.
-	r.logger.Error("table definition changed during migration")
+	r.logger.Errorf("table definition of %s changed during migration", r.table.QuotedName)
 	// Invalidate the checkpoint, so we don't try to resume.
 	// If we don't do this, the migration will permanently be blocked from proceeding.
 	// Letting it start again is the better choice.
@@ -511,7 +521,7 @@ func (r *Runner) tableChangeNotification() {
 		r.logger.Errorf("could not remove checkpoint. err: %v", err)
 	}
 	// We can't do anything about it, just panic
-	panic("table definition changed during migration")
+	panic(fmt.Sprintf("table definition of %s changed during migration", r.table.QuotedName))
 }
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
@@ -983,6 +993,14 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					r.db.Stats().InUse,
 				)
 				r.checkerLock.Unlock()
+			case stateWaitingOnSentinelTable:
+				r.logger.Infof("migration status: state=%s sentinel-table=%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s",
+					r.getCurrentState().String(),
+					r.sentinelTable.QuotedName,
+					time.Since(r.startTime).Round(time.Second),
+					time.Since(r.sentinelWaitStartTime).Round(time.Second),
+					sentinelWaitLimit,
+				)
 			default:
 				// For the linter:
 				// Status for all other states
@@ -1005,7 +1023,7 @@ func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
 }
 
 // Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
-func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
+func (r *Runner) waitOnSentinel(ctx context.Context) error {
 	if sentinelExists, err := r.sentinelTableExists(ctx); err != nil {
 		return err
 	} else if !sentinelExists {
@@ -1019,8 +1037,6 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 
 	ticker := time.NewTicker(sentinelCheckInterval)
 	defer ticker.Stop()
-	logticker := time.NewTicker(10 * sentinelCheckInterval)
-	defer logticker.Stop()
 	for {
 		select {
 		case t := <-ticker.C:
@@ -1033,8 +1049,6 @@ func (r *Runner) handleDeferredCutOver(ctx context.Context) error {
 				r.logger.Infof("sentinel table dropped at %s", t)
 				return nil
 			}
-		case lt := <-logticker.C:
-			r.logger.Infof("cutover deferred while sentinel table %s still exists at %s", r.sentinelTable.QuotedName, lt)
 		case <-timer.C:
 			return errors.New("timed out waiting for sentinel table to be dropped")
 		}
