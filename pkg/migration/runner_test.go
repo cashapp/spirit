@@ -2249,72 +2249,6 @@ func TestDeferCutOver(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
-func TestDeferCutOverE2EStage(t *testing.T) {
-	// This is very similar to TestDeferCutOverE2E but it checks that the migration
-	// stage has changed rather than that the sentinel table has been created.
-	c := make(chan error)
-	tableName := `deferred_cutover_e2e_stage`
-	oldName := fmt.Sprintf("_%s_old", tableName)
-	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
-	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
-
-	dropStmt := `DROP TABLE IF EXISTS %s`
-	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
-	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
-	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
-	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
-
-	testutils.RunSQL(t, table)
-	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
-	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
-
-	cfg, err := mysql.ParseDSN(testutils.DSN())
-	assert.NoError(t, err)
-	m, err := NewRunner(&Migration{
-		Host:                 cfg.Addr,
-		Username:             cfg.User,
-		Password:             cfg.Passwd,
-		Database:             cfg.DBName,
-		Threads:              1,
-		Table:                "deferred_cutover_e2e_stage",
-		Alter:                "ENGINE=InnoDB",
-		SkipDropAfterCutover: false,
-		DeferCutOver:         true,
-	})
-	assert.NoError(t, err)
-	go func() {
-		err := m.Run(context.Background())
-		assert.NoError(t, err)
-		c <- err
-	}()
-
-	// wait until the sentinel table exists
-	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
-	assert.NoError(t, err)
-	defer db.Close()
-	for {
-		if m.getCurrentState() == stateWaitingOnSentinelTable {
-			break
-		}
-	}
-	assert.NoError(t, err)
-
-	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
-	assert.NoError(t, err)
-
-	err = <-c // wait for the migration to finish
-	assert.NoError(t, err)
-
-	sql := fmt.Sprintf(
-		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
-		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
-	var tableCount int
-	err = db.QueryRow(sql).Scan(&tableCount)
-	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
-	assert.NoError(t, m.Close())
-}
-
 func TestDeferCutOverE2E(t *testing.T) {
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
@@ -2385,12 +2319,95 @@ func TestDeferCutOverE2E(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
+func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
+	// This is very similar to TestDeferCutOverE2E but it checks that the migration
+	// stage has changed rather than that the sentinel table has been created,
+	// and it also checks that the binlog position has advanced.
+	statusInterval = 500 * time.Millisecond
+	sentinelWaitLimit = 1 * time.Minute
+
+	c := make(chan error)
+	tableName := `deferred_cutover_e2e_stage`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
+
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
+
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              1,
+		Table:                "deferred_cutover_e2e_stage",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	go func() {
+		err := m.Run(context.Background())
+		assert.NoError(t, err)
+		c <- err
+	}()
+
+	// wait until the sentinel table exists
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		if m.getCurrentState() == stateWaitingOnSentinelTable {
+			break
+		}
+	}
+	assert.NoError(t, err)
+
+	binlogPos := m.replClient.GetBinlogApplyPosition()
+	for i := 0; i < 4; i++ {
+		testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
+		time.Sleep(1 * time.Second)
+		m.replClient.Flush(context.Background())
+		newBinlogPos := m.replClient.GetBinlogApplyPosition()
+		assert.Equal(t, newBinlogPos.Compare(binlogPos), 1)
+		binlogPos = newBinlogPos
+	}
+
+	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	assert.NoError(t, err)
+
+	err = <-c // wait for the migration to finish
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 0)
+	assert.NoError(t, m.Close())
+}
+
 func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 	// This test is similar to TestResumeFromCheckpointE2E but it adds a sentinel table
 	// created after the migration begins and is interrupted.
 	// The migration itself runs with DeferCutOver=false
 	// so we test to make sure a sentinel table created manually by the operator
 	// blocks cutover.
+	sentinelWaitLimit = 10 * time.Second
+	statusInterval = 500 * time.Millisecond
+
 	tableName := `resume_from_checkpoint_e2e_with_sentinel`
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s, _%s_old, _%s_chkpnt, _%s_sentinel`, tableName, tableName, tableName, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
