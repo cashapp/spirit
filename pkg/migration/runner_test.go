@@ -2303,8 +2303,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	}
 	assert.NoError(t, err)
 
-	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
-	assert.NoError(t, err)
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2383,8 +2382,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 		binlogPos = newBinlogPos
 	}
 
-	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
-	assert.NoError(t, err)
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
