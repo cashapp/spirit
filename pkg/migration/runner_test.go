@@ -280,6 +280,7 @@ func TestMigrationStateString(t *testing.T) {
 	assert.Equal(t, "applyChangeset", stateApplyChangeset.String())
 	assert.Equal(t, "checksum", stateChecksum.String())
 	assert.Equal(t, "cutOver", stateCutOver.String())
+	assert.Equal(t, "waitingOnSentinelTable", stateWaitingOnSentinelTable.String())
 	assert.Equal(t, "errCleanup", stateErrCleanup.String())
 	assert.Equal(t, "analyzeTable", stateAnalyzeTable.String())
 	assert.Equal(t, "close", stateClose.String())
@@ -2247,6 +2248,73 @@ func TestDeferCutOver(t *testing.T) {
 	assert.Equal(t, tableCount, 1)
 	assert.NoError(t, m.Close())
 }
+
+func TestDeferCutOverE2EStage(t *testing.T) {
+	// This is very similar to TestDeferCutOverE2E but it checks that the migration
+	// stage has changed rather than that the sentinel table has been created.
+	c := make(chan error)
+	tableName := `deferred_cutover_e2e_stage`
+	oldName := fmt.Sprintf("_%s_old", tableName)
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
+
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
+
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              1,
+		Table:                "deferred_cutover_e2e_stage",
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	go func() {
+		err := m.Run(context.Background())
+		assert.NoError(t, err)
+		c <- err
+	}()
+
+	// wait until the sentinel table exists
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		if m.getCurrentState() == stateWaitingOnSentinelTable {
+			break
+		}
+	}
+	assert.NoError(t, err)
+
+	_, err = db.Exec(fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	assert.NoError(t, err)
+
+	err = <-c // wait for the migration to finish
+	assert.NoError(t, err)
+
+	sql := fmt.Sprintf(
+		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+	var tableCount int
+	err = db.QueryRow(sql).Scan(&tableCount)
+	assert.NoError(t, err)
+	assert.Equal(t, tableCount, 0)
+	assert.NoError(t, m.Close())
+}
+
 func TestDeferCutOverE2E(t *testing.T) {
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
@@ -2314,5 +2382,101 @@ func TestDeferCutOverE2E(t *testing.T) {
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
 	assert.Equal(t, tableCount, 0)
+	assert.NoError(t, m.Close())
+}
+
+func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
+	// This test is similar to TestResumeFromCheckpointE2E but it adds a sentinel table
+	// created after the migration begins and is interrupted.
+	// The migration itself runs with DeferCutOver=false
+	// so we test to make sure a sentinel table created manually by the operator
+	// blocks cutover.
+	tableName := `resume_from_checkpoint_e2e_with_sentinel`
+	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s, _%s_old, _%s_chkpnt, _%s_sentinel`, tableName, tableName, tableName, tableName))
+	table := fmt.Sprintf(`CREATE TABLE %s (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`, tableName)
+	testutils.RunSQL(t, table)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	// Insert dummy data.
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM dual", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM %s a, %s b, %s c LIMIT 100000", tableName, tableName, tableName, tableName))
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM %s a, %s b, %s c LIMIT 100000", tableName, tableName, tableName, tableName))
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM %s a, %s b, %s c LIMIT 100000", tableName, tableName, tableName, tableName))
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM %s a, %s b, %s c LIMIT 100000", tableName, tableName, tableName, tableName))
+	alterSQL := "ADD INDEX(pad);"
+	// use as slow as possible here: we want the copy to be still running
+	// when we kill it once we have a checkpoint saved.
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 1
+	migration.Checksum = true
+	migration.Table = tableName
+	migration.Alter = alterSQL
+	migration.TargetChunkTime = 100 * time.Millisecond
+	migration.DeferCutOver = false
+
+	runner, err := NewRunner(migration)
+	assert.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		err := runner.Run(ctx)
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+	}()
+
+	// wait until a checkpoint is saved (which means copy is in progress)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		err = db.QueryRow(fmt.Sprintf(`SELECT count(*) from _%s_chkpnt`, tableName)).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	// Between cancel and Close() every resource is freed.
+	cancel()
+	assert.NoError(t, runner.Close())
+
+	// Manually create the sentinel table.
+	testutils.RunSQL(t, fmt.Sprintf("CREATE TABLE _%s_sentinel (id int unsigned primary key)", tableName))
+
+	// Insert some more dummy data
+	testutils.RunSQL(t, fmt.Sprintf("INSERT INTO %s (pad) SELECT RANDOM_BYTES(1024) FROM %s LIMIT 1000", tableName, tableName))
+	// Start a new migration with the same parameters.
+	// Let it complete.
+	newmigration := &Migration{}
+	newmigration.Host = cfg.Addr
+	newmigration.Username = cfg.User
+	newmigration.Password = cfg.Passwd
+	newmigration.Database = cfg.DBName
+	newmigration.Threads = 4
+	newmigration.Checksum = true
+	newmigration.Table = tableName
+	newmigration.Alter = alterSQL
+	newmigration.TargetChunkTime = 5 * time.Second
+	newmigration.DeferCutOver = false
+
+	m, err := NewRunner(newmigration)
+	assert.NoError(t, err)
+	assert.NotNil(t, m)
+
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
+	assert.True(t, m.usedResumeFromCheckpoint)
 	assert.NoError(t, m.Close())
 }
