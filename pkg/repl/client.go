@@ -225,7 +225,11 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	var binlogPos uint32
 	err := c.db.QueryRow("SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
 	if err != nil {
-		return mysql.Position{}, err
+		// try with 4 arguments (MariaDB)
+		err := c.db.QueryRow("SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake) //nolint: execinquery
+		if err != nil {
+			return mysql.Position{}, err
+		}
 	}
 	return mysql.Position{
 		Name: binlogFile,
@@ -267,7 +271,7 @@ func (c *Client) Run() (err error) {
 	if c.binlogPosSynced.Name == "" {
 		c.binlogPosSynced, err = c.getCurrentBinlogPosition()
 		if err != nil {
-			return errors.New("failed to get binlog position, check binary is enabled")
+			return fmt.Errorf("failed to get binlog position, check binary is enabled: %w", err)
 		}
 	} else if c.binlogPositionIsImpossible() {
 		// Canal needs to be called as a go routine, so before we do check that the binary log

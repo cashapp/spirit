@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/hashicorp/go-version"
 	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
@@ -55,13 +56,41 @@ func UnhashKey(key string) string {
 func ErrInErr(_ error) {
 }
 
-// IsMySQL8 returns true if we can positively identify this as mysql 8
-func IsMySQL8(db *sql.DB) bool {
-	var version string
-	if err := db.QueryRow("select substr(version(), 1, 1)").Scan(&version); err != nil {
+func IsMariaDB(db *sql.DB) bool {
+	var versionString string
+	if err := db.QueryRow("select version()").Scan(&versionString); err != nil {
 		return false // can't tell
 	}
-	return version == "8"
+	return strings.Contains(versionString, "MariaDB")
+}
+
+// IsMySQL8 returns true if we can positively identify this as mysql 8
+func IsMySQL8(db *sql.DB) bool {
+	var versionString string
+	if err := db.QueryRow("select version()").Scan(&versionString); err != nil {
+		return false // can't tell
+	}
+
+	// remove any part of the string that could be interpreted as a prerelease
+	parsed, err := version.NewVersion(strings.Split(versionString, "-")[0])
+	if err != nil {
+		return false // can't tell
+	}
+
+	// decide on constraint. examples: 8.0.27, 10.5.23-MariaDB-log
+	// 8.0.13 allows rename tables while locked
+	constraint := ">= 8.0.13"
+	if strings.Contains(versionString, "MariaDB") {
+		// MariaDB 10.4 and up are based on MySQL 8.0
+		constraint = ">= 10.4"
+	}
+
+	constraints, err := version.NewConstraint(constraint)
+	if err != nil {
+		return false // can't tell
+	}
+
+	return constraints.Check(parsed)
 }
 
 func StripPort(hostname string) string {

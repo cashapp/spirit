@@ -115,6 +115,11 @@ func (c *CutOver) Run(ctx context.Context) error {
 // As of MySQL 8.0.13, you can rename tables locked with a LOCK TABLES statement
 // https://dev.mysql.com/worklog/task/?id=9826
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
+	// MariaDB can rename a locked table via ALTER
+	// https://jira.mariadb.org/browse/MDEV-30814
+	// https://stackoverflow.com/questions/36202298/renaming-a-locked-table
+	useAlter := utils.IsMariaDB(c.db)
+
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
@@ -133,11 +138,22 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	}
 	oldName := fmt.Sprintf("_%s_old", c.table.TableName)
 	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
-	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
-		c.table.QuotedName, oldQuotedName,
-		c.newTable.QuotedName, c.table.QuotedName,
-	)
-	return serverLock.ExecUnderLock(ctx, []string{renameStatement})
+	var renameStatements []string
+	if useAlter {
+		renameStatements = []string{
+			fmt.Sprintf("ALTER TABLE %s RENAME TO %s",
+				c.table.QuotedName, oldQuotedName),
+			fmt.Sprintf("ALTER TABLE %s RENAME TO %s",
+				c.newTable.QuotedName, c.table.QuotedName),
+		}
+	} else {
+		renameStatements = []string{
+			fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
+				c.table.QuotedName, oldQuotedName,
+				c.newTable.QuotedName, c.table.QuotedName,
+			)}
+	}
+	return serverLock.ExecUnderLock(ctx, renameStatements)
 }
 
 // algorithmGhost is the gh-ost cutover algorithm
