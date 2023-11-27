@@ -30,11 +30,11 @@ type migrationState int32
 const (
 	stateInitial migrationState = iota
 	stateCopyRows
+	stateWaitingOnSentinelTable
 	stateApplyChangeset // first mass apply
 	stateAnalyzeTable
 	stateChecksum
 	statePostChecksum // second mass apply
-	stateWaitingOnSentinelTable
 	stateCutOver
 	stateClose
 	stateErrCleanup
@@ -55,6 +55,8 @@ func (s migrationState) String() string {
 		return "initial"
 	case stateCopyRows:
 		return "copyRows"
+	case stateWaitingOnSentinelTable:
+		return "waitingOnSentinelTable"
 	case stateApplyChangeset:
 		return "applyChangeset"
 	case stateAnalyzeTable:
@@ -63,8 +65,6 @@ func (s migrationState) String() string {
 		return "checksum"
 	case statePostChecksum:
 		return "postChecksum"
-	case stateWaitingOnSentinelTable:
-		return "waitingOnSentinelTable"
 	case stateCutOver:
 		return "cutOver"
 	case stateClose:
@@ -946,6 +946,16 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					r.copier.Throttler.IsThrottled(),
 					r.db.Stats().InUse,
 				)
+			case stateWaitingOnSentinelTable:
+				r.logger.Infof("migration status: state=%s sentinel-table=%s.%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s conns-in-use=%d",
+					r.getCurrentState().String(),
+					r.table.SchemaName,
+					r.sentinelTableName(),
+					time.Since(r.startTime).Round(time.Second),
+					time.Since(r.sentinelWaitStartTime).Round(time.Second),
+					sentinelWaitLimit,
+					r.db.Stats().InUse,
+				)
 			case stateApplyChangeset, statePostChecksum:
 				// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
 				// proceeding to the checksum and then the final cutover.
@@ -970,16 +980,6 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					r.db.Stats().InUse,
 				)
 				r.checkerLock.Unlock()
-			case stateWaitingOnSentinelTable:
-				r.logger.Infof("migration status: state=%s sentinel-table=%s.%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s conns-in-use=%d",
-					r.getCurrentState().String(),
-					r.table.SchemaName,
-					r.sentinelTableName(),
-					time.Since(r.startTime).Round(time.Second),
-					time.Since(r.sentinelWaitStartTime).Round(time.Second),
-					sentinelWaitLimit,
-					r.db.Stats().InUse,
-				)
 			default:
 				// For the linter:
 				// Status for all other states
