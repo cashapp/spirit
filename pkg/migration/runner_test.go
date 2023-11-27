@@ -2167,6 +2167,8 @@ func TestSkipDropAfterCutover(t *testing.T) {
 }
 
 func TestDropAfterCutover(t *testing.T) {
+	sentinelWaitLimit = 10 * time.Second
+
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
@@ -2205,6 +2207,8 @@ func TestDropAfterCutover(t *testing.T) {
 }
 
 func TestDeferCutOver(t *testing.T) {
+	sentinelWaitLimit = 10 * time.Second
+
 	tableName := `deferred_cutover`
 	newName := fmt.Sprintf("_%s_new", tableName)
 	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
@@ -2250,6 +2254,8 @@ func TestDeferCutOver(t *testing.T) {
 }
 
 func TestDeferCutOverE2E(t *testing.T) {
+	sentinelWaitLimit = 10 * time.Second
+
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
 	oldName := fmt.Sprintf("_%s_old", tableName)
