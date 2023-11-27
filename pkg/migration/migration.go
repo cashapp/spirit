@@ -24,7 +24,7 @@ type Migration struct {
 	LockWaitTimeout      time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
 	SkipPreRunChecks     bool          `name:"i-understand-mysql57-is-not-supported" hidden:"" default:"false"`
 	SkipDropAfterCutover bool          `name:"skip-drop-after-cutover" help:"Keep old table after completing cutover" optional:"" default:"false"`
-	DeferCutOver         bool          `name:"defer-cutover" help:"Defer cutover until sentinel table is dropped" optional:"" default:"false"`
+	DeferCutOver         bool          `name:"defer-cutover" help:"Defer cutover (and checksum) until sentinel table is dropped" optional:"" default:"false"`
 }
 
 func (m *Migration) Run() error {
