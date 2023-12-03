@@ -153,14 +153,11 @@ func (c *CutOver) algorithmGhost(ctx context.Context) error {
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
-	// These are safety measures to ensure that there are no pending changes.
+	// This is a safety measure to ensure that there are no pending changes.
 	// They are not known to return errors, but we check them anyway in case
 	// a change of logic is introduced.
 	if !c.feed.AllChangesFlushed() {
 		return errors.New("not all changes flushed, final flush might be broken")
-	}
-	if c.feed.GetDeltaLen() > 0 {
-		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
 	}
 	// Start the RENAME TABLE trx. This connection is
 	// described as C20 in the gh-ost docs.
