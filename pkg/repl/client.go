@@ -188,9 +188,11 @@ func (c *Client) SetPos(pos mysql.Position) {
 }
 
 func (c *Client) AllChangesFlushed() bool {
+	if c.GetDeltaLen() > 0 {
+		return false
+	}
 	c.Lock()
 	defer c.Unlock()
-
 	return c.binlogPosInMemory.Compare(c.binlogPosSynced) == 0
 }
 
@@ -552,6 +554,11 @@ func (c *Client) Flush(ctx context.Context) error {
 			break
 		}
 	}
+	// Flush one more time, since after BlockWait()
+	// there might be more changes.
+	if err := c.flush(ctx, false, nil); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -598,9 +605,12 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 }
 
 // BlockWait blocks until the *canal position* has caught up to the current binlog position.
+// This is usually called by Flush() which then ensures the changes are flushed.
+// Calling it directly is usually only used by the test-suite!
 // There is a built-in func in canal to do this, but it calls FLUSH BINARY LOGS,
-// which requires additional permissions. This DOES NOT ensure that this position
-// has been applied to the database.
+// which requires additional permissions.
+// **Caveat** Unless you are calling this from Flush(), calling this DOES NOT ensure that
+// changes have been applied to the database.
 func (c *Client) BlockWait(ctx context.Context) error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {
