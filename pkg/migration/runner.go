@@ -21,8 +21,6 @@ import (
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/throttler"
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/pingcap/tidb/pkg/parser"
-	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/siddontang/go-log/loggers"
 	"github.com/sirupsen/logrus"
 )
@@ -370,9 +368,14 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 		return nil
 	}
 
-	if err := r.safeInplaceAlter(); err != nil {
-		return err
-	} else {
+	// Adding an index is only online-safe to do in Aurora GLOBAL
+	// because replicas do not use the binlog.
+
+	// If the operator has specified that they want to attempt
+	// an inplace add index, we will attempt inplace regardless
+	// of the statement.
+	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
+	if r.migration.AttemptInplaceAddIndex || utils.AlgorithmInplaceConsideredSafe(alterStmt) {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
@@ -384,42 +387,6 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// Return the error, which will be ignored by the caller.
 	// Proceed with regular copy algorithm.
 	return err
-}
-
-func (r *Runner) safeInplaceAlter() error {
-	// INPLACE DDL is not generally safe for online use in MySQL 8.0,
-	// because ADD INDEX can block replicas. Other INPLACE operations
-	// *are* safe, so we parse the ALTER and attempt to use INPLACE
-	// algorithm for any statements that do not add an index.
-
-	// Adding an index is only online-safe to do in Aurora GLOBAL
-	// because replicas do not use the binlog.
-
-	// If the operator has specified that they want to attempt
-	// an inplace add index, we will attempt inplace regardless
-	// of the statement.
-	if r.migration.AttemptInplaceAddIndex {
-		return nil
-	}
-
-	sql := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
-	p := parser.New()
-	stmtNodes, _, err := p.Parse(sql, "", "")
-	if err != nil {
-		return fmt.Errorf("could not parse alter table statement: %s", sql)
-	}
-	stmt := &stmtNodes[0]
-	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
-	if !ok {
-		return errors.New("not a valid alter table statement")
-	}
-	for _, spec := range alterStmt.Specs {
-		if spec.Tp == ast.AlterTableAddConstraint {
-			return fmt.Errorf("alter table statement is not safe for inplace: %s", sql)
-		}
-	}
-	// If we get here, it's safe to attempt inplace.
-	return nil
 }
 
 func (r *Runner) dsn() string {

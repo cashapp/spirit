@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/pingcap/tidb/pkg/parser"
+	"github.com/pingcap/tidb/pkg/parser/ast"
 	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
@@ -69,4 +71,29 @@ func StripPort(hostname string) string {
 		return strings.Split(hostname, ":")[0]
 	}
 	return hostname
+}
+
+func AlgorithmInplaceConsideredSafe(sql string) bool {
+	// INPLACE DDL is not generally safe for online use in MySQL 8.0,
+	// because ADD INDEX can block replicas. Other INPLACE operations
+	// *are* safe, so we parse the ALTER and attempt to use INPLACE
+	// algorithm for any statements that do not add an index.
+
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(sql, "", "")
+	if err != nil {
+		return false
+	}
+	stmt := &stmtNodes[0]
+	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
+	if !ok {
+		return false
+	}
+	for _, spec := range alterStmt.Specs {
+		if spec.Tp == ast.AlterTableAddConstraint {
+			return false
+		}
+	}
+	// If we get here, it's safe to attempt inplace.
+	return true
 }
