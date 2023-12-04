@@ -427,8 +427,22 @@ func TestSetKey(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
+	// Test SetKey with PrimaryKey
 	t1 := NewTableInfo(db, "test", "setkey_t1")
 	assert.NoError(t, t1.SetInfo(context.Background()))
+	chunkerPK := &chunkerComposite{
+		Ti:            t1,
+		ChunkerTarget: 100 * time.Millisecond,
+		logger:        logrus.New(),
+	}
+	err = chunkerPK.SetKey("PRIMARY", "id < 1008")
+	assert.NoError(t, err)
+	assert.NoError(t, chunkerPK.Open())
+
+	_, err = chunkerPK.Next()
+	assert.NoError(t, err)
+	assert.NoError(t, chunkerPK.Close())
+
 	chunker := &chunkerComposite{
 		Ti:            t1,
 		ChunkerTarget: 100 * time.Millisecond,

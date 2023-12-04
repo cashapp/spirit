@@ -267,7 +267,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Try and catch up before we apply a table lock,
 	// since we will need to catch up again with the lock held
 	// and we want to minimize that.
-	if err := c.feed.BlockWait(ctx); err != nil {
+	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
 	// Lock the source table in a trx
@@ -279,13 +279,6 @@ func (c *Checker) Run(ctx context.Context) error {
 	}
 	defer serverLock.Close()
 
-	// To guarantee that Flush() is effective we need to make sure
-	// that the canal routine to read the binlog is not delayed. Otherwise
-	// we could have a scenario where additional changes arrive after flushChangeSet below
-	// That are required for consistency.
-	if err := c.feed.BlockWait(ctx); err != nil {
-		return err
-	}
 	// With the lock held, flush one more time under the lock tables.
 	// Because we know canal is up to date this now guarantees
 	// we have everything in the new table.
@@ -295,8 +288,8 @@ func (c *Checker) Run(ctx context.Context) error {
 
 	// Assert that the change set is empty. This should always
 	// be the case because we are under a lock.
-	if c.feed.GetDeltaLen() > 0 {
-		return errors.New("the changeset is not empty, can not start checksum")
+	if !c.feed.AllChangesFlushed() {
+		return errors.New("not all changes flushed")
 	}
 
 	// Create a set of connections which can be used to checksum

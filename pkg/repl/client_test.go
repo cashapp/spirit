@@ -230,7 +230,7 @@ func TestReplClientOpts(t *testing.T) {
 	// Delete more than 10000 keys so the FLUSH has to run in chunks.
 	testutils.RunSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 49961)
+	assert.Equal(t, 49961, client.GetDeltaLen())
 	// Flush. We could use client.Flush() but for testing purposes lets use
 	// PeriodicFlush()
 	go client.StartPeriodicFlush(context.TODO(), 1*time.Second)
@@ -238,7 +238,7 @@ func TestReplClientOpts(t *testing.T) {
 	client.StopPeriodicFlush()
 	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
 
-	assert.Equal(t, client.GetDeltaLen(), 0)
+	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// The binlog position should have changed.
 	assert.NotEqual(t, startingPos, client.GetBinlogApplyPosition())
