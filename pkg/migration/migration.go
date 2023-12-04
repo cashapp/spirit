@@ -9,21 +9,21 @@ import (
 )
 
 type Migration struct {
-	Host                   string        `name:"host" help:"Hostname" optional:"" default:"127.0.0.1:3306"`
-	Username               string        `name:"username" help:"User" optional:"" default:"msandbox"`
-	Password               string        `name:"password" help:"Password" optional:"" default:"msandbox"`
-	Database               string        `name:"database" help:"Database" optional:"" default:"test"`
-	Table                  string        `name:"table" help:"Table" optional:"" default:"stock"`
-	Alter                  string        `name:"alter" help:"The alter statement to run on the table" optional:"" default:"engine=innodb"`
-	Threads                int           `name:"threads" help:"Number of concurrent threads for copy and checksum tasks" optional:"" default:"4"`
-	TargetChunkTime        time.Duration `name:"target-chunk-time" help:"The target copy time for each chunk" optional:"" default:"500ms"`
-	AttemptInplaceAddIndex bool          `name:"attempt-inplace-add-index" help:"Attempt inplace add index (only safe without replicas or with Aurora Global)" optional:"" default:"false"`
-	Checksum               bool          `name:"checksum" help:"Checksum new table before final cut-over" optional:"" default:"true"`
-	ReplicaDSN             string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
-	ReplicaMaxLag          time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
-	LockWaitTimeout        time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
-	SkipPreRunChecks       bool          `name:"i-understand-mysql57-is-not-supported" hidden:"" default:"false"`
-	SkipDropAfterCutover   bool          `name:"skip-drop-after-cutover" help:"Keep old table after completing cutover" optional:"" default:"false"`
+	Host                 string        `name:"host" help:"Hostname" optional:"" default:"127.0.0.1:3306"`
+	Username             string        `name:"username" help:"User" optional:"" default:"msandbox"`
+	Password             string        `name:"password" help:"Password" optional:"" default:"msandbox"`
+	Database             string        `name:"database" help:"Database" optional:"" default:"test"`
+	Table                string        `name:"table" help:"Table" optional:"" default:"stock"`
+	Alter                string        `name:"alter" help:"The alter statement to run on the table" optional:"" default:"engine=innodb"`
+	Threads              int           `name:"threads" help:"Number of concurrent threads for copy and checksum tasks" optional:"" default:"4"`
+	TargetChunkTime      time.Duration `name:"target-chunk-time" help:"The target copy time for each chunk" optional:"" default:"500ms"`
+	ForceInplace         bool          `name:"force-inplace" help:"Force tttempting to use inplace (only safe without replicas or with Aurora Global)" optional:"" default:"false"`
+	Checksum             bool          `name:"checksum" help:"Checksum new table before final cut-over" optional:"" default:"true"`
+	ReplicaDSN           string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
+	ReplicaMaxLag        time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
+	LockWaitTimeout      time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
+	SkipPreRunChecks     bool          `name:"i-understand-mysql57-is-not-supported" hidden:"" default:"false"`
+	SkipDropAfterCutover bool          `name:"skip-drop-after-cutover" help:"Keep old table after completing cutover" optional:"" default:"false"`
 }
 
 func (m *Migration) Run() error {

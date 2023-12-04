@@ -375,7 +375,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
 	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
-	if r.migration.AttemptInplaceAddIndex || utils.AlgorithmInplaceConsideredSafe(alterStmt) {
+	if r.migration.ForceInplace || utils.AlgorithmInplaceConsideredSafe(alterStmt) {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
