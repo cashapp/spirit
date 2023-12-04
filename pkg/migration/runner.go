@@ -368,9 +368,11 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 		return nil
 	}
 
-	// Adding an index is only online-safe to do in Aurora GLOBAL
-	// because replicas do not use the binlog.
-
+	// Many "inplace" operations (such as adding an index)
+	// are only online-safe to do in Aurora GLOBAL
+	// because replicas do not use the binlog. Some, however,
+	// only modify the table metadata and are safe.
+	//
 	// If the operator has specified that they want to attempt
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.

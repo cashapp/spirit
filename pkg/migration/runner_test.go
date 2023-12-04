@@ -214,14 +214,14 @@ func TestOnline(t *testing.T) {
 	)`
 	testutils.RunSQL(t, table)
 	m, err = NewRunner(&Migration{
-		Host:              cfg.Addr,
-		Username:          cfg.User,
-		Password:          cfg.Passwd,
-		Database:          cfg.DBName,
-		Threads:           16,
-		Table:             "testonline3",
-		Alter:             "ADD INDEX(b)",
-		AttemptInplaceDDL: true,
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline3",
+		Alter:        "ADD INDEX(b)",
+		ForceInplace: true,
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())

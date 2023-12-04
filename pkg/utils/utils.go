@@ -75,9 +75,10 @@ func StripPort(hostname string) string {
 
 func AlgorithmInplaceConsideredSafe(sql string) bool {
 	// INPLACE DDL is not generally safe for online use in MySQL 8.0,
-	// because ADD INDEX can block replicas. Other INPLACE operations
-	// *are* safe, so we parse the ALTER and attempt to use INPLACE
-	// algorithm for any statements that do not add an index.
+	// because ADD INDEX can block replicas. Some INPLACE operations
+	// *are* safe, because they only modify table metadata,
+	// so we parse the ALTER and attempt to use the INPLACE
+	// algorithm for statements that in practice execute instantly.
 
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
@@ -89,11 +90,18 @@ func AlgorithmInplaceConsideredSafe(sql string) bool {
 	if !ok {
 		return false
 	}
+
+	// There can be multiple clauses in a single ALTER TABLE statement.
+	// If all of them are safe, we can attempt to use INPLACE.
+	safeClauses := 0
 	for _, spec := range alterStmt.Specs {
-		if spec.Tp == ast.AlterTableAddConstraint {
-			return false
+		switch spec.Tp {
+		case ast.AlterTableDropIndex,
+			ast.AlterTableRenameIndex:
+			safeClauses++
+		default:
+			continue
 		}
 	}
-	// If we get here, it's safe to attempt inplace.
-	return true
+	return safeClauses == len(alterStmt.Specs)
 }
