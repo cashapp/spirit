@@ -73,13 +73,14 @@ func StripPort(hostname string) string {
 	return hostname
 }
 
+// AlgorithmInplaceConsideredSafe checks to see if all clauses of an ALTER
+// statement are "safe". We consider an operation to be "safe" if it is "In
+// Place" and "Only Modifies Metadata". See
+// https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html
+// for details.
+// INPLACE DDL is not generally safe for online use in MySQL 8.0, because ADD
+// INDEX can block replicas.
 func AlgorithmInplaceConsideredSafe(sql string) error {
-	// INPLACE DDL is not generally safe for online use in MySQL 8.0,
-	// because ADD INDEX can block replicas. Some INPLACE operations
-	// *are* safe, because they only modify table metadata,
-	// so we parse the ALTER and attempt to use the INPLACE
-	// algorithm for statements that in practice execute instantly.
-
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
 	if err != nil {
@@ -105,9 +106,9 @@ func AlgorithmInplaceConsideredSafe(sql string) error {
 	}
 	if unsafeClauses > 0 {
 		if len(alterStmt.Specs) > 1 {
-			return fmt.Errorf("some clause(s) of the ALTER staement are not INPLACE safe (note: combinations of INSTANT and INPLACE operations can *not* currently be detected to be safe; consider executing these as separate ALTER statements)")
+			return fmt.Errorf("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check.")
 		}
-		return fmt.Errorf("ALTER TABLE statement is not safe for INPLACE")
+		return fmt.Errorf("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check.")
 	}
 	return nil
 }
