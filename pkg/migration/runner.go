@@ -377,7 +377,11 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
 	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
-	if r.migration.ForceInplace || utils.AlgorithmInplaceConsideredSafe(alterStmt) {
+	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
+	if err != nil {
+		r.logger.Warnf("inplace DDL is not safe for this statement: %v", err)
+	}
+	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
