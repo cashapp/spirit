@@ -209,25 +209,79 @@ func TestOnline(t *testing.T) {
 	table = `CREATE TABLE testonline3 (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
-		b varchar(255) NOT NULL, -- should be an int
+		b varchar(255) NOT NULL,
 		PRIMARY KEY (id)
 	)`
 	testutils.RunSQL(t, table)
 	m, err = NewRunner(&Migration{
-		Host:              cfg.Addr,
-		Username:          cfg.User,
-		Password:          cfg.Passwd,
-		Database:          cfg.DBName,
-		Threads:           16,
-		Table:             "testonline3",
-		Alter:             "ADD INDEX(b)",
-		AttemptInplaceDDL: true,
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline3",
+		Alter:        "ADD INDEX(b)",
+		ForceInplace: true,
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInstantDDL) // not possible
 	assert.True(t, m.usedInplaceDDL)  // as
+	assert.NoError(t, m.Close())
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline4`)
+	table = `CREATE TABLE testonline4 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		b varchar(255) NOT NULL,
+		key name (name),
+		key b (b),
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline4",
+		Alter:        "drop index name, drop index b",
+		ForceInplace: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0
+	assert.True(t, m.usedInplaceDDL)
+	assert.NoError(t, m.Close())
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline5`)
+	table = `CREATE TABLE testonline5 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		b varchar(255) NOT NULL,
+		key name (name),
+		key b (b),
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline5",
+		Alter:        "drop index name, add column c int",
+		ForceInplace: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0
+	assert.False(t, m.usedInplaceDDL) // unfortunately false, since it combines INSTANT and INPLACE operations
 	assert.NoError(t, m.Close())
 }
 

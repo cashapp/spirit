@@ -385,16 +385,28 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 		r.usedInstantDDL = true // success
 		return nil
 	}
-	// Inplace DDL is feature gated because it blocks replicas.
-	// It's only safe to do in aurora GLOBAL because replicas do not
-	// use the binlog.
-	if r.migration.AttemptInplaceDDL {
+
+	// Many "inplace" operations (such as adding an index)
+	// are only online-safe to do in Aurora GLOBAL
+	// because replicas do not use the binlog. Some, however,
+	// only modify the table metadata and are safe.
+	//
+	// If the operator has specified that they want to attempt
+	// an inplace add index, we will attempt inplace regardless
+	// of the statement.
+	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
+	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
+	if err != nil {
+		r.logger.Warnf("inplace DDL is not safe: %v", err)
+	}
+	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
 			return nil
 		}
 	}
+
 	// Failure is expected, since MySQL DDL only applies in limited scenarios
 	// Return the error, which will be ignored by the caller.
 	// Proceed with regular copy algorithm.

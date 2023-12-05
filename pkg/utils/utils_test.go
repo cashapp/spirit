@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,4 +46,22 @@ func TestStripPort(t *testing.T) {
 	assert.Equal(t, "hostname.com", StripPort("hostname.com"))
 	assert.Equal(t, "hostname.com", StripPort("hostname.com:3306"))
 	assert.Equal(t, "127.0.0.1", StripPort("127.0.0.1:3306"))
+}
+
+func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
+	var alter = func(stmt string) string {
+		return "ALTER TABLE `test`.`t1` " + stmt
+	}
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`")))
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("rename index `a` to `b`")))
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, drop index `b`")))
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, rename index `b` to c")))
+
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("ADD COLUMN `a` INT")))
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("ADD index (a)")))
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, add index `b` (`b`)")))
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("engine=innodb")))
+	// this *should* be safe, but we don't support it yet because we can't
+	// guess which operations are INSTANT
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, add column `b` int")))
 }

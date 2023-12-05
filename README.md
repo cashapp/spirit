@@ -47,7 +47,7 @@ While Spirit does not support read-replicas, it still tries to keep replication 
 
 ### Attempt Instant DDL
 
-Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change.
+Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change. Spirit also automatically detects operations that use the `INPLACE` algorithm but only modify metadata and executes those directly rater than using Spirit's copy mechanism.
 
 **Note:** This feature has been contributed to `gh-ost` by the same authors of Spirit. It is disabled by default, and [only in the master branch](https://github.com/github/gh-ost/blob/master/doc/command-line-flags.md#attempt-instant-ddl).
 
