@@ -106,9 +106,9 @@ func AlgorithmInplaceConsideredSafe(sql string) error {
 	}
 	if unsafeClauses > 0 {
 		if len(alterStmt.Specs) > 1 {
-			return fmt.Errorf("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check.")
+			return fmt.Errorf("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check")
 		}
-		return fmt.Errorf("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check.")
+		return fmt.Errorf("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check")
 	}
 	return nil
 }
