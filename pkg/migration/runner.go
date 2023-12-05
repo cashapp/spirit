@@ -397,7 +397,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
 	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
 	if err != nil {
-		r.logger.Warnf("inplace DDL is not safe for this statement: %v", err)
+		r.logger.Warnf("inplace DDL is not safe: %v", err)
 	}
 	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
