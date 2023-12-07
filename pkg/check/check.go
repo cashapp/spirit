@@ -33,6 +33,7 @@ type Resources struct {
 	TargetChunkTime time.Duration
 	Threads         int
 	ReplicaMaxLag   time.Duration
+	SkipChecks      []string
 	// The following resources are only used by the
 	// pre-run checks
 	Host     string
@@ -62,9 +63,15 @@ func registerCheck(name string, callback func(context.Context, Resources, logger
 
 // RunChecks runs all checks that are registered for the given scope
 func RunChecks(ctx context.Context, r Resources, logger loggers.Advanced, scope ScopeFlag) error {
-	for _, check := range checks {
+	for name, check := range checks {
 		if check.scope&scope == 0 {
 			continue
+		}
+		for _, skip := range r.SkipChecks {
+			if skip == name {
+				logger.Warnf("Skipping check '%s'", name)
+				return nil
+			}
 		}
 		err := check.callback(ctx, r, logger)
 		if err != nil {

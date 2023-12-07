@@ -364,6 +364,7 @@ func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 		TargetChunkTime: r.migration.TargetChunkTime,
 		Threads:         r.migration.Threads,
 		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
+		SkipChecks:      r.migration.SkipChecks,
 		// For the pre-run checks we don't have a DB connection yet.
 		// Instead we check the credentials provided.
 		Host:     r.migration.Host,
