@@ -41,6 +41,7 @@ func (m *Migration) Run() error {
 		// after release.
 		m.SkipChecks = append(m.SkipChecks, "version")
 	}
+
 	if err := migration.runChecks(context.TODO(), check.ScopePreRun); err != nil {
 		return err
 	}
