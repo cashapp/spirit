@@ -63,6 +63,7 @@ func registerCheck(name string, callback func(context.Context, Resources, logger
 
 // RunChecks runs all checks that are registered for the given scope
 func RunChecks(ctx context.Context, r Resources, logger loggers.Advanced, scope ScopeFlag) error {
+check:
 	for name, check := range checks {
 		if check.scope&scope == 0 {
 			continue
@@ -70,7 +71,7 @@ func RunChecks(ctx context.Context, r Resources, logger loggers.Advanced, scope 
 		for _, skip := range r.SkipChecks {
 			if skip == name {
 				logger.Warnf("Skipping check '%s'", name)
-				continue
+				continue check
 			}
 		}
 		err := check.callback(ctx, r, logger)
