@@ -70,7 +70,7 @@ func RunChecks(ctx context.Context, r Resources, logger loggers.Advanced, scope 
 		for _, skip := range r.SkipChecks {
 			if skip == name {
 				logger.Warnf("Skipping check '%s'", name)
-				return nil
+				continue
 			}
 		}
 		err := check.callback(ctx, r, logger)
