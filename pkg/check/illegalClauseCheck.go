@@ -12,7 +12,8 @@ func init() {
 	registerCheck("illegalClause", illegalClauseCheck, ScopePreRun)
 }
 
-// renameCheck checks for any renames, which are not supported.
+// illegalClauseCheck checks for the presence of specific, unsupported
+// clauses in the ALTER statement, such as ALGORITHM= and LOCK=.
 func illegalClauseCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	sql := fmt.Sprintf("ALTER TABLE x.x %s", r.Alter)
 	return utils.AlterContainsUnsupportedClause(sql)
