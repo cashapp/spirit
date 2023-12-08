@@ -112,3 +112,36 @@ func AlgorithmInplaceConsideredSafe(sql string) error {
 	}
 	return nil
 }
+
+// AlterContainsUnsupportedClause checks to see if any clauses of an ALTER
+// statement are unsupported by Spirit. These include clauses like ALGORITHM
+// and LOCK, because they step on the toes of Spirit's own locking and
+// algorithm selection.
+func AlterContainsUnsupportedClause(sql string) error {
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(sql, "", "")
+	if err != nil {
+		return err
+	}
+	stmt := &stmtNodes[0]
+	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
+	if !ok {
+		return err
+	}
+
+	var unsupportedClauses []string
+	for _, spec := range alterStmt.Specs {
+		switch spec.Tp {
+		case ast.AlterTableAlgorithm:
+			unsupportedClauses = append(unsupportedClauses, "ALGORITHM=")
+		case ast.AlterTableLock:
+			unsupportedClauses = append(unsupportedClauses, "LOCK=")
+		default:
+		}
+	}
+	if len(unsupportedClauses) > 0 {
+		unsupportedClause := strings.Join(unsupportedClauses, ", ")
+		return fmt.Errorf("ALTER contains unsupported clause(s): %s", unsupportedClause)
+	}
+	return nil
+}
