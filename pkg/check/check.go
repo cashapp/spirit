@@ -5,6 +5,7 @@ package check
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,16 +64,19 @@ func registerCheck(name string, callback func(context.Context, Resources, logger
 
 // RunChecks runs all checks that are registered for the given scope
 func RunChecks(ctx context.Context, r Resources, logger loggers.Advanced, scope ScopeFlag) error {
-check:
 	for name, check := range checks {
 		if check.scope&scope == 0 {
 			continue
 		}
+		skipped := false
 		for _, skip := range r.SkipChecks {
-			if skip == name {
+			if strings.EqualFold(skip, name) {
 				logger.Warnf("Skipping check '%s'", name)
-				continue check
+				skipped = true
 			}
+		}
+		if skipped {
+			continue
 		}
 		err := check.callback(ctx, r, logger)
 		if err != nil {
