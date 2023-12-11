@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/check"
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
 	"github.com/cashapp/spirit/pkg/testutils"
+	"github.com/cashapp/spirit/pkg/utils"
 
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/row"
@@ -2554,4 +2556,48 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 	assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
 	assert.True(t, m.usedResumeFromCheckpoint)
 	assert.NoError(t, m.Close())
+}
+
+func TestPreRunChecksE2E(t *testing.T) {
+	// We test the checks in tests for that package, but we also want to test
+	// that the checks run correctly when instantiating a migration.
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "test_checks_e2e",
+		Alter:    "engine=innodb",
+	})
+	assert.NoError(t, err)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	err = m.runChecks(context.TODO(), check.ScopePreRun)
+	if utils.IsMySQL8(db) {
+		assert.NoError(t, err)
+	} else {
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "MySQL 8.0 is required")
+		return // no sense in running the rest of these tests
+	}
+
+	m, err = NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "test_checks_e2e",
+		Alter:    "ALGORITHM=inplace",
+	})
+	assert.NoError(t, err)
+	err = m.runChecks(context.TODO(), check.ScopePreRun)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "unsupported clause")
 }
