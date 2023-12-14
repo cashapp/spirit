@@ -255,7 +255,7 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
-	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0
+	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0, see https://bugs.mysql.com/bug.php?id=113355
 	assert.True(t, m.usedInplaceDDL)
 	assert.NoError(t, m.Close())
 
@@ -282,7 +282,7 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
-	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0
+	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0, see https://bugs.mysql.com/bug.php?id=113355
 	assert.False(t, m.usedInplaceDDL) // unfortunately false, since it combines INSTANT and INPLACE operations
 	assert.NoError(t, m.Close())
 }
