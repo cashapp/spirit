@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package sqlescape provides SQL escaping functionality.
 package sqlescape
 
 import (
