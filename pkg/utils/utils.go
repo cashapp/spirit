@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
-	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 const (
