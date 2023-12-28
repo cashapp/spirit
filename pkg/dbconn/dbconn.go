@@ -8,8 +8,8 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 	"github.com/go-sql-driver/mysql"
-	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 const (
