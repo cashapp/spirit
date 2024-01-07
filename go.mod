@@ -4,10 +4,10 @@ go 1.21
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/go-mysql-org/go-mysql v1.7.1-0.20231020082131-3a75f6a26d88
+	github.com/go-mysql-org/go-mysql v1.7.1-0.20231227030153-e817d9813fe3
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
-	github.com/pingcap/tidb/pkg/parser v0.0.0-20231031161236-4667ed9e1684
+	github.com/pingcap/tidb/pkg/parser v0.0.0-20231103042308-035ad5ccbe67
 	github.com/siddontang/go-log v0.0.0-20190221022429-1e957dd83bed
 	github.com/siddontang/loggers v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -23,17 +23,14 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/klauspost/compress v1.17.1 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c // indirect
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22 // indirect
-	github.com/pingcap/tidb/parser v0.0.0-20221126021158-6b02a5d8ba7d // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	go.uber.org/goleak v1.2.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
