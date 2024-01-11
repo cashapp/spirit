@@ -65,3 +65,19 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	// guess which operations are INSTANT
 	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, add column `b` int")))
 }
+
+func TestAlterIsAddUnique(t *testing.T) {
+	var alter = func(stmt string) string {
+		return "ALTER TABLE `test`.`t1` " + stmt
+	}
+	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`")))
+	assert.NoError(t, AlterIsAddUnique(alter("rename index `a` to `b`")))
+	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, drop index `b`")))
+	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, rename index `b` to c")))
+
+	assert.NoError(t, AlterIsAddUnique(alter("ADD COLUMN `a` INT")))
+	assert.NoError(t, AlterIsAddUnique(alter("ADD index (a)")))
+	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, add index `b` (`b`)")))
+	assert.NoError(t, AlterIsAddUnique(alter("engine=innodb")))
+	assert.Error(t, AlterIsAddUnique(alter("add unique(b)"))) // this is potentially lossy.
+}

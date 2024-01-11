@@ -397,7 +397,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
 	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
 	if err != nil {
-		r.logger.Warnf("inplace DDL is not safe: %v", err)
+		r.logger.Infof("unable to use INPLACE: %v", err)
 	}
 	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
@@ -866,9 +866,17 @@ func (r *Runner) checksum(ctx context.Context) error {
 			break // success!
 		}
 		if i >= 2 {
-			return fmt.Errorf("checksum failed after 3 attempts. Please report this error to the Spirit developers")
+			// This used to say "checksum failed, this should never happen" but that's not entirely true.
+			// If the user attempts a lossy schema change such as adding a UNIQUE INDEX to non-unique data,
+			// then the checksum will fail. This is entirely expected, and not considered a bug. We should
+			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
+			// customize the returned error based on it.
+			if err := utils.AlterIsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+				return fmt.Errorf("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
+			}
+			return fmt.Errorf("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")
 		}
-		r.logger.Errorf("The checksum failed process failed. This likely indicates either a bug in Spirit, or manual modification to the _new table outside of Spirit. This error is not fatal; the chunks of data that mismatched have been recopied. The checksum process will be repeated until it completes without any errors. Retrying %d/%d times", i+1, 3)
+		r.logger.Errorf("checksum failed, retrying %d/%d times", i+1, 3)
 	}
 	r.logger.Info("checksum passed")
 

@@ -145,3 +145,24 @@ func AlterContainsUnsupportedClause(sql string) error {
 	}
 	return nil
 }
+
+// AlterIsAddUnique checks to see if any clauses of an ALTER contains add UNIQUE index.
+// We use this to customize the error returned from checksum fails.
+func AlterIsAddUnique(sql string) error {
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(sql, "", "")
+	if err != nil {
+		return err
+	}
+	stmt := &stmtNodes[0]
+	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
+	if !ok {
+		return err
+	}
+	for _, spec := range alterStmt.Specs {
+		if spec.Tp == ast.AlterTableAddConstraint && spec.Constraint.Tp == ast.ConstraintUniq {
+			return fmt.Errorf("contains adding a unique index")
+		}
+	}
+	return nil
+}
