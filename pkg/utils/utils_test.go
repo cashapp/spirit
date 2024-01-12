@@ -70,14 +70,14 @@ func TestAlterIsAddUnique(t *testing.T) {
 	var alter = func(stmt string) string {
 		return "ALTER TABLE `test`.`t1` " + stmt
 	}
-	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`")))
-	assert.NoError(t, AlterIsAddUnique(alter("rename index `a` to `b`")))
-	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, drop index `b`")))
-	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, rename index `b` to c")))
+	assert.NoError(t, AlterContainsAddUnique(alter("drop index `a`")))
+	assert.NoError(t, AlterContainsAddUnique(alter("rename index `a` to `b`")))
+	assert.NoError(t, AlterContainsAddUnique(alter("drop index `a`, drop index `b`")))
+	assert.NoError(t, AlterContainsAddUnique(alter("drop index `a`, rename index `b` to c")))
 
-	assert.NoError(t, AlterIsAddUnique(alter("ADD COLUMN `a` INT")))
-	assert.NoError(t, AlterIsAddUnique(alter("ADD index (a)")))
-	assert.NoError(t, AlterIsAddUnique(alter("drop index `a`, add index `b` (`b`)")))
-	assert.NoError(t, AlterIsAddUnique(alter("engine=innodb")))
-	assert.Error(t, AlterIsAddUnique(alter("add unique(b)"))) // this is potentially lossy.
+	assert.NoError(t, AlterContainsAddUnique(alter("ADD COLUMN `a` INT")))
+	assert.NoError(t, AlterContainsAddUnique(alter("ADD index (a)")))
+	assert.NoError(t, AlterContainsAddUnique(alter("drop index `a`, add index `b` (`b`)")))
+	assert.NoError(t, AlterContainsAddUnique(alter("engine=innodb")))
+	assert.Error(t, AlterContainsAddUnique(alter("add unique(b)"))) // this is potentially lossy.
 }

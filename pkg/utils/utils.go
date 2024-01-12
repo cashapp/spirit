@@ -146,9 +146,9 @@ func AlterContainsUnsupportedClause(sql string) error {
 	return nil
 }
 
-// AlterIsAddUnique checks to see if any clauses of an ALTER contains add UNIQUE index.
+// AlterContainsAddUnique checks to see if any clauses of an ALTER contains add UNIQUE index.
 // We use this to customize the error returned from checksum fails.
-func AlterIsAddUnique(sql string) error {
+func AlterContainsAddUnique(sql string) error {
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(sql, "", "")
 	if err != nil {

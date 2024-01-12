@@ -576,7 +576,8 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 
 // TestAddUniqueIndex is a really interesting test *because* resuming from checkpoint
 // will cause duplicate key errors. It's not straight-forward to differentiate between
-// duplicate errors from a resume, and a constraint violation. So what we do is
+// duplicate errors from a resume, and a constraint violation. So what we do is:
+// 0) *FORCE* checksum to be enabled if ALTER contains add unique index.
 // 1) *FORCE* checksum to be enabled on resume from checkpoint
 // 2) If checksum is not enabled, duplicate key errors are elevated to errors.
 func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
@@ -603,11 +604,14 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 		Threads:  16,
 		Table:    "uniqmytable",
 		Alter:    "ADD UNIQUE INDEX b (b)",
+		Checksum: false,
 	})
 	assert.NoError(t, err)
+	assert.False(t, m.migration.Checksum)
 	err = m.Run(context.Background())
-	assert.Error(t, err)         // not unique
-	assert.NoError(t, m.Close()) // need to close now otherwise we'll get an error on re-opening it.
+	assert.Error(t, err)                 // not unique
+	assert.NoError(t, m.Close())         // need to close now otherwise we'll get an error on re-opening it.
+	assert.True(t, m.migration.Checksum) // it force enables a checksum
 
 	testutils.RunSQL(t, "DELETE FROM uniqmytable WHERE b = REPEAT('a', 200) LIMIT 1") // make unique
 	m, err = NewRunner(&Migration{
