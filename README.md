@@ -95,7 +95,7 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 Spirit works with the default configuration of MySQL 8.0, but checks that you have not changed the following settings:
   - `log-bin`
   - `binlog_format=ROW`
-  - `binlog_row_image=FULL` (see [issue #221](https://github.com/cashapp/spirit/issues/221))
+  - `binlog_row_image=FULL` or `MINIMAL`
   - `innodb_autoinc_lock_mode=2`
   - `log_slave_updates=1`
 
