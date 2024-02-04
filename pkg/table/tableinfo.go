@@ -56,16 +56,21 @@ func NewTableInfo(db *sql.DB, schema, table string) *TableInfo {
 // PrimaryKeyValues helps extract the PRIMARY KEY from a row image.
 // It uses our knowledge of the ordinal position of columns to find the
 // position of primary key columns (there might be more than one).
-func (t *TableInfo) PrimaryKeyValues(row interface{}) []interface{} {
+// For minimal row image, you need to send the before image to extract the PK.
+// This is because in the after image, the PK might be nil.
+func (t *TableInfo) PrimaryKeyValues(row interface{}) ([]interface{}, error) {
 	var pkCols []interface{}
 	for _, pCol := range t.KeyColumns {
 		for i, col := range t.Columns {
 			if col == pCol {
+				if row.([]interface{})[i] == nil {
+					return nil, errors.New("primary key column is NULL, possibly a bug sending after-image instead of before")
+				}
 				pkCols = append(pkCols, row.([]interface{})[i])
 			}
 		}
 	}
-	return pkCols
+	return pkCols, nil
 }
 
 // SetInfo reads from MySQL metadata (usually infoschema) and sets the values in TableInfo.

@@ -127,8 +127,20 @@ func NewClientDefaultConfig() *ClientConfig {
 // We only need to add the PK + if the operation was a delete.
 // This will be used after copy rows to apply any changes that have been made.
 func (c *Client) OnRow(e *canal.RowsEvent) error {
+	var i = 0
 	for _, row := range e.Rows {
-		key := c.table.PrimaryKeyValues(row)
+		i++
+		if e.Action == canal.UpdateAction && i%2 == 0 {
+			// For UpdateAction there is always a before and after image (i.e. e.Rows is always in pairs.)
+			// The first row is the before image, the second is the after image.
+			// We only need to capture one of the events, and since in MINIMAL RBR row
+			// image the PK is only included in the before, we chose that one.
+			continue
+		}
+		key, err := c.table.PrimaryKeyValues(row)
+		if err != nil {
+			return err
+		}
 		if len(key) == 0 {
 			return fmt.Errorf("no primary key found for row: %#v", row)
 		}
