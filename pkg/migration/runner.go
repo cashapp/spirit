@@ -209,6 +209,15 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 
+	// Force enable the checksum if it's an ADD UNIQUE INDEX operation
+	// https://github.com/cashapp/spirit/issues/266
+	if !r.migration.Checksum {
+		if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+			r.logger.Warnf("force enabling checksum: %v", err)
+			r.migration.Checksum = true
+		}
+	}
+
 	// Run post-setup checks
 	if err := r.runChecks(ctx, check.ScopePostSetup); err != nil {
 		return err
@@ -769,7 +778,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			// then the checksum will fail. This is entirely expected, and not considered a bug. We should
 			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
 			// customize the returned error based on it.
-			if err := utils.AlterIsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+			if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
 				return fmt.Errorf("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
 			}
 			return fmt.Errorf("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")
