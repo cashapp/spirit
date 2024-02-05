@@ -272,16 +272,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	if err := cutover.Run(ctx); err != nil {
 		return err
 	}
-	// Post cutover check. We can't reverse the cutover,
-	// but we can at least warn if corruption is likely.
-	// This can have false positives, since it starts the check
-	// in a racey way. If there was a delete inserted in that
-	// race, it will report an error incorrectly.
-	if err := r.postCutoverCheck(ctx); err != nil {
-		// Don't return the error because our automation
-		// will retry the migration (but it's already happened)
-		r.logger.Errorf("post-cutover check failed: %v", err)
-	} else if !r.migration.SkipDropAfterCutover {
+	if !r.migration.SkipDropAfterCutover {
 		if err := r.dropOldTable(ctx); err != nil {
 			// Don't return the error because our automation
 			// will retry the migration (but it's already happened)
@@ -570,99 +561,6 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 	// Call GetInfo on the table again, since the columns
 	// might have changed and this will affect the row copiers intersect func.
 	return r.newTable.SetInfo(ctx)
-}
-
-func (r *Runner) postCutoverCheck(ctx context.Context) error {
-	// We don't need to post-cutover check in MySQL 8.0
-	// because the cutover algorithm does not depend on undocumented MySQL behavior;
-	// it's quite straight forward to lock under rename.
-	if utils.IsMySQL8(r.db) {
-		return nil
-	}
-	// else; MySQL 5.7
-	r.logger.Infof("immediately checking last 100 rows of old table to new table for differences")
-	oldTable := table.NewTableInfo(r.db, r.migration.Database, fmt.Sprintf("_%s_old", r.table.TableName))
-	if err := oldTable.SetInfo(ctx); err != nil {
-		return err
-	}
-	cutoverTable := table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
-	if err := cutoverTable.SetInfo(ctx); err != nil {
-		return err
-	}
-	lowerSQL := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s DESC LIMIT 1 OFFSET 100",
-		cutoverTable.KeyColumns[0],
-		oldTable.QuotedName,
-		cutoverTable.KeyColumns[0],
-	)
-	upperSQL := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s DESC LIMIT 1",
-		cutoverTable.KeyColumns[0],
-		oldTable.QuotedName,
-		cutoverTable.KeyColumns[0],
-	)
-	var lowerBoundKey, upperBoundKey string
-	err := r.db.QueryRowContext(ctx, lowerSQL).Scan(&lowerBoundKey)
-	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			// We just don't have enough rows to perform this check.
-			return nil
-		}
-		return err
-	}
-	err = r.db.QueryRowContext(ctx, upperSQL).Scan(&upperBoundKey)
-	if err != nil {
-		return err
-	}
-	checker, err := checksum.NewChecker(r.db, oldTable, cutoverTable, r.replClient, &checksum.CheckerConfig{
-		Concurrency:     r.migration.Threads,
-		TargetChunkTime: r.migration.TargetChunkTime,
-		DBConfig:        r.dbConfig,
-		Logger:          r.logger,
-		FixDifferences:  false, // this is an audit; very much don't want to fix differences here.
-	})
-	if err != nil {
-		return err
-	}
-	trxPool, err := dbconn.NewTrxPool(ctx, r.db, r.migration.Threads, r.dbConfig)
-	if err != nil {
-		return err
-	}
-	defer trxPool.Close()
-	// Instead of checker.Run we call checker.ChecksumChunk directly
-	// since we only care about a specifically crafted chunk.
-	chunk := &table.Chunk{
-		Key: []string{cutoverTable.KeyColumns[0]},
-		LowerBound: &table.Boundary{
-			Value: []table.Datum{{
-				Tp:  cutoverTable.MaxValue().Tp,
-				Val: lowerBoundKey,
-			}},
-			Inclusive: true,
-		},
-		UpperBound: &table.Boundary{
-			Value: []table.Datum{{
-				Tp:  cutoverTable.MaxValue().Tp,
-				Val: upperBoundKey,
-			}},
-			Inclusive: true,
-		},
-	}
-	if err := checker.ChecksumChunk(trxPool, chunk); err != nil { //nolint: contextcheck
-		r.logger.Error("differences found! This does not guarantee corruption since there is a brief race, but it is a good idea to investigate.")
-		debug1 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
-			oldTable.QuotedName,
-			chunk.String(),
-			cutoverTable.KeyColumns[0],
-		)
-		debug2 := fmt.Sprintf("SELECT * FROM %s WHERE %s ORDER BY %s",
-			cutoverTable.QuotedName,
-			chunk.String(),
-			cutoverTable.KeyColumns[0],
-		)
-		r.logger.Infof("debug: %s; %s;", debug1, debug2)
-		return err
-	}
-	r.logger.Infof("no differences found")
-	return nil
 }
 
 func (r *Runner) dropOldTable(ctx context.Context) error {
