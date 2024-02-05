@@ -2610,7 +2610,9 @@ func TestForNonInstantBurn(t *testing.T) {
 		assert.NoError(t, err)
 		defer db.Close()
 		var rowVersions int
-		err = db.QueryRow(`SELECT total_row_versions FROM INFORMATION_SCHEMA.INNODB_TABLES where name='test/instantburn'`).Scan(&rowVersions)
+		// In 8.0.28 (which we still have in CI) we need to use instant_cols
+		// and not total_row_versions.
+		err = db.QueryRow(`SELECT /*!80029 total_row_versions as */ INSTANT_COLS FROM INFORMATION_SCHEMA.INNODB_TABLES where name='test/instantburn'`).Scan(&rowVersions)
 		assert.NoError(t, err)
 		return rowVersions
 	}
