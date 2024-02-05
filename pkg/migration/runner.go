@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cashapp/spirit/pkg/metrics"
+	"github.com/cashapp/spirit/pkg/utils"
 
 	"github.com/cashapp/spirit/pkg/check"
 	"github.com/cashapp/spirit/pkg/checksum"

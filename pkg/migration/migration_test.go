@@ -200,9 +200,6 @@ func TestUniqueOnNonUniqueData(t *testing.T) {
 	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
 	defer db.Close()
-	if !utils.IsMySQL8(db) {
-		t.Skip("rename tests only runs on MySQL 8.0")
-	}
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS uniquet1, _uniquet1_new`)
 	testutils.RunSQL(t, `CREATE TABLE uniquet1 (id int not null primary key auto_increment, b int not null, pad1 varbinary(1024));`)
 	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from dual;`)
