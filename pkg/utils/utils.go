@@ -156,3 +156,7 @@ func AlterContainsAddUnique(sql string) error {
 	}
 	return nil
 }
+
+func TrimAlter(alter string) string {
+	return strings.TrimSuffix(strings.TrimSpace(alter), ";")
+}

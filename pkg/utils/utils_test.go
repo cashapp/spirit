@@ -81,3 +81,11 @@ func TestAlterIsAddUnique(t *testing.T) {
 	assert.NoError(t, AlterContainsAddUnique(alter("engine=innodb")))
 	assert.Error(t, AlterContainsAddUnique(alter("add unique(b)"))) // this is potentially lossy.
 }
+
+func TestTrimAlter(t *testing.T) {
+	assert.Equal(t, "ADD COLUMN `a` INT", TrimAlter("ADD COLUMN `a` INT"))
+	assert.Equal(t, "engine=innodb", TrimAlter("engine=innodb;"))
+	assert.Equal(t, "engine=innodb", TrimAlter("engine=innodb; "))
+	assert.Equal(t, "add column a, add column b", TrimAlter("add column a, add column b;"))
+	assert.Equal(t, "add column a, add column b", TrimAlter("add column a, add column b"))
+}

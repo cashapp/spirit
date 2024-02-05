@@ -2598,3 +2598,62 @@ func TestPreRunChecksE2E(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "unsupported clause")
 }
+
+// From https://github.com/cashapp/spirit/issues/241
+// If an ALTER qualifies as instant, but an instant can't apply, don't burn an instant version.
+func TestForNonInstantBurn(t *testing.T) {
+	// We skip this test in MySQL 8.0.28. It uses INSTANT_COLS instead of total_row_versions
+	// and it supports instant add col, but not instant drop col.
+	// It's safe to skip, but we need 8.0.28 in tests because it's the minor version
+	// used by Aurora's LTS.
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	var version string
+	err = db.QueryRow(`SELECT version()`).Scan(&version)
+	assert.NoError(t, err)
+	if version == "8.0.28" {
+		t.Skip("Skiping this test for MySQL 8.0.28")
+	}
+	// Continue with the test.
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS instantburn`)
+	table := `CREATE TABLE instantburn (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	rowVersions := func() int {
+		// Check that the number of total_row_versions is Zero (i'e doesn't burn)
+		db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+		assert.NoError(t, err)
+		defer db.Close()
+		var rowVersions int
+		err = db.QueryRow(`SELECT total_row_versions FROM INFORMATION_SCHEMA.INNODB_TABLES where name='test/instantburn'`).Scan(&rowVersions)
+		assert.NoError(t, err)
+		return rowVersions
+	}
+
+	testutils.RunSQL(t, table)
+	for i := 0; i < 32; i++ { // requires 64 instants
+		testutils.RunSQL(t, "ALTER TABLE instantburn ADD newcol INT, ALGORITHM=INSTANT")
+		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
+	}
+	assert.Equal(t, 64, rowVersions()) // confirm all 64 are used.
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "instantburn",
+		Alter:    "add newcol2 int",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	assert.False(t, m.usedInstantDDL) // it would have had to apply a copy.
+	assert.Equal(t, 0, rowVersions()) // confirm we reset to zero, not 1 (no burn)
+}

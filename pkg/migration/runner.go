@@ -554,7 +554,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // alterNewTable applies the ALTER to the new table.
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
 func (r *Runner) alterNewTable(ctx context.Context) error {
-	if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.migration.Alter,
+	if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+utils.TrimAlter(r.migration.Alter)+", ALGORITHM=COPY",
 		r.newTable.SchemaName, r.newTable.TableName); err != nil {
 		return err
 	}
