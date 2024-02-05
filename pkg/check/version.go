@@ -21,6 +21,12 @@ func versionCheck(_ context.Context, r Resources, _ loggers.Advanced) error {
 		return err
 	}
 	defer db.Close()
+	// This ensures that we first return an error like
+	// connection refused if the host is unreachable,
+	// rather than "MySQL 8.0 is required."
+	if err := db.Ping(); err != nil {
+		return err
+	}
 	if !isMySQL8(db) {
 		return errors.New("MySQL 8.0 is required")
 	}
