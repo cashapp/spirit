@@ -40,10 +40,10 @@ func configurationCheck(ctx context.Context, r Resources, logger loggers.Advance
 		// This is the auto-inc lock. It won't show up in SHOW PROCESSLIST that they are serial.
 		logger.Warn("innodb_autoinc_lock_mode != 2. This will cause the migration to run slower than expected because concurrent inserts to the new table will be serialized.")
 	}
-	if binlogRowImage != "FULL" {
-		// This might not be required, but is the only option that has been tested so far.
+	if !(binlogRowImage == "FULL" || binlogRowImage == "MINIMAL") {
+		// This might not be required, but these are the only options that have been tested so far.
 		// To keep the testing scope reduced for now, it is required.
-		return errors.New("binlog_row_image must be FULL")
+		return errors.New("binlog_row_image must be FULL or MINIMAL")
 	}
 	if logBin != "1" {
 		// This is a hard requirement because we need to be able to read the binlog.

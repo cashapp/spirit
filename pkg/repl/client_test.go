@@ -282,7 +282,7 @@ func TestReplClientQueue(t *testing.T) {
 	// optimization these deletes will be queued immediately.
 	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 1000)
+	assert.Equal(t, 1000, client.GetDeltaLen())
 
 	// Read from the copier
 	chk, err := copier.Next4Test()

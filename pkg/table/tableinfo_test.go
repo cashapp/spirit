@@ -293,7 +293,8 @@ func TestKeyColumnsValuesExtraction(t *testing.T) {
 	assert.NoError(t, err)
 
 	row := []interface{}{id, name, age}
-	pkVals := t1.PrimaryKeyValues(row)
+	pkVals, err := t1.PrimaryKeyValues(row)
 	assert.Equal(t, id, pkVals[0])
 	assert.Equal(t, age, pkVals[1])
+	assert.NoError(t, err)
 }
