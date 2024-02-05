@@ -17,6 +17,8 @@ import (
 func TestMain(m *testing.M) {
 	checkpointDumpInterval = 100 * time.Millisecond
 	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
+	sentinelCheckInterval = 100 * time.Millisecond
+	sentinelWaitLimit = 10 * time.Second
 	os.Exit(m.Run())
 }
 
@@ -189,4 +191,40 @@ func TestRenameInMySQL80(t *testing.T) {
 
 	err = migration.Run()
 	assert.NoError(t, err)
+}
+
+// TestUniqueOnNonUniqueData tests that we:
+// 1. Fail trying to add a unique index on non-unique data.
+// 2. The error does not blame spirit, but is instead suggestive of user-data error.
+func TestUniqueOnNonUniqueData(t *testing.T) {
+	db, err := sql.Open("mysql", testutils.DSN())
+	assert.NoError(t, err)
+	defer db.Close()
+	if !utils.IsMySQL8(db) {
+		t.Skip("rename tests only runs on MySQL 8.0")
+	}
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS uniquet1, _uniquet1_new`)
+	testutils.RunSQL(t, `CREATE TABLE uniquet1 (id int not null primary key auto_increment, b int not null, pad1 varbinary(1024));`)
+	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from dual;`)
+	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from uniquet1 a join uniquet1 b join uniquet1 c limit 100000;`)
+	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from uniquet1 a join uniquet1 b join uniquet1 c limit 100000;`)
+	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from uniquet1 a join uniquet1 b join uniquet1 c limit 100000;`)
+	testutils.RunSQL(t, `INSERT INTO uniquet1 SELECT NULL, 1, RANDOM_BYTES(1024) from uniquet1 a join uniquet1 b join uniquet1 c limit 100000;`)
+	testutils.RunSQL(t, `UPDATE uniquet1 SET b = id;`)
+	testutils.RunSQL(t, `UPDATE uniquet1 SET b = 12345 ORDER BY RAND() LIMIT 2;`)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 16
+	migration.Checksum = true
+	migration.Table = "uniquet1"
+	migration.Alter = "ADD UNIQUE (b)"
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
 }

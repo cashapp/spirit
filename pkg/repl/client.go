@@ -127,8 +127,21 @@ func NewClientDefaultConfig() *ClientConfig {
 // We only need to add the PK + if the operation was a delete.
 // This will be used after copy rows to apply any changes that have been made.
 func (c *Client) OnRow(e *canal.RowsEvent) error {
+	var i = 0
 	for _, row := range e.Rows {
-		key := c.table.PrimaryKeyValues(row)
+		// For UpdateAction there is always a before and after image (i.e. e.Rows is always in pairs.)
+		// We only need to capture one of the events, and since in MINIMAL RBR row
+		// image the PK is only included in the before, we chose that one.
+		if e.Action == canal.UpdateAction {
+			i++
+			if i%2 == 0 {
+				continue
+			}
+		}
+		key, err := c.table.PrimaryKeyValues(row)
+		if err != nil {
+			return err
+		}
 		if len(key) == 0 {
 			return fmt.Errorf("no primary key found for row: %#v", row)
 		}
@@ -188,9 +201,11 @@ func (c *Client) SetPos(pos mysql.Position) {
 }
 
 func (c *Client) AllChangesFlushed() bool {
+	if c.GetDeltaLen() > 0 {
+		return false
+	}
 	c.Lock()
 	defer c.Unlock()
-
 	return c.binlogPosInMemory.Compare(c.binlogPosSynced) == 0
 }
 
@@ -539,6 +554,11 @@ func (c *Client) Flush(ctx context.Context) error {
 			break
 		}
 	}
+	// Flush one more time, since after BlockWait()
+	// there might be more changes.
+	if err := c.flush(ctx, false, nil); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -585,9 +605,12 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 }
 
 // BlockWait blocks until the *canal position* has caught up to the current binlog position.
+// This is usually called by Flush() which then ensures the changes are flushed.
+// Calling it directly is usually only used by the test-suite!
 // There is a built-in func in canal to do this, but it calls FLUSH BINARY LOGS,
-// which requires additional permissions. This DOES NOT ensure that this position
-// has been applied to the database.
+// which requires additional permissions.
+// **Caveat** Unless you are calling this from Flush(), calling this DOES NOT ensure that
+// changes have been applied to the database.
 func (c *Client) BlockWait(ctx context.Context) error {
 	targetPos, err := c.canal.GetMasterPos() // what the server is at.
 	if err != nil {

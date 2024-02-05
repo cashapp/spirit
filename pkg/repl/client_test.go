@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
@@ -18,7 +19,7 @@ import (
 )
 
 func TestReplClient(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
@@ -58,7 +59,7 @@ func TestReplClient(t *testing.T) {
 }
 
 func TestReplClientComplex(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
@@ -132,7 +133,7 @@ func TestReplClientComplex(t *testing.T) {
 }
 
 func TestReplClientResumeFromImpossible(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
@@ -190,7 +191,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 }
 
 func TestReplClientOpts(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
@@ -229,7 +230,7 @@ func TestReplClientOpts(t *testing.T) {
 	// Delete more than 10000 keys so the FLUSH has to run in chunks.
 	testutils.RunSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 49961)
+	assert.Equal(t, 49961, client.GetDeltaLen())
 	// Flush. We could use client.Flush() but for testing purposes lets use
 	// PeriodicFlush()
 	go client.StartPeriodicFlush(context.TODO(), 1*time.Second)
@@ -237,14 +238,14 @@ func TestReplClientOpts(t *testing.T) {
 	client.StopPeriodicFlush()
 	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
 
-	assert.Equal(t, client.GetDeltaLen(), 0)
+	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// The binlog position should have changed.
 	assert.NotEqual(t, startingPos, client.GetBinlogApplyPosition())
 }
 
 func TestReplClientQueue(t *testing.T) {
-	db, err := sql.Open("mysql", testutils.DSN())
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
@@ -281,7 +282,7 @@ func TestReplClientQueue(t *testing.T) {
 	// optimization these deletes will be queued immediately.
 	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
 	assert.NoError(t, client.BlockWait(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 1000)
+	assert.Equal(t, 1000, client.GetDeltaLen())
 
 	// Read from the copier
 	chk, err := copier.Next4Test()

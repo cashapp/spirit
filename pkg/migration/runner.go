@@ -29,6 +29,7 @@ type migrationState int32
 const (
 	stateInitial migrationState = iota
 	stateCopyRows
+	stateWaitingOnSentinelTable
 	stateApplyChangeset // first mass apply
 	stateAnalyzeTable
 	stateChecksum
@@ -43,6 +44,8 @@ var (
 	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 30 * time.Second
+	sentinelCheckInterval   = 1 * time.Second
+	sentinelWaitLimit       = 48 * time.Hour
 )
 
 func (s migrationState) String() string {
@@ -51,6 +54,8 @@ func (s migrationState) String() string {
 		return "initial"
 	case stateCopyRows:
 		return "copyRows"
+	case stateWaitingOnSentinelTable:
+		return "waitingOnSentinelTable"
 	case stateApplyChangeset:
 		return "applyChangeset"
 	case stateAnalyzeTable:
@@ -86,7 +91,8 @@ type Runner struct {
 	checkerLock  sync.Mutex
 
 	// Track some key statistics.
-	startTime time.Time
+	startTime             time.Time
+	sentinelWaitStartTime time.Time
 
 	// Used by the test-suite and some post-migration output.
 	// Indicates if certain optimizations applied.
@@ -217,6 +223,18 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 	r.logger.Info("copy rows complete")
+
+	// r.waitOnSentinel may return an error if there is
+	// some unexpected problem checking for the existence of
+	// the sentinel table OR if sentinelWaitLimit is exceeded.
+	// This function is invoked even if DeferCutOver is false
+	// because it's possible that the sentinel table was created
+	// manually after the migration started.
+	r.sentinelWaitStartTime = time.Now()
+	r.setCurrentState(stateWaitingOnSentinelTable)
+	if err := r.waitOnSentinelTable(ctx); err != nil {
+		return err
+	}
 
 	// Perform steps to prepare for final cutover.
 	// This includes computing an optional checksum,
@@ -357,16 +375,28 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 		r.usedInstantDDL = true // success
 		return nil
 	}
-	// Inplace DDL is feature gated because it blocks replicas.
-	// It's only safe to do in aurora GLOBAL because replicas do not
-	// use the binlog.
-	if r.migration.AttemptInplaceDDL {
+
+	// Many "inplace" operations (such as adding an index)
+	// are only online-safe to do in Aurora GLOBAL
+	// because replicas do not use the binlog. Some, however,
+	// only modify the table metadata and are safe.
+	//
+	// If the operator has specified that they want to attempt
+	// an inplace add index, we will attempt inplace regardless
+	// of the statement.
+	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
+	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
+	if err != nil {
+		r.logger.Infof("unable to use INPLACE: %v", err)
+	}
+	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
 			return nil
 		}
 	}
+
 	// Failure is expected, since MySQL DDL only applies in limited scenarios
 	// Return the error, which will be ignored by the caller.
 	// Proceed with regular copy algorithm.
@@ -397,6 +427,13 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err := r.createCheckpointTable(ctx); err != nil {
 			return err
 		}
+
+		if r.migration.DeferCutOver {
+			if err := r.createSentinelTable(ctx); err != nil {
+				return err
+			}
+		}
+
 		r.copier, err = row.NewCopier(r.db, r.table, r.newTable, &row.CopierConfig{
 			Concurrency:     r.migration.Threads,
 			TargetChunkTime: r.migration.TargetChunkTime,
@@ -469,7 +506,7 @@ func (r *Runner) tableChangeNotification() {
 	}
 	r.setCurrentState(stateErrCleanup)
 	// Write this to the logger, so it can be captured by the initiator.
-	r.logger.Error("table definition changed during migration")
+	r.logger.Errorf("table definition of %s changed during migration", r.table.QuotedName)
 	// Invalidate the checkpoint, so we don't try to resume.
 	// If we don't do this, the migration will permanently be blocked from proceeding.
 	// Letting it start again is the better choice.
@@ -477,7 +514,7 @@ func (r *Runner) tableChangeNotification() {
 		r.logger.Errorf("could not remove checkpoint. err: %v", err)
 	}
 	// We can't do anything about it, just panic
-	panic("table definition changed during migration")
+	panic(fmt.Sprintf("table definition of %s changed during migration", r.table.QuotedName))
 }
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
@@ -540,6 +577,20 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 		return err
 	}
 	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
+	return nil
+}
+
+func (r *Runner) sentinelTableName() string {
+	return fmt.Sprintf("_%s_sentinel", r.table.TableName)
+}
+
+func (r *Runner) createSentinelTable(ctx context.Context) error {
+	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, r.sentinelTableName()); err != nil {
+		return err
+	}
+	if err := dbconn.Exec(ctx, r.db, "CREATE TABLE %n.%n (id int NOT NULL PRIMARY KEY)", r.table.SchemaName, r.sentinelTableName()); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -712,9 +763,17 @@ func (r *Runner) checksum(ctx context.Context) error {
 			break // success!
 		}
 		if i >= 2 {
-			return fmt.Errorf("checksum failed after 3 attempts. Please report this error to the Spirit developers")
+			// This used to say "checksum failed, this should never happen" but that's not entirely true.
+			// If the user attempts a lossy schema change such as adding a UNIQUE INDEX to non-unique data,
+			// then the checksum will fail. This is entirely expected, and not considered a bug. We should
+			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
+			// customize the returned error based on it.
+			if err := utils.AlterIsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+				return fmt.Errorf("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
+			}
+			return fmt.Errorf("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")
 		}
-		r.logger.Errorf("The checksum failed process failed. This likely indicates either a bug in Spirit, or manual modification to the _new table outside of Spirit. This error is not fatal; the chunks of data that mismatched have been recopied. The checksum process will be repeated until it completes without any errors. Retrying %d/%d times", i+1, 3)
+		r.logger.Errorf("checksum failed, retrying %d/%d times", i+1, 3)
 	}
 	r.logger.Info("checksum passed")
 
@@ -804,6 +863,16 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 					r.copier.Throttler.IsThrottled(),
 					r.db.Stats().InUse,
 				)
+			case stateWaitingOnSentinelTable:
+				r.logger.Infof("migration status: state=%s sentinel-table=%s.%s total-time=%s sentinel-wait-time=%s sentinel-max-wait-time=%s conns-in-use=%d",
+					r.getCurrentState().String(),
+					r.table.SchemaName,
+					r.sentinelTableName(),
+					time.Since(r.startTime).Round(time.Second),
+					time.Since(r.sentinelWaitStartTime).Round(time.Second),
+					sentinelWaitLimit,
+					r.db.Stats().InUse,
+				)
 			case stateApplyChangeset, statePostChecksum:
 				// We've finished copying rows, and we are now trying to reduce the number of binlog deltas before
 				// proceeding to the checksum and then the final cutover.
@@ -832,6 +901,49 @@ func (r *Runner) dumpStatus(ctx context.Context) {
 				// For the linter:
 				// Status for all other states
 			}
+		}
+	}
+}
+
+func (r *Runner) sentinelTableExists(ctx context.Context) (bool, error) {
+	sql := "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?"
+	var sentinelTableExists int
+	err := r.db.QueryRowContext(ctx, sql, r.table.SchemaName, r.sentinelTableName()).Scan(&sentinelTableExists)
+	if err != nil {
+		return false, err
+	}
+	return sentinelTableExists > 0, nil
+}
+
+// Check every sentinelCheckInterval up to sentinelWaitLimit to see if sentinelTable has been dropped
+func (r *Runner) waitOnSentinelTable(ctx context.Context) error {
+	if sentinelExists, err := r.sentinelTableExists(ctx); err != nil {
+		return err
+	} else if !sentinelExists {
+		// Sentinel table does not exist, we can proceed with cutover
+		return nil
+	}
+
+	r.logger.Warnf("cutover deferred while sentinel table %s.%s exists; will wait %s", r.table.SchemaName, r.sentinelTableName(), sentinelWaitLimit)
+
+	timer := time.NewTimer(sentinelWaitLimit)
+
+	ticker := time.NewTicker(sentinelCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case t := <-ticker.C:
+			sentinelExists, err := r.sentinelTableExists(ctx)
+			if err != nil {
+				return err
+			}
+			if !sentinelExists {
+				// Sentinel table has been dropped, we can proceed with cutover
+				r.logger.Infof("sentinel table dropped at %s", t)
+				return nil
+			}
+		case <-timer.C:
+			return errors.New("timed out waiting for sentinel table to be dropped")
 		}
 	}
 }

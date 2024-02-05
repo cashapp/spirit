@@ -89,12 +89,14 @@ Larger values generally yield better performance, but have consequences:
 
 Note that Spirit does not support dynamically adjusting the target-chunk-time while running, but it does support automatically resuming from a checkpoint if it is killed. This means that if you find that you've misjudged the number of [threads](#threads) or target-chunk-time, you can simply kill the Spirit process and start it again with different values.
 
-### attempt-inplace-ddl
+### force-inplace
 
 - Type: Boolean
 - Default value: FALSE
 
-When set to `TRUE`, Spirit will attempt to perform the schema change using MySQL's `INPLACE` algorithm, before falling back to performing its usual copy process. `INPLACE` is non-blocking on the system where the DDL was initiated, but it will block on binary-log based read replicas. This means it's typically only safe to enable if you have no read replicas, or your read replicas are based on physical log shipping (i.e. Aurora).
+When set to `TRUE`, Spirit will attempt to perform the schema change using MySQL's `INPLACE` algorithm, before falling back to performing its usual copy process. `INPLACE` is non-blocking on the system where the DDL is initiated, but it will block on binary-log based read replicas. This means it's typically only safe to enable if you have no read replicas, or your read replicas are based on physical log shipping (i.e. Aurora).
+
+Even when force-inplace is `FALSE`, Spirit automatically detects "safe" operations that use the `INPLACE` algorithm. These include operations that modify only metadata, specifically `DROP KEY/INDEX` and `RENAME KEY/INDEX`. Consult https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html for more details.
 
 ### checksum
 
@@ -135,3 +137,15 @@ The replication throttler only affects the copy-rows operation, and does not app
 - Adjusting the configuration of your replicas to increase the parallel replication threads
 - Temporarily disabling durability on the replica (i.e. `SET GLOBAL sync_binlog=0` and `SET GLOBAL innodb_flush_log_at_trx_commit=0`)
 - Increasing the `replica-max-lag` or disabling replica lag checking temporarily
+
+### defer-cutover
+
+The "defer cutover" feature makes spirit wait to perform the final cutover until a "sentinel" table has been dropped. This is similar to the --postpone-cut-over-flag-file feature of gh-ost.
+
+If defer-cutover is true, Spirit will create a "sentinel" table in the same schema as the table being altered; the name of the sentinel table will use the pattern `_<table>_sentinel`. Spirit will block before the cutover, waiting for the operator to manually drop the sentinel table, which triggers Spirit to proceed with the cutover. Spirit will never delete the sentinel table on its own. It will block for 48 hours waiting for the sentinel table to be dropped by the operator, after which it will exit with an error.
+
+You can resume a migration from checkpoint and Spirit will start waiting again for you to drop the sentinel table. You can also choose to delete the sentinel table before restarting Spirit, which will cause it to resume from checkpoint and complete the cutover without waiting, even if you have again enabled defer-cutover for the migration.
+
+If you start a migration and realize that you forgot to set defer-cutover, worry not! You can manually create a sentinel table using the pattern `_<table>_sentinel`, and Spirit will detect the table before the cutover is completed and block as though defer-cutover had been enabled from the beginning.
+
+Note that the checksum, if enabled, will be computed after the sentinel table is dropped. Because the checksum step takes an estimated 10-20% of the migration, the cutover will not occur immediately after the sentinel table is dropped.

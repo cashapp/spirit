@@ -93,9 +93,6 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	if !c.feed.AllChangesFlushed() {
 		return errors.New("not all changes flushed, final flush might be broken")
 	}
-	if c.feed.GetDeltaLen() > 0 {
-		return fmt.Errorf("the changeset is not empty (%d), can not start cutover", c.feed.GetDeltaLen())
-	}
 	oldName := fmt.Sprintf("_%s_old", c.table.TableName)
 	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",

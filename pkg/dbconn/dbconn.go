@@ -8,8 +8,8 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 	"github.com/go-sql-driver/mysql"
-	"github.com/pingcap/tidb/pkg/util/sqlescape"
 )
 
 const (
@@ -24,19 +24,21 @@ const (
 )
 
 type DBConfig struct {
-	LockWaitTimeout       int
-	InnodbLockWaitTimeout int
-	MaxRetries            int
-	MaxOpenConnections    int
-	Aurora20Compatible    bool // use tx_isolation instead of transaction_isolation
+	LockWaitTimeout          int
+	InnodbLockWaitTimeout    int
+	MaxRetries               int
+	MaxOpenConnections       int
+	Aurora20Compatible       bool // use tx_isolation instead of transaction_isolation
+	RangeOptimizerMaxMemSize int64
 }
 
 func NewDBConfig() *DBConfig {
 	return &DBConfig{
-		LockWaitTimeout:       30,
-		InnodbLockWaitTimeout: 3,
-		MaxRetries:            5,
-		MaxOpenConnections:    32, // default is high for historical tests
+		LockWaitTimeout:          30,
+		InnodbLockWaitTimeout:    3,
+		MaxRetries:               5,
+		MaxOpenConnections:       32, // default is high for historical tests. It's overwritten by the user threads count + 2 for headroom.
+		RangeOptimizerMaxMemSize: 0,  // default is 8M, we set to unlimited. Not user configurable (may reconsider in the future).
 	}
 }
 
@@ -121,8 +123,13 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 					} else if code == errCapacityExceeded {
 						// "Memory capacity of 8388608 bytes for 'range_optimizer_max_mem_size' exceeded.
 						// Range optimization was not done for this query."
-						// i.e. the query still executes it just doesn't optimize perfectly
-						continue
+						// i.e. the query can still execute, but it won't be efficient. Prior to
+						// https://github.com/cashapp/spirit/issues/239 we allowed this warning
+						// to be ignored. *However* if range optimization is disabled the query is going to
+						// tablescan, so it's better to just bail out and present a useful error message.
+						isFatal = true
+						err = fmt.Errorf("MySQL refused to optimize a statement because the value of 'range_optimizer_max_mem_size' is too low. Please decrease the target-chunk-time, or increase the value of 'range_optimizer_max_mem_size'")
+						return
 					} else {
 						isFatal = true
 						err = fmt.Errorf("unsafe warning: %s", message)

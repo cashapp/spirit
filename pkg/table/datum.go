@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/pingcap/tidb/pkg/util/sqlescape"
+	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 )
 
 type datumTp int

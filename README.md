@@ -47,7 +47,7 @@ While Spirit does not support read-replicas, it still tries to keep replication 
 
 ### Attempt Instant DDL
 
-Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change.
+Spirit will attempt to use MySQL 8.0's `INSTANT` DDL assertion before applying the change itself. If the DDL change supports it, `INSTANT DDL` is a very fast operation and only requires a metadata change. Spirit also automatically detects operations that use the `INPLACE` algorithm but only modify metadata and executes those directly rater than using Spirit's copy mechanism.
 
 **Note:** This feature has been contributed to `gh-ost` by the same authors of Spirit. It is disabled by default, and [only in the master branch](https://github.com/github/gh-ost/blob/master/doc/command-line-flags.md#attempt-instant-ddl).
 
@@ -95,7 +95,7 @@ This scenario is kind of a worse case for gh-ost since it prioritizes replicatio
 Spirit works with the default configuration of MySQL 8.0, but checks that you have not changed the following settings:
   - `log-bin`
   - `binlog_format=ROW`
-  - `binlog_row_image=FULL` (see [issue #221](https://github.com/cashapp/spirit/issues/221))
+  - `binlog_row_image=FULL` or `MINIMAL`
   - `innodb_autoinc_lock_mode=2`
   - `log_slave_updates=1`
 
