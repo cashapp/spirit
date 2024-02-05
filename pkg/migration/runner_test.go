@@ -2598,6 +2598,22 @@ func TestPreRunChecksE2E(t *testing.T) {
 // From https://github.com/cashapp/spirit/issues/241
 // If an ALTER qualifies as instant, but an instant can't apply, don't burn an instant version.
 func TestForNonInstantBurn(t *testing.T) {
+	// We skip this test in MySQL 8.0.28. It uses INSTANT_COLS instead of total_row_versions
+	// and it supports instant add col, but not instant drop col.
+	// It's safe to skip, but we need 8.0.28 in tests because it's the minor version
+	// used by Aurora's LTS.
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	var version string
+	err = db.QueryRow(`SELECT version()`).Scan(&version)
+	assert.NoError(t, err)
+	if version == "8.0.28" {
+		t.Skip("Skiping this test for MySQL 8.0.28")
+	}
+	// Continue with the test.
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS instantburn`)
 	table := `CREATE TABLE instantburn (
 		id int(11) NOT NULL AUTO_INCREMENT,
@@ -2610,9 +2626,7 @@ func TestForNonInstantBurn(t *testing.T) {
 		assert.NoError(t, err)
 		defer db.Close()
 		var rowVersions int
-		// In 8.0.28 (which we still have in CI) we need to use instant_cols
-		// and not total_row_versions.
-		err = db.QueryRow(`SELECT /*!80029 total_row_versions as */ INSTANT_COLS FROM INFORMATION_SCHEMA.INNODB_TABLES where name='test/instantburn'`).Scan(&rowVersions)
+		err = db.QueryRow(`SELECT total_row_versions FROM INFORMATION_SCHEMA.INNODB_TABLES where name='test/instantburn'`).Scan(&rowVersions)
 		assert.NoError(t, err)
 		return rowVersions
 	}
@@ -2623,10 +2637,6 @@ func TestForNonInstantBurn(t *testing.T) {
 		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
 	}
 	assert.Equal(t, 64, rowVersions()) // confirm all 64 are used.
-
-	cfg, err := mysql.ParseDSN(testutils.DSN())
-	assert.NoError(t, err)
-
 	m, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Username: cfg.User,
