@@ -35,43 +35,6 @@ func TestThrottlerInterface(t *testing.T) {
 	time.Sleep(50 * time.Millisecond) // give it time to shutdown.
 }
 
-func TestMySQL57Throttler(t *testing.T) {
-	replicaDSN := os.Getenv("REPLICA_DSN")
-	if replicaDSN == "" {
-		t.Skip("skipping test because REPLICA_DSN not set")
-	}
-	db, err := sql.Open("mysql", replicaDSN)
-	assert.NoError(t, err)
-
-	// the MySQL 5.7 throttler should work with MySQL 8.0
-	// So we can always test this.
-	loopInterval = 50 * time.Millisecond
-	throttler := &MySQL57Replica{
-		Repl: Repl{
-			replica:      db,
-			lagTolerance: 120 * time.Second,
-			logger:       logrus.New(),
-		},
-	}
-	assert.NoError(t, throttler.Open())
-	assert.False(t, throttler.IsThrottled())
-	throttler.currentLagInMs = 1500000
-	assert.True(t, throttler.IsThrottled())
-
-	// BlockWait until it catches up, but it should expire
-	// because the 1s loop is set to 1ns
-	blockWaitInterval = 1 * time.Nanosecond
-	throttler.BlockWait() // prints to log, but allows some progress.
-
-	// Wait >50ms and the loop should update the lag
-	// to the correct value.
-	time.Sleep(100 * time.Millisecond)
-	assert.False(t, throttler.IsThrottled())
-	assert.NoError(t, throttler.Close())
-	// give it time to cleanup
-	time.Sleep(100 * time.Millisecond)
-}
-
 func TestNoopThrottler(t *testing.T) {
 	throttler := &Noop{}
 	assert.NoError(t, throttler.Open())

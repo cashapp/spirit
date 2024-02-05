@@ -12,7 +12,6 @@ import (
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
 	"github.com/cashapp/spirit/pkg/testutils"
-	"github.com/cashapp/spirit/pkg/utils"
 
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/row"
@@ -2579,13 +2578,7 @@ func TestPreRunChecksE2E(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 	err = m.runChecks(context.TODO(), check.ScopePreRun)
-	if utils.IsMySQL8(db) {
-		assert.NoError(t, err)
-	} else {
-		assert.Error(t, err)
-		assert.ErrorContains(t, err, "MySQL 8.0 is required")
-		return // no sense in running the rest of these tests
-	}
+	assert.NoError(t, err)
 
 	m, err = NewRunner(&Migration{
 		Host:     cfg.Addr,

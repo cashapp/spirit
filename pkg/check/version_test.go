@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/testutils"
-	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -23,7 +22,7 @@ func TestVersion(t *testing.T) {
 		Password: cfg.Passwd,
 	}
 	err = versionCheck(context.Background(), r, logrus.New())
-	if utils.IsMySQL8(db) {
+	if isMySQL8(db) {
 		assert.NoError(t, err) // all looks good of course.
 	} else {
 		assert.Error(t, err)
