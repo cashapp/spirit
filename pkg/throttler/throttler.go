@@ -25,20 +25,7 @@ type Throttler interface {
 // as 8.0, and a MySQL57Replica throttler otherwise.
 // It returns an error if querying for either fails, i.e. it might not be a valid DB connection.
 func NewReplicationThrottler(replica *sql.DB, lagTolerance time.Duration, logger loggers.Advanced) (Throttler, error) {
-	var version string
-	if err := replica.QueryRow("select substr(version(), 1, 1)").Scan(&version); err != nil {
-		return nil, err
-	}
-	if version == "8" {
-		return &MySQL80Replica{
-			Repl: Repl{
-				replica:      replica,
-				lagTolerance: lagTolerance,
-				logger:       logger,
-			},
-		}, nil
-	}
-	return &MySQL57Replica{
+	return &MySQL80Replica{
 		Repl: Repl{
 			replica:      replica,
 			lagTolerance: lagTolerance,
