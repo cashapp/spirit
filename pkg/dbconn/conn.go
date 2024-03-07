@@ -3026,12 +3026,7 @@ func newDSN(dsn string, config *DBConfig) (string, error) {
 	ops = append(ops, fmt.Sprintf("%s=%s", "innodb_lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.InnodbLockWaitTimeout))))
 	ops = append(ops, fmt.Sprintf("%s=%s", "lock_wait_timeout", url.QueryEscape(fmt.Sprint(config.LockWaitTimeout))))
 	ops = append(ops, fmt.Sprintf("%s=%s", "range_optimizer_max_mem_size", url.QueryEscape(fmt.Sprint(config.RangeOptimizerMaxMemSize))))
-
-	if config.Aurora20Compatible {
-		ops = append(ops, fmt.Sprintf("%s=%s", "tx_isolation", url.QueryEscape(`"read-committed"`))) // Aurora 2.0
-	} else {
-		ops = append(ops, fmt.Sprintf("%s=%s", "transaction_isolation", url.QueryEscape(`"read-committed"`))) // MySQL 8.0
-	}
+	ops = append(ops, fmt.Sprintf("%s=%s", "transaction_isolation", url.QueryEscape(`"read-committed"`)))
 	// go driver options, should set:
 	// character_set_client, character_set_connection, character_set_results
 	ops = append(ops, fmt.Sprintf("%s=%s", "charset", "binary"))
@@ -3054,14 +3049,7 @@ func New(inputDSN string, config *DBConfig) (*sql.DB, error) {
 	}
 	if err := db.Ping(); err != nil {
 		utils.ErrInErr(db.Close())
-		if config.Aurora20Compatible {
-			return nil, err // Already tried it, didn't work.
-		}
-		// This could be because of transaction_isolation vs. tx_isolation.
-		// Try changing to Aurora 2.0 compatible mode and retrying.
-		// because config is a pointer, it will update future calls too.
-		config.Aurora20Compatible = true
-		return New(inputDSN, config)
+		return nil, err
 	}
 	db.SetMaxOpenConns(config.MaxOpenConnections)
 	db.SetConnMaxLifetime(maxConnLifetime)

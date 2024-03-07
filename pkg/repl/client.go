@@ -68,8 +68,8 @@ type Client struct {
 	table    *table.TableInfo
 	newTable *table.TableInfo
 
-	disableKeyAboveWatermarkOptimization bool
-	disableDeltaMap                      bool // use queue instead
+	enableKeyAboveWatermark bool
+	disableDeltaMap         bool // use queue instead
 
 	TableChangeNotificationCallback func()
 	KeyAboveCopierCallback          func(interface{}) bool
@@ -146,10 +146,13 @@ func (c *Client) OnRow(e *canal.RowsEvent) error {
 			return fmt.Errorf("no primary key found for row: %#v", row)
 		}
 		atomic.AddInt64(&c.changesetRowsEventCount, 1)
-		// Important! We can only apply this optimization while in migrationStateCopyRows.
-		// If we do it too early, we might miss updates in-between starting the subscription,
-		// and opening the table in resume from checkpoint etc.
-		if !c.disableKeyAboveWatermarkOptimization && c.KeyAboveCopierCallback != nil && c.KeyAboveCopierCallback(key[0]) {
+
+		// The KeyAboveWatermark optimization has to be enabled
+		// We enable it once all the setup has been done (since we create a repl client
+		// earlier in setup to ensure binary logs are available).
+		// We then disable the optimization after the copier phase has finished.
+		if c.KeyAboveWatermarkEnabled() && c.KeyAboveCopierCallback(key[0]) {
+			c.logger.Debugf("key above watermark: %v", key[0])
 			continue // key can be ignored
 		}
 		switch e.Action {
@@ -163,6 +166,14 @@ func (c *Client) OnRow(e *canal.RowsEvent) error {
 	}
 	c.updatePosInMemory(e.Header.LogPos)
 	return nil
+}
+
+// KeyAboveWatermarkEnabled returns true if the key above watermark optimization is enabled.
+// and it's also safe to do so.
+func (c *Client) KeyAboveWatermarkEnabled() bool {
+	c.Lock()
+	defer c.Unlock()
+	return c.enableKeyAboveWatermark && c.KeyAboveCopierCallback != nil
 }
 
 // OnRotate is called when a rotate event is discovered via replication.
@@ -190,7 +201,7 @@ func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
 	c.Lock()
 	defer c.Unlock()
 
-	c.disableKeyAboveWatermarkOptimization = !newVal
+	c.enableKeyAboveWatermark = newVal
 }
 
 // SetPos is used for resuming from a checkpoint.

@@ -89,6 +89,7 @@ func TestReplClientComplex(t *testing.T) {
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
 	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark
+	client.SetKeyAboveWatermarkOptimization(true)
 
 	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
 

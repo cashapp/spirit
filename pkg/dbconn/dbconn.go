@@ -28,7 +28,6 @@ type DBConfig struct {
 	InnodbLockWaitTimeout    int
 	MaxRetries               int
 	MaxOpenConnections       int
-	Aurora20Compatible       bool // use tx_isolation instead of transaction_isolation
 	RangeOptimizerMaxMemSize int64
 }
 

@@ -254,6 +254,40 @@ func (c *Checker) setInvalid(newVal bool) {
 	c.isInvalid = newVal
 }
 
+func (c *Checker) initConnPool(ctx context.Context) error {
+	// Try and catch up before we apply a table lock,
+	// since we will need to catch up again with the lock held
+	// and we want to minimize that.
+	if err := c.feed.Flush(ctx); err != nil {
+		return err
+	}
+	// Lock the source table in a trx
+	// so the connection is not used by others
+	c.logger.Info("starting checksum operation, this will require a table lock")
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	if err != nil {
+		return err
+	}
+	defer serverLock.Close()
+	// With the lock held, flush one more time under the lock tables.
+	// Because we know canal is up to date this now guarantees
+	// we have everything in the new table.
+	if err := c.feed.FlushUnderLock(ctx, serverLock); err != nil {
+		return err
+	}
+	// Assert that the change set is empty. This should always
+	// be the case because we are under a lock.
+	if !c.feed.AllChangesFlushed() {
+		return errors.New("not all changes flushed")
+	}
+	// Create a set of connections which can be used to checksum
+	// The table. They MUST be created before the lock is released
+	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
+	// to initialize the read-view.
+	c.trxPool, err = dbconn.NewTrxPool(ctx, c.db, c.concurrency, c.dbConfig)
+	return err
+}
+
 func (c *Checker) Run(ctx context.Context) error {
 	c.Lock()
 	c.startTime = time.Now()
@@ -264,51 +298,11 @@ func (c *Checker) Run(ctx context.Context) error {
 		return err
 	}
 	c.Unlock()
-	// Try and catch up before we apply a table lock,
-	// since we will need to catch up again with the lock held
-	// and we want to minimize that.
-	if err := c.feed.Flush(ctx); err != nil {
-		return err
-	}
-	// Lock the source table in a trx
-	// so the connection is not used by others
-	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, false, c.dbConfig, c.logger)
-	if err != nil {
-		return err
-	}
-	defer serverLock.Close()
 
-	// With the lock held, flush one more time under the lock tables.
-	// Because we know canal is up to date this now guarantees
-	// we have everything in the new table.
-	if err := c.feed.Flush(ctx); err != nil {
-		return err
-	}
-
-	// Assert that the change set is empty. This should always
-	// be the case because we are under a lock.
-	if !c.feed.AllChangesFlushed() {
-		return errors.New("not all changes flushed")
-	}
-
-	// Create a set of connections which can be used to checksum
-	// The table. They MUST be created before the lock is released
-	// with REPEATABLE-READ and a consistent snapshot (or dummy read)
-	// to initialize the read-view.
-	c.trxPool, err = dbconn.NewTrxPool(ctx, c.db, c.concurrency, c.dbConfig)
-	if err != nil {
-		return err
-	}
-
-	// Assert that the change set is still empty.
-	// It should always be empty while we are still under the lock.
-	if c.feed.GetDeltaLen() > 0 {
-		return errors.New("the changeset is not empty, can not run checksum")
-	}
-
-	// We can now unlock the table before starting the checksumming.
-	if err = serverLock.Close(); err != nil {
+	// initConnPool initialize the connection pool.
+	// This is done under a table lock which is acquired in this func.
+	// It is released as the func is returned.
+	if err := c.initConnPool(ctx); err != nil {
 		return err
 	}
 	c.logger.Info("table unlocked, starting checksum")

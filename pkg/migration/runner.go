@@ -233,6 +233,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 	r.logger.Info("copy rows complete")
+	r.replClient.SetKeyAboveWatermarkOptimization(false) // should no longer be used.
 
 	// r.waitOnSentinel may return an error if there is
 	// some unexpected problem checking for the existence of
@@ -495,6 +496,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// If this is NOT nil then it will use this optimization when determining
 	// if it can ignore a KEY.
 	r.replClient.KeyAboveCopierCallback = r.copier.KeyAboveHighWatermark
+	r.replClient.SetKeyAboveWatermarkOptimization(true)
 
 	// Start routines in table and replication packages to
 	// Continuously update the min/max and estimated rows
@@ -800,9 +802,6 @@ func (r *Runner) getCurrentState() migrationState {
 
 func (r *Runner) setCurrentState(s migrationState) {
 	atomic.StoreInt32((*int32)(&r.currentState), int32(s))
-	if s > stateCopyRows && r.replClient != nil {
-		r.replClient.SetKeyAboveWatermarkOptimization(false)
-	}
 }
 
 func (r *Runner) dumpCheckpoint(ctx context.Context) error {
