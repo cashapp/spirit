@@ -17,19 +17,19 @@ import (
 )
 
 func TestBasicChecksum(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_chkpnt")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, _t1_new, _t1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _t1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	testutils.RunSQL(t, "CREATE TABLE _t1_chkpnt (a INT)") // for binlog advancement
 	testutils.RunSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _t1_new VALUES (1, 2, 3)")
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "t2")
+	t2 := table.NewTableInfo(db, "test", "_t1_new")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
@@ -88,20 +88,20 @@ func TestBasicValidation(t *testing.T) {
 }
 
 func TestFixCorrupt(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS fixcorruption_t1, fixcorruption_t2, _fixcorruption_t1_chkpnt")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS fixcorruption_t1, _fixcorruption_t1_new, _fixcorruption_t1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE fixcorruption_t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE fixcorruption_t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _fixcorruption_t1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 	testutils.RunSQL(t, "CREATE TABLE _fixcorruption_t1_chkpnt (a INT)") // for binlog advancement
 	testutils.RunSQL(t, "INSERT INTO fixcorruption_t1 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO fixcorruption_t2 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO fixcorruption_t2 VALUES (2, 2, 3)") // corrupt
+	testutils.RunSQL(t, "INSERT INTO _fixcorruption_t1_new VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _fixcorruption_t1_new VALUES (2, 2, 3)") // corrupt
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "fixcorruption_t1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "fixcorruption_t2")
+	t2 := table.NewTableInfo(db, "test", "_fixcorruption_t1_new")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
@@ -131,20 +131,20 @@ func TestFixCorrupt(t *testing.T) {
 }
 
 func TestCorruptChecksum(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_chkpnt")
-	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE _t1_chkpnt (a INT)") // for binlog advancement
-	testutils.RunSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO t2 VALUES (2, 2, 3)") // corrupt
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS chkpcorruptt1, _chkpcorruptt1_new, _chkpcorruptt1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE chkpcorruptt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _chkpcorruptt1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _chkpcorruptt1_chkpnt (a INT)") // for binlog advancement
+	testutils.RunSQL(t, "INSERT INTO chkpcorruptt1 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _chkpcorruptt1_new VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _chkpcorruptt1_new VALUES (2, 2, 3)") // corrupt
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo(db, "test", "t1")
+	t1 := table.NewTableInfo(db, "test", "chkpcorruptt1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "t2")
+	t2 := table.NewTableInfo(db, "test", "_chkpcorruptt1_new")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
@@ -164,18 +164,19 @@ func TestCorruptChecksum(t *testing.T) {
 }
 
 func TestBoundaryCases(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, t2")
-	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b FLOAT, c VARCHAR(255), PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b FLOAT, c VARCHAR(255), PRIMARY KEY (a))")
-	testutils.RunSQL(t, "INSERT INTO t1 VALUES (1, 2.2, '')")   // null vs empty string
-	testutils.RunSQL(t, "INSERT INTO t2 VALUES (1, 2.2, NULL)") // should not compare
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS checkert1, _checkert1_new, _checkert1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE checkert1 (a INT NOT NULL, b FLOAT, c VARCHAR(255), PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _checkert1_new (a INT NOT NULL, b FLOAT, c VARCHAR(255), PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _checkert1_chkpnt (a INT NOT NULL)")
+	testutils.RunSQL(t, "INSERT INTO checkert1 VALUES (1, 2.2, '')")        // null vs empty string
+	testutils.RunSQL(t, "INSERT INTO _checkert1_new VALUES (1, 2.2, NULL)") // should not compare
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo(db, "test", "t1")
+	t1 := table.NewTableInfo(db, "test", "checkert1")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "t2")
+	t2 := table.NewTableInfo(db, "test", "_checkert1_new")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
@@ -193,14 +194,14 @@ func TestBoundaryCases(t *testing.T) {
 	assert.Error(t, checker.Run(context.Background()))
 
 	// UPDATE t1 to also be NULL
-	testutils.RunSQL(t, "UPDATE t1 SET c = NULL")
+	testutils.RunSQL(t, "UPDATE checkert1 SET c = NULL")
 	checker, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background()))
 }
 
 func TestChangeDataTypeDatetime(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS tdatetime, tdatetime2")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS tdatetime, _tdatetime_new")
 	testutils.RunSQL(t, `CREATE TABLE tdatetime (
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -209,7 +210,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	activated_at timestamp NULL DEFAULT NULL,
 	deactivated_at timestamp NULL DEFAULT NULL
 	)`)
-	testutils.RunSQL(t, `CREATE TABLE tdatetime2 (
+	testutils.RunSQL(t, `CREATE TABLE _tdatetime_new (
 	id bigint NOT NULL AUTO_INCREMENT primary key,
 	created_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 	updated_at timestamp(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
@@ -230,7 +231,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	('2023-05-26 06:24:24', '2023-05-28 23:45:01', '2023-05-26 06:24:23', '2023-05-26 06:24:42', '2023-05-28 23:45:01'),
 	('2023-05-28 23:46:07', '2023-05-29 00:57:55', '2023-05-28 23:46:05', '2023-05-28 23:46:05', NULL               ),
 	('2023-05-28 23:53:34', '2023-05-29 00:57:56', '2023-05-28 23:53:33', '2023-05-28 23:58:09', NULL               );`)
-	testutils.RunSQL(t, `INSERT INTO tdatetime2 SELECT * FROM tdatetime`)
+	testutils.RunSQL(t, `INSERT INTO _tdatetime_new SELECT * FROM tdatetime`)
 	// The checkpoint table is required for blockwait, structure doesn't matter.
 	testutils.RunSQL(t, "CREATE TABLE IF NOT EXISTS _tdatetime_chkpnt (id int)")
 
@@ -239,7 +240,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "tdatetime2")
+	t2 := table.NewTableInfo(db, "test", "_tdatetime_new")
 	assert.NoError(t, t2.SetInfo(context.TODO())) // fails
 	logger := logrus.New()
 

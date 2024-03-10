@@ -1305,6 +1305,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
 	err = m.replClient.Run()
 	assert.NoError(t, err)
+	m.replClient.SetKeyAboveWatermarkOptimization(true)
 
 	// Now we are ready to start copying rows.
 	// Instead of calling m.copyRows() we will step through it manually.
