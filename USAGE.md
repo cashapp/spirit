@@ -142,6 +142,8 @@ The replication throttler only affects the copy-rows operation, and does not app
 
 The "defer cutover" feature makes spirit wait to perform the final cutover until a "sentinel" table has been dropped. This is similar to the --postpone-cut-over-flag-file feature of gh-ost.
 
+The defer cutover feature will not be used and the sentinel table will not be created if the schema migration can be successfully executed using ALGORITHM=INSTANT (see "Attempt Instant DDL" in README.md).
+
 If defer-cutover is true, Spirit will create a "sentinel" table in the same schema as the table being altered; the name of the sentinel table will use the pattern `_<table>_sentinel`. Spirit will block before the cutover, waiting for the operator to manually drop the sentinel table, which triggers Spirit to proceed with the cutover. Spirit will never delete the sentinel table on its own. It will block for 48 hours waiting for the sentinel table to be dropped by the operator, after which it will exit with an error.
 
 You can resume a migration from checkpoint and Spirit will start waiting again for you to drop the sentinel table. You can also choose to delete the sentinel table before restarting Spirit, which will cause it to resume from checkpoint and complete the cutover without waiting, even if you have again enabled defer-cutover for the migration.
