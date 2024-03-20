@@ -555,10 +555,17 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 
 // alterNewTable applies the ALTER to the new table.
 // It has been pre-checked it is not a rename, or modifying the PRIMARY KEY.
+// We first attempt to do this using ALGORITHM=COPY so we don't burn
+// an INSTANT version. But surprisingly this is not supported for all DDLs (issue #277)
 func (r *Runner) alterNewTable(ctx context.Context) error {
 	if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+utils.TrimAlter(r.migration.Alter)+", ALGORITHM=COPY",
 		r.newTable.SchemaName, r.newTable.TableName); err != nil {
-		return err
+		// Retry without the ALGORITHM=COPY. If there is a second error, then the DDL itself
+		// is not supported. It could be a syntax error, in which case we return the second error,
+		// which will probably be easier to read because it is unaltered.
+		if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.migration.Alter, r.newTable.SchemaName, r.newTable.TableName); err != nil {
+			return err
+		}
 	}
 	// Call GetInfo on the table again, since the columns
 	// might have changed and this will affect the row copiers intersect func.
