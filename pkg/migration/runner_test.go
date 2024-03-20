@@ -48,6 +48,31 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
+// TestPartitioningSyntax tests that ALTERs that don't support ALGORITHM assertion
+// are still supported. From https://github.com/cashapp/spirit/issues/277
+func TestPartitioningSyntax(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS partt1, _partt1_new`)
+	table := `CREATE TABLE partt1 (
+		id INT NOT NULL PRIMARY KEY auto_increment,
+		name varchar(255) NOT NULL
+	)`
+	testutils.RunSQL(t, table)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "partt1",
+		Alter:    "PARTITION BY KEY() PARTITIONS 8",
+	})
+	assert.NoError(t, err)
+	assert.NoError(t, m.Run(context.Background()))
+	assert.NoError(t, m.Close())
+}
+
 func TestVarbinary(t *testing.T) {
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS varbinaryt1, _varbinaryt1_new`)
 	table := `CREATE TABLE varbinaryt1 (
