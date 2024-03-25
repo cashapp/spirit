@@ -108,6 +108,14 @@ type Runner struct {
 	metricsSink metrics.Sink
 }
 
+// Progress is returned as a struct because we may add more to it later.
+// It is designed for wrappers (like a GUI) to be able to summarize the
+// current status without parsing log output.
+type Progress struct {
+	CurrentState string // string of current state, i.e. copyRows
+	Summary      string // text based representation, i.e. "12.5% copyRows ETA 1h 30m"
+}
+
 func NewRunner(m *Migration) (*Runner, error) {
 	r := &Runner{
 		migration:   m,
@@ -597,6 +605,29 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	}
 	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
 	return nil
+}
+
+func (r *Runner) GetProgress() Progress {
+	var summary string
+	switch r.getCurrentState() {
+	case stateCopyRows:
+		summary = fmt.Sprintf("%v %s ETA %v",
+			r.copier.GetProgress(),
+			r.getCurrentState().String(),
+			r.copier.GetETA(),
+		)
+	case stateWaitingOnSentinelTable:
+		summary = "Waiting on Sentinel Table"
+	case stateApplyChangeset, statePostChecksum:
+		summary = fmt.Sprintf("Applying Changeset Deltas=%v", r.replClient.GetDeltaLen())
+	case stateChecksum:
+		r.checkerLock.Lock()
+		summary = fmt.Sprintf("Checksum Progress=%s/%s", r.checker.RecentValue(), r.table.MaxValue())
+	}
+	return Progress{
+		CurrentState: r.getCurrentState().String(),
+		Summary:      summary,
+	}
 }
 
 func (r *Runner) sentinelTableName() string {
