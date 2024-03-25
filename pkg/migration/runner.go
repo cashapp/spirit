@@ -609,7 +609,7 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 
 func (r *Runner) GetProgress() Progress {
 	var summary string
-	switch r.getCurrentState() {
+	switch r.getCurrentState() { //nolint: exhaustive
 	case stateCopyRows:
 		summary = fmt.Sprintf("%v %s ETA %v",
 			r.copier.GetProgress(),
