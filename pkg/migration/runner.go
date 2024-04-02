@@ -496,7 +496,7 @@ func (r *Runner) setup(ctx context.Context) error {
 	// If this is NOT nil then it will use this optimization when determining
 	// if it can ignore a KEY.
 	r.replClient.KeyAboveCopierCallback = r.copier.KeyAboveHighWatermark
-	//r.replClient.SetKeyAboveWatermarkOptimization(true)
+	r.replClient.SetKeyAboveWatermarkOptimization(true)
 
 	// Start routines in table and replication packages to
 	// Continuously update the min/max and estimated rows
