@@ -34,7 +34,7 @@ const (
 	// This is only used as an initial starting value. It will auto-scale based on the DefaultTargetBatchTime.
 	DefaultBatchSize = 1000
 
-	// DefaultBatchTime is the target time for flushing REPLACE/DELETE statements.
+	// DefaultTargetBatchTime is the target time for flushing REPLACE/DELETE statements.
 	DefaultTargetBatchTime = time.Millisecond * 500
 
 	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
@@ -49,8 +49,8 @@ type queuedChange struct {
 }
 
 type statement struct {
-	keys int
-	stmt string
+	numKeys int
+	stmt    string
 }
 
 func extractStmt(stmts []statement) []string {
@@ -534,7 +534,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 			g.Go(func() error {
 				startTime := time.Now()
 				_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s.stmt)
-				c.feedback(s.keys, time.Since(startTime))
+				c.feedback(s.numKeys, time.Since(startTime))
 				return err
 			})
 		}
@@ -559,8 +559,8 @@ func (c *Client) createDeleteStmt(deleteKeys []string) statement {
 		)
 	}
 	return statement{
-		keys: len(deleteKeys),
-		stmt: deleteStmt,
+		numKeys: len(deleteKeys),
+		stmt:    deleteStmt,
 	}
 }
 
@@ -577,8 +577,8 @@ func (c *Client) createReplaceStmt(replaceKeys []string) statement {
 		)
 	}
 	return statement{
-		keys: len(replaceKeys),
-		stmt: replaceStmt,
+		numKeys: len(replaceKeys),
+		stmt:    replaceStmt,
 	}
 }
 
