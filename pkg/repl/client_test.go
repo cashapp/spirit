@@ -36,9 +36,9 @@ func TestReplClient(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, client.Run())
 	defer client.Close()
@@ -151,9 +151,9 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	client.SetPos(mysql.Position{
 		Name: "impossible",
@@ -180,9 +180,9 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
@@ -215,9 +215,9 @@ func TestReplClientOpts(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 	assert.NoError(t, client.Run())
@@ -312,4 +312,47 @@ func TestReplClientQueue(t *testing.T) {
 	// Final flush
 	assert.NoError(t, client.Flush(context.TODO()))
 	assert.Equal(t, client.GetDeltaLen(), 0)
+}
+
+func TestFeedback(t *testing.T) {
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS feedbackt1, feedbackt2, _feedbackt1_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE feedbackt1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE feedbackt2 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _feedbackt1_chkpnt (a int)") // just used to advance binlog
+
+	t1 := table.NewTableInfo(db, "test", "replqueuet1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "replqueuet2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
+	assert.NoError(t, client.Run())
+	defer client.Close()
+
+	// initial values expected:
+	assert.Equal(t, time.Millisecond*500, client.targetBatchTime)
+	assert.Equal(t, int64(1000), client.targetBatchSize)
+
+	// Make it complete 5 times faster than expected
+	// Run 9 times initially.
+	for i := 0; i < 9; i++ {
+		client.feedback(1000, time.Millisecond*100)
+	}
+	assert.Equal(t, int64(1000), client.targetBatchSize) // no change yet
+	client.feedback(0, time.Millisecond*100)             // no keys, should not cause change.
+	assert.Equal(t, int64(1000), client.targetBatchSize) // no change yet
+	client.feedback(1000, time.Millisecond*100)          // 10th time.
+	assert.Equal(t, int64(5000), client.targetBatchSize) // 5x more keys.
+
+	// test with slower chunk
+	for i := 0; i < 10; i++ {
+		client.feedback(1000, time.Second)
+	}
+	assert.Equal(t, int64(500), client.targetBatchSize) // less keys.
 }

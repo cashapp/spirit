@@ -457,9 +457,9 @@ func (r *Runner) setup(ctx context.Context) error {
 			return err
 		}
 		r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-			Logger:      r.logger,
-			Concurrency: r.migration.Threads,
-			BatchSize:   repl.DefaultBatchSize,
+			Logger:          r.logger,
+			Concurrency:     r.migration.Threads,
+			TargetBatchTime: r.migration.TargetChunkTime,
 		})
 		// Start the binary log feed now
 		if err := r.replClient.Run(); err != nil {
@@ -716,9 +716,9 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Set the binlog position.
 	// Create a binlog subscriber
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-		Logger:      r.logger,
-		Concurrency: r.migration.Threads,
-		BatchSize:   repl.DefaultBatchSize,
+		Logger:          r.logger,
+		Concurrency:     r.migration.Threads,
+		TargetBatchTime: r.migration.TargetChunkTime,
 	})
 	r.replClient.SetPos(mysql.Position{
 		Name: binlogName,

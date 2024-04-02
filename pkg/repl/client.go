@@ -31,7 +31,12 @@ const (
 	// Since on some of our Aurora tables with out-of-cache workloads only copy ~300 rows per second,
 	// we probably shouldn't set this any larger than about 1K. It will also use
 	// multiple-flush-threads, which should help it group commit and still be fast.
+	// This is only used as an initial starting value. It will auto-scale based on the DefaultTargetBatchTime.
 	DefaultBatchSize = 1000
+
+	// DefaultTargetBatchTime is the target time for flushing REPLACE/DELETE statements.
+	DefaultTargetBatchTime = time.Millisecond * 500
+
 	// DefaultFlushInterval is the time that the client will flush all binlog changes to disk.
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in the future.
@@ -42,6 +47,22 @@ type queuedChange struct {
 	key      string
 	isDelete bool
 }
+
+type statement struct {
+	numKeys int
+	stmt    string
+}
+
+func extractStmt(stmts []statement) []string {
+	var trimmed []string
+	for _, stmt := range stmts {
+		if stmt.stmt != "" {
+			trimmed = append(trimmed, stmt.stmt)
+		}
+	}
+	return trimmed
+}
+
 type Client struct {
 	canal.DummyEventHandler
 	sync.Mutex
@@ -76,8 +97,11 @@ type Client struct {
 
 	isClosed bool
 
-	batchSize   int64
-	concurrency int
+	statisticsLock  sync.Mutex
+	targetBatchTime time.Duration
+	targetBatchSize int64 // will auto-adjust over time, use atomic to read/set
+	timingHistory   []time.Duration
+	concurrency     int
 
 	// The periodic flush lock is just used for ensuring only one periodic flush runs at a time,
 	// and when we disable it, no more periodic flushes will run. The actual flushing is protected
@@ -98,23 +122,24 @@ func NewClient(db *sql.DB, host string, table, newTable *table.TableInfo, userna
 		password:        password,
 		binlogChangeset: make(map[string]bool),
 		logger:          config.Logger,
-		batchSize:       config.BatchSize,
+		targetBatchTime: config.TargetBatchTime,
+		targetBatchSize: DefaultBatchSize, // initial starting value.
 		concurrency:     config.Concurrency,
 	}
 }
 
 type ClientConfig struct {
-	BatchSize   int64
-	Concurrency int
-	Logger      loggers.Advanced
+	TargetBatchTime time.Duration
+	Concurrency     int
+	Logger          loggers.Advanced
 }
 
 // NewClientDefaultConfig returns a default config for the copier.
 func NewClientDefaultConfig() *ClientConfig {
 	return &ClientConfig{
-		Concurrency: 4,
-		BatchSize:   DefaultBatchSize,
-		Logger:      logrus.New(),
+		Concurrency:     4,
+		TargetBatchTime: DefaultTargetBatchTime,
+		Logger:          logrus.New(),
 	}
 }
 
@@ -405,13 +430,14 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 	}
 
 	// Otherwise, flush the changes.
-	var stmts []string
+	var stmts []statement
 	var buffer []string
 	prevKey := changesToFlush[0] // for initialization
+	target := int(atomic.LoadInt64(&c.targetBatchSize))
 	for _, change := range changesToFlush {
 		// We are changing from DELETE to REPLACE
 		// or vice versa, *or* the buffer is getting very large.
-		if change.isDelete != prevKey.isDelete || len(buffer) > DefaultBatchSize {
+		if change.isDelete != prevKey.isDelete || len(buffer) > target {
 			if prevKey.isDelete {
 				stmts = append(stmts, c.createDeleteStmt(buffer))
 			} else {
@@ -432,13 +458,13 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 		// Execute under lock means it is a final flush
 		// We need to use the lock connection to do this
 		// so there is no parallelism.
-		if err := lock.ExecUnderLock(ctx, stmts); err != nil {
+		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)); err != nil {
 			return err
 		}
 	} else {
 		// Execute the statements in a transaction.
 		// They still need to be single threaded.
-		if _, err := dbconn.RetryableTransaction(ctx, c.db, true, dbconn.NewDBConfig(), stmts...); err != nil {
+		if _, err := dbconn.RetryableTransaction(ctx, c.db, true, dbconn.NewDBConfig(), extractStmt(stmts)...); err != nil {
 			return err
 		}
 	}
@@ -468,8 +494,9 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 	// We must now apply the changeset setToFlush to the new table.
 	var deleteKeys []string
 	var replaceKeys []string
-	var stmts []string
+	var stmts []statement
 	var i int64
+	target := atomic.LoadInt64(&c.targetBatchSize)
 	for key, isDelete := range setToFlush {
 		i++
 		if isDelete {
@@ -477,12 +504,12 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		} else {
 			replaceKeys = append(replaceKeys, key)
 		}
-		if (i % c.batchSize) == 0 {
+		if (i % target) == 0 {
 			stmts = append(stmts, c.createDeleteStmt(deleteKeys))
 			stmts = append(stmts, c.createReplaceStmt(replaceKeys))
 			deleteKeys = []string{}
 			replaceKeys = []string{}
-			atomic.AddInt64(&c.binlogChangesetDelta, -c.batchSize)
+			atomic.AddInt64(&c.binlogChangesetDelta, -target)
 		}
 	}
 	stmts = append(stmts, c.createDeleteStmt(deleteKeys))
@@ -492,7 +519,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		// Execute under lock means it is a final flush
 		// We need to use the lock connection to do this
 		// so there is no parallelism.
-		if err := lock.ExecUnderLock(ctx, stmts); err != nil {
+		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)); err != nil {
 			return err
 		}
 	} else {
@@ -505,7 +532,9 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		for _, stmt := range stmts {
 			s := stmt
 			g.Go(func() error {
-				_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s)
+				startTime := time.Now()
+				_, err := dbconn.RetryableTransaction(errGrpCtx, c.db, false, dbconn.NewDBConfig(), s.stmt)
+				c.feedback(s.numKeys, time.Since(startTime))
 				return err
 			})
 		}
@@ -520,7 +549,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 	return nil
 }
 
-func (c *Client) createDeleteStmt(deleteKeys []string) string {
+func (c *Client) createDeleteStmt(deleteKeys []string) statement {
 	var deleteStmt string
 	if len(deleteKeys) > 0 {
 		deleteStmt = fmt.Sprintf("DELETE FROM %s WHERE (%s) IN (%s)",
@@ -529,10 +558,13 @@ func (c *Client) createDeleteStmt(deleteKeys []string) string {
 			c.pksToRowValueConstructor(deleteKeys),
 		)
 	}
-	return deleteStmt
+	return statement{
+		numKeys: len(deleteKeys),
+		stmt:    deleteStmt,
+	}
 }
 
-func (c *Client) createReplaceStmt(replaceKeys []string) string {
+func (c *Client) createReplaceStmt(replaceKeys []string) statement {
 	var replaceStmt string
 	if len(replaceKeys) > 0 {
 		replaceStmt = fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s FORCE INDEX (PRIMARY) WHERE (%s) IN (%s)",
@@ -544,7 +576,46 @@ func (c *Client) createReplaceStmt(replaceKeys []string) string {
 			c.pksToRowValueConstructor(replaceKeys),
 		)
 	}
-	return replaceStmt
+	return statement{
+		numKeys: len(replaceKeys),
+		stmt:    replaceStmt,
+	}
+}
+
+// feedback provides feedback on the apply time of changesets.
+// We use this to refine the targetBatchSize. This is a little bit
+// different for feedback for the copier, because frequently the batches
+// will not be full. We still need to use a p90-like mechanism though,
+// because the rows being changed are by definition more likely to be hotspots.
+// Hotspots == Lock Contention. This is one of the exact reasons why we are
+// chunking in the first place. The probability that the applier can cause
+// impact on OLTP workloads is much higher than the copier.
+func (c *Client) feedback(numberOfKeys int, d time.Duration) {
+	c.statisticsLock.Lock()
+	defer c.statisticsLock.Unlock()
+	if numberOfKeys == 0 {
+		// If the number of keys is zero, we can't
+		// calculate anything so we just return
+		return
+	}
+	// For the p90-like mechanism rather than storing all the previous
+	// durations, because the numberOfKeys is variable we instead store
+	// the timePerKey. We then adjust the targetBatchSize based on this.
+	// This creates some skew because small batches will have a higher
+	// timePerKey, which can create a back log. Which results in a smaller
+	// timePerKey. So at least the skew *should* be self-correcting. This
+	// has not yet been proven though.
+	timePerKey := d / time.Duration(numberOfKeys)
+	c.timingHistory = append(c.timingHistory, timePerKey)
+
+	// If we have enough feedback re-evaluate the target batch size
+	// based on the p90 timePerKey.
+	if len(c.timingHistory) >= 10 {
+		timePerKey := table.LazyFindP90(c.timingHistory)
+		newBatchSize := int64(float64(c.targetBatchTime) / float64(timePerKey))
+		atomic.StoreInt64(&c.targetBatchSize, newBatchSize)
+		c.timingHistory = nil // reset
+	}
 }
 
 // Flush empties the changeset in a loop until the amount of changes is considered "trivial".
@@ -610,7 +681,10 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 				c.logger.Errorf("error flushing binary log: %v", err)
 			}
 			c.periodicFlushLock.Unlock()
-			c.logger.Infof("finished periodic flush of binary log: duration=%v", time.Since(startLoop))
+			c.logger.Infof("finished periodic flush of binary log: total-duration=%v batch-size=%d",
+				time.Since(startLoop),
+				atomic.LoadInt64(&c.targetBatchSize),
+			)
 		}
 	}
 }
