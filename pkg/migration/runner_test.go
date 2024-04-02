@@ -761,9 +761,9 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.alterNewTable(context.TODO()))
 	assert.NoError(t, r.createCheckpointTable(context.TODO()))
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-		Logger:      logrus.New(), // don't use the logger for migration since we feed status to it.
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logrus.New(), // don't use the logger for migration since we feed status to it.
+		Concurrency:     4,
+		TargetBatchTime: r.migration.TargetChunkTime,
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -909,9 +909,9 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.NoError(t, r.createCheckpointTable(context.TODO()))
 
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-		Logger:      logrus.New(),
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logrus.New(),
+		Concurrency:     4,
+		TargetBatchTime: r.migration.TargetChunkTime,
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -995,9 +995,9 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: m.migration.TargetChunkTime,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
@@ -1190,9 +1190,9 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: m.migration.TargetChunkTime,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -1314,9 +1314,9 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: m.migration.TargetChunkTime,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -1915,9 +1915,9 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable(context.TODO()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   repl.DefaultBatchSize,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: m.migration.TargetChunkTime,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -2077,9 +2077,9 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, m.createCheckpointTable(ctx))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   repl.DefaultBatchSize,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: m.migration.TargetChunkTime,
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,

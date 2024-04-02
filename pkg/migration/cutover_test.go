@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
@@ -44,9 +45,9 @@ func TestCutOver(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
@@ -103,9 +104,9 @@ func TestMDLLockFails(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
@@ -141,9 +142,9 @@ func TestInvalidOptions(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	_, err = NewCutOver(db, nil, t1new, feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)

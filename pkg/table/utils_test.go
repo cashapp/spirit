@@ -20,7 +20,7 @@ func TestFindP90(t *testing.T) {
 		1 * time.Second,
 		1 * time.Second,
 	}
-	assert.Equal(t, 3*time.Second, lazyFindP90(times))
+	assert.Equal(t, 3*time.Second, LazyFindP90(times))
 }
 
 type castableTpTest struct {

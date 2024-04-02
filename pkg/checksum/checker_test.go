@@ -3,6 +3,7 @@ package checksum
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/cashapp/spirit/pkg/testutils"
 
@@ -36,9 +37,9 @@ func TestBasicChecksum(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
@@ -71,9 +72,9 @@ func TestBasicValidation(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
@@ -108,9 +109,9 @@ func TestFixCorrupt(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
@@ -151,9 +152,9 @@ func TestCorruptChecksum(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
@@ -183,9 +184,9 @@ func TestBoundaryCases(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
@@ -247,9 +248,9 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
-		Logger:      logger,
-		Concurrency: 4,
-		BatchSize:   10000,
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
 
