@@ -1225,7 +1225,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NotNil(t, chunk)
 	assert.Equal(t, "((`id1` < 1001)\n OR (`id1` = 1001 AND `id2` < 1))", chunk.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
-	assert.Equal(t, Progress{CurrentState: "copyRows", Summary: "1000/1200 83.33% copyRows ETA TBD"}, m.GetProgress())
+	assert.Equal(t, Progress{CurrentState: stateCopyRows.String(), Summary: "1000/1200 83.33% copyRows ETA TBD"}, m.GetProgress())
 
 	// Now insert some data.
 	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (1002, 2)`)
@@ -1240,7 +1240,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "((`id1` > 1001)\n OR (`id1` = 1001 AND `id2` >= 1))", chunk.String())
 	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
-	assert.Equal(t, Progress{CurrentState: "copyRows", Summary: "1201/1200 100.08% copyRows ETA DUE"}, m.GetProgress())
+	assert.Equal(t, Progress{CurrentState: stateCopyRows.String(), Summary: "1201/1200 100.08% copyRows ETA DUE"}, m.GetProgress())
 
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
@@ -1267,7 +1267,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	m.setCurrentState(stateChecksum)
 	assert.NoError(t, m.checksum(context.TODO()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
-	assert.Equal(t, Progress{CurrentState: "postChecksum", Summary: "Applying Changeset Deltas=0"}, m.GetProgress())
+	assert.Equal(t, Progress{CurrentState: statePostChecksum.String(), Summary: "Applying Changeset Deltas=0"}, m.GetProgress())
 
 	// All done!
 
@@ -2332,10 +2332,10 @@ func TestDeferCutOver(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		err = m.Run(context.Background())
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
-		wg.Done()
 	}()
 
 	// While it's waiting, check the Progress.
