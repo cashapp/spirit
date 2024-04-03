@@ -390,7 +390,7 @@ func (t *chunkerOptimistic) boundaryCheckTargetChunkSize(newTarget uint64) uint6
 
 func (t *chunkerOptimistic) calculateNewTargetChunkSize() uint64 {
 	// We do all our math as float64 of time in ns
-	p90 := float64(lazyFindP90(t.chunkTimingInfo))
+	p90 := float64(LazyFindP90(t.chunkTimingInfo))
 	targetTime := float64(t.ChunkerTarget)
 	newTargetRows := float64(t.chunkSize) * (targetTime / p90)
 	// switch to prefetch chunking if:
