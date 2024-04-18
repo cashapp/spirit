@@ -2801,5 +2801,4 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
-
 }
