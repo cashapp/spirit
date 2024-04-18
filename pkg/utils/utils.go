@@ -176,7 +176,7 @@ func AlterContainsIndexVisibility(sql string) error {
 	}
 	for _, spec := range alterStmt.Specs {
 		if spec.Tp == ast.AlterTableIndexInvisible {
-			return fmt.Errorf("the ALTER operation contains a change to index visibility and could not be completed as a meta-data only operation. Use --force-invisible to override this safety check if absolutely necessary")
+			return fmt.Errorf("the ALTER operation contains a change to index visibility and could not be completed as a meta-data only operation. This is a safety check! Please split the ALTER statement into separate statements for changing the invisible index and other operations")
 		}
 	}
 	return nil

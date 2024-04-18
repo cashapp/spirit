@@ -226,15 +226,13 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		}
 	}
 
-	// Unless Force invisibility is enabled, we don't want to allow visibility changes
-	// This is because we've already attempted MySQL DDL as instant, and it didn't work.
-	// It could be because the user is combining this operation with other unsafe operations,
+	// We don't want to allow visibility changes
+	// This is because we've already attempted MySQL DDL as INPLACE, and it didn't work.
+	// It likely means the user is combining this operation with other unsafe operations,
 	// which is not a good idea. We need to protect them by not allowing it.
 	// https://github.com/cashapp/spirit/issues/283
-	if !r.migration.ForceInvisible {
-		if err := utils.AlterContainsIndexVisibility("ALTER TABLE unused " + r.migration.Alter); err != nil {
-			return err
-		}
+	if err := utils.AlterContainsIndexVisibility("ALTER TABLE unused " + r.migration.Alter); err != nil {
+		return err
 	}
 
 	// Run post-setup checks

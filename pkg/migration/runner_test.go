@@ -2701,9 +2701,15 @@ func TestForNonInstantBurn(t *testing.T) {
 
 // From https://github.com/cashapp/spirit/issues/283
 // ALTER INDEX .. VISIBLE is INPLACE which is really weird.
-// it only makes sense to be instant, so we attempt it as instant if we know
-// it's with a set of safe changes. If it's not with a set of safe changes,
-// then we error by default.
+// it only makes sense to be instant, so we attempt it as a "safe inplace".
+// If it's not with a set of safe changes, then we error.
+// This means the user is expected to split their DDL into two separate ALTERs.
+//
+// There is a partial workaround for users to use --force-inplace, which would
+// help only if the other included changes are also INPLACE and not copy.
+// We *do* document this under --force-inplace docs, but it's
+// really not a typical use case to ever mix invisible with any other change.
+// i.e. if anything it's more a side-effect than a workaround.
 func TestIndexVisibility(t *testing.T) {
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -2712,6 +2718,7 @@ func TestIndexVisibility(t *testing.T) {
 	table := `CREATE TABLE indexvisibility (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		b INT NOT NULL,
+		c INT NOT NULL,
 		PRIMARY KEY (id),
 		INDEX (b)
 	)`
@@ -2746,7 +2753,8 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
 
-	// Test again but include an unsafe change at the same time.
+	// Test again but include an unsafe INPLACE change at the same time.
+	// This won't work by default.
 	m, err = NewRunner(&Migration{
 		Host:     cfg.Addr,
 		Username: cfg.User,
@@ -2754,25 +2762,44 @@ func TestIndexVisibility(t *testing.T) {
 		Database: cfg.DBName,
 		Threads:  1,
 		Table:    "indexvisibility",
-		Alter:    "ALTER INDEX b VISIBLE, ADD newcol INT",
+		Alter:    "ALTER INDEX b VISIBLE, ADD INDEX (c)",
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
 
-	// But we will allow the same as before as long as the ForceInvisible flag is set.
+	// But we will allow the above when force inplace is set.
 	m, err = NewRunner(&Migration{
-		Host:           cfg.Addr,
-		Username:       cfg.User,
-		Password:       cfg.Passwd,
-		Database:       cfg.DBName,
-		Threads:        1,
-		Table:          "indexvisibility",
-		Alter:          "ALTER INDEX b VISIBLE, ADD newcol INT",
-		ForceInvisible: true,
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      1,
+		Table:        "indexvisibility",
+		Alter:        "ALTER INDEX b VISIBLE, ADD INDEX (c)",
+		ForceInplace: true,
 	})
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+
+	// But even when force inplace is set, we won't be able to do an operation
+	// that requires a full copy. This is important because invisible should
+	// never be mixed with copy (the semantics are weird since it's for experiments).
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      1,
+		Table:        "indexvisibility",
+		Alter:        "ALTER INDEX b VISIBLE, CHANGE c BIGINT NOT NULL",
+		ForceInplace: true,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
+
 }

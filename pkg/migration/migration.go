@@ -18,7 +18,6 @@ type Migration struct {
 	Threads              int           `name:"threads" help:"Number of concurrent threads for copy and checksum tasks" optional:"" default:"4"`
 	TargetChunkTime      time.Duration `name:"target-chunk-time" help:"The target copy time for each chunk" optional:"" default:"500ms"`
 	ForceInplace         bool          `name:"force-inplace" help:"Force attempt to use inplace (only safe without replicas or with Aurora Global)" optional:"" default:"false"`
-	ForceInvisible       bool          `name:"force-invisible" help:"Allow invisible index changes even if they can not be made immediately" optional:"" default:"false"`
 	Checksum             bool          `name:"checksum" help:"Checksum new table before final cut-over" optional:"" default:"true"`
 	ReplicaDSN           string        `name:"replica-dsn" help:"A DSN for a replica which (if specified) will be used for lag checking." optional:""`
 	ReplicaMaxLag        time.Duration `name:"replica-max-lag" help:"The maximum lag allowed on the replica before the migration throttles." optional:"" default:"120s"`
