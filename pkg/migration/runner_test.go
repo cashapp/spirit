@@ -2698,3 +2698,81 @@ func TestForNonInstantBurn(t *testing.T) {
 	assert.False(t, m.usedInstantDDL) // it would have had to apply a copy.
 	assert.Equal(t, 0, rowVersions()) // confirm we reset to zero, not 1 (no burn)
 }
+
+// From https://github.com/cashapp/spirit/issues/283
+// ALTER INDEX .. VISIBLE is INPLACE which is really weird.
+// it only makes sense to be instant, so we attempt it as instant if we know
+// it's with a set of safe changes. If it's not with a set of safe changes,
+// then we error by default.
+func TestIndexVisibility(t *testing.T) {
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS indexvisibility`)
+	table := `CREATE TABLE indexvisibility (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		b INT NOT NULL,
+		PRIMARY KEY (id),
+		INDEX (b)
+	)`
+	testutils.RunSQL(t, table)
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "indexvisibility",
+		Alter:    "ALTER INDEX b INVISIBLE",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+
+	// Test again with visible
+	m, err = NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "indexvisibility",
+		Alter:    "ALTER INDEX b VISIBLE",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+
+	// Test again but include an unsafe change at the same time.
+	m, err = NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "indexvisibility",
+		Alter:    "ALTER INDEX b VISIBLE, ADD newcol INT",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.Error(t, err)
+	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
+
+	// But we will allow the same as before as long as the ForceInvisible flag is set.
+	m, err = NewRunner(&Migration{
+		Host:           cfg.Addr,
+		Username:       cfg.User,
+		Password:       cfg.Passwd,
+		Database:       cfg.DBName,
+		Threads:        1,
+		Table:          "indexvisibility",
+		Alter:          "ALTER INDEX b VISIBLE, ADD newcol INT",
+		ForceInvisible: true,
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+}

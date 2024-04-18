@@ -56,6 +56,8 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("rename index `a` to `b`")))
 	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, drop index `b`")))
 	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, rename index `b` to c")))
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("ALTER INDEX b INVISIBLE")))
+	assert.NoError(t, AlgorithmInplaceConsideredSafe(alter("ALTER INDEX b VISIBLE")))
 
 	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("ADD COLUMN `a` INT")))
 	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("ADD index (a)")))
@@ -64,6 +66,7 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	// this *should* be safe, but we don't support it yet because we can't
 	// guess which operations are INSTANT
 	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("drop index `a`, add column `b` int")))
+	assert.Error(t, AlgorithmInplaceConsideredSafe(alter("ALTER INDEX b INVISIBLE, add column `c` int")))
 }
 
 func TestAlterIsAddUnique(t *testing.T) {
@@ -80,6 +83,25 @@ func TestAlterIsAddUnique(t *testing.T) {
 	assert.NoError(t, AlterContainsAddUnique(alter("drop index `a`, add index `b` (`b`)")))
 	assert.NoError(t, AlterContainsAddUnique(alter("engine=innodb")))
 	assert.Error(t, AlterContainsAddUnique(alter("add unique(b)"))) // this is potentially lossy.
+}
+
+func TestAlterContainsIndexVisibility(t *testing.T) {
+	var alter = func(stmt string) string {
+		return "ALTER TABLE `test`.`t1` " + stmt
+	}
+	assert.NoError(t, AlterContainsIndexVisibility(alter("drop index `a`")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("rename index `a` to `b`")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("drop index `a`, drop index `b`")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("drop index `a`, rename index `b` to c")))
+
+	assert.NoError(t, AlterContainsIndexVisibility(alter("ADD COLUMN `a` INT")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("ADD index (a)")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("drop index `a`, add index `b` (`b`)")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("engine=innodb")))
+	assert.NoError(t, AlterContainsIndexVisibility(alter("add unique(b)")))
+
+	assert.Error(t, AlterContainsIndexVisibility(alter("ALTER INDEX b INVISIBLE")))
+	assert.Error(t, AlterContainsIndexVisibility(alter("ALTER INDEX b VISIBLE")))
 }
 
 func TestTrimAlter(t *testing.T) {
