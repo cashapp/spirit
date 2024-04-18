@@ -96,7 +96,7 @@ Note that Spirit does not support dynamically adjusting the target-chunk-time wh
 
 When set to `TRUE`, Spirit will attempt to perform the schema change using MySQL's `INPLACE` algorithm, before falling back to performing its usual copy process. `INPLACE` is non-blocking on the system where the DDL is initiated, but it will block on binary-log based read replicas. This means it's typically only safe to enable if you have no read replicas, or your read replicas are based on physical log shipping (i.e. Aurora).
 
-Even when force-inplace is `FALSE`, Spirit automatically detects "safe" operations that use the `INPLACE` algorithm. These include operations that modify only metadata, specifically `DROP KEY/INDEX` and `RENAME KEY/INDEX`. Consult https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html for more details.
+Even when force-inplace is `FALSE`, Spirit automatically detects "safe" operations that use the `INPLACE` algorithm. These include operations that modify only metadata, specifically `ALTER INDEX .. VISIBLE/INVISIBLE`, `DROP KEY/INDEX` and `RENAME KEY/INDEX`. Consult https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html for more details.
 
 ### checksum
 

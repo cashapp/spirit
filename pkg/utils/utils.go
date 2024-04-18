@@ -88,7 +88,8 @@ func AlgorithmInplaceConsideredSafe(sql string) error {
 	for _, spec := range alterStmt.Specs {
 		switch spec.Tp {
 		case ast.AlterTableDropIndex,
-			ast.AlterTableRenameIndex:
+			ast.AlterTableRenameIndex,
+			ast.AlterTableIndexInvisible:
 			continue
 		default:
 			unsafeClauses++
@@ -152,6 +153,30 @@ func AlterContainsAddUnique(sql string) error {
 	for _, spec := range alterStmt.Specs {
 		if spec.Tp == ast.AlterTableAddConstraint && spec.Constraint.Tp == ast.ConstraintUniq {
 			return fmt.Errorf("contains adding a unique index")
+		}
+	}
+	return nil
+}
+
+// AlterContainsIndexVisibility checks to see if there are any clauses of an ALTER to change index visibility.
+// It really does not make sense for visibility changes to be anything except metadata only changes,
+// because they are used for experiments. An experiment is not rebuilding the table. If you are experimenting
+// setting an index to invisible and plan to switch it back to visible quickly if required, going through
+// a full table rebuild does not make sense.
+func AlterContainsIndexVisibility(sql string) error {
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(sql, "", "")
+	if err != nil {
+		return err
+	}
+	stmt := &stmtNodes[0]
+	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)
+	if !ok {
+		return err
+	}
+	for _, spec := range alterStmt.Specs {
+		if spec.Tp == ast.AlterTableIndexInvisible {
+			return fmt.Errorf("the ALTER operation contains a change to index visibility and could not be completed as a meta-data only operation. This is a safety check! Please split the ALTER statement into separate statements for changing the invisible index and other operations")
 		}
 	}
 	return nil
