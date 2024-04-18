@@ -98,6 +98,15 @@ When set to `TRUE`, Spirit will attempt to perform the schema change using MySQL
 
 Even when force-inplace is `FALSE`, Spirit automatically detects "safe" operations that use the `INPLACE` algorithm. These include operations that modify only metadata, specifically `DROP KEY/INDEX` and `RENAME KEY/INDEX`. Consult https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html for more details.
 
+### force-inplace
+
+- Type: Boolean
+- Default value: FALSE
+
+By default, Spirit will only allow changes to [index visibility](https://dev.mysql.com/doc/refman/8.3/en/invisible-indexes.html) to occur as meta-data only operations. This is because invisible indexes, really just supports the use-case of experimentation. If you are attempting to change an index to invisible and it causes a full copy, this is quite a surprising behavior. It is also unsafe if you consider the reciprocal: setting the index back to visible as a copy could take substantial time.
+
+When set to `TRUE`, Spirit will disable this safety check and allow index visibility changes to be performed as copy operations.
+
 ### checksum
 
 - Type: Boolean
