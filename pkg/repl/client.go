@@ -335,7 +335,7 @@ func (c *Client) Run() (err error) {
 }
 
 func (c *Client) binlogPositionIsImpossible() bool {
-	rows, err := c.db.Query("SHOW MASTER LOGS") //nolint: execinquery
+	rows, err := c.db.Query("SHOW BINARY LOGS") //nolint: execinquery
 	if err != nil {
 		return true // if we can't get the logs, its already impossible
 	}
