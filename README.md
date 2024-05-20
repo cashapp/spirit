@@ -111,7 +111,7 @@ Spirit requires an account with these privileges:
 For replica throttling, Spirit requires:
 
 ```sql
-GRANT SELECT on performance_schema.replication_applier_status_by_worker TO 'throttler';
+GRANT SELECT on performance_schema.replication_applier_status_by_worker, performance_schema.replication_connection_status TO 'throttler';
 ```
 
 (i.e. Replica throttling does not use `SHOW SLAVE STATUS`.)
