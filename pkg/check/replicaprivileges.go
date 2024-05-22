@@ -12,7 +12,6 @@ func init() {
 }
 
 // Check that there is permission to run perfschema queries for replication (8.0)
-// or SHOW SLAVE STATUS (5.7).
 func replicaPrivilegeCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	if r.Replica == nil {
 		return nil // The user is not using the replica DSN feature.
@@ -21,11 +20,7 @@ func replicaPrivilegeCheck(ctx context.Context, r Resources, logger loggers.Adva
 	if err := r.Replica.QueryRow("select substr(version(), 1, 1)").Scan(&version); err != nil {
 		return err //  can not get version
 	}
-	lagQuery := `SHOW SLAVE STATUS`
-	if version == "8" {
-		lagQuery = throttler.MySQL8LagQuery
-	}
-	rows, err := r.Replica.Query(lagQuery) //nolint: execinquery
+	rows, err := r.Replica.Query(throttler.MySQL8LagQuery)
 	if err != nil {
 		return err
 	}
