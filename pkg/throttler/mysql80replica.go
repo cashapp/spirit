@@ -11,11 +11,30 @@ type MySQL80Replica struct {
 	isClosed atomic.Bool
 }
 
-const MySQL8LagQuery = `SELECT CEIL(TIMESTAMPDIFF(MICROSECOND,
-max(LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP),
-max(LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)
-)/1000) as lagMs
-FROM performance_schema.replication_applier_status_by_worker`
+// MySQL8LagQuery is a query that is used to get the lag between the source and the replica.
+// The implementation is described in https://github.com/cashapp/spirit/issues/286
+// It uses performance_schema instead of a heartbeat injection or seconds_behind_source.
+const MySQL8LagQuery = `WITH applier_latency AS (
+	SELECT TIMESTAMPDIFF(MICROSECOND, LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP, LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)/1000 as applier_latency_ms
+	FROM performance_schema.replication_applier_status_by_worker ORDER BY LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP DESC LIMIT 1
+   ), queue_latency AS (
+	SELECT MIN(
+	CASE
+	 WHEN
+	  LAST_QUEUED_TRANSACTION = 'ANONYMOUS' OR
+	  LAST_APPLIED_TRANSACTION = 'ANONYMOUS' OR
+	  GTID_SUBTRACT(LAST_QUEUED_TRANSACTION, LAST_APPLIED_TRANSACTION) = ''
+	 THEN 0
+	  ELSE
+	  TIMESTAMPDIFF(MICROSECOND, LAST_APPLIED_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP, NOW(3))/1000
+	END
+   ) AS queue_latency_ms,
+   IF(MIN(TIMESTAMPDIFF(MINUTE, LAST_QUEUED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP, NOW()))>1,'IDLE','ACTIVE') as queue_status
+   FROM performance_schema.replication_applier_status_by_worker w
+   JOIN performance_schema.replication_connection_status s ON s.channel_name = w.channel_name
+   )
+   SELECT IF(queue_status='IDLE',0,CEIL(GREATEST(applier_latency_ms, queue_latency_ms))) as lagMs FROM applier_latency, queue_latency
+`
 
 var _ Throttler = &MySQL80Replica{}
 
@@ -48,14 +67,11 @@ func (l *MySQL80Replica) Close() error {
 	return nil
 }
 
-// UpdateLag is a MySQL 8.0+ implementation of lag that is a better approximation than "seconds_behind_master".
-// It uses the most up to date TS of the master's commit, and compares that generously to the most up to date
-// TS of the replicas commit. Because of multi-threaded replicas, seconds behind master is out of date. It also
-// has weaknesses if there are any delays in commits, since it's technically the TIMESTAMP value of the statement.
-// An alternative is to use a Heatbeat table, but that's way more complicated than this code wants to get into.
+// UpdateLag is a MySQL 8.0+ implementation of lag that is a better approximation than "seconds_behind_source".
+// It requires performance_schema to be enabled.
 func (l *MySQL80Replica) UpdateLag() error {
 	var newLagValue int64
-	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil {
+	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil { //nolint: execinquery
 		return errors.New("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)
