@@ -1,20 +1,40 @@
 #!/bin/bash
 set -xe
 
-filename=mysql-8.4.0-linux-glibc2.28-x86_64.tar.xz
+version=8.4.0
 
-# docker run -ti --platform=linux/amd64 ghcr.io/catthehacker/ubuntu:act-latest
+# careful, this ubuntu:full-latest image is VERY large ... like 50GB!!!
+# docker run -ti --platform=linux/amd64 ghcr.io/catthehacker/ubuntu:full-latest
 
 #sudo apt install -y libncurses6 #???
 #sudo apt install -y libncurses5 libaio1
 
 pushd /tmp 
 
-wget https://dev.mysql.com/get/Downloads/MySQL-8.4/"$filename"
+activate() {
+	if [[ $1 ]]; then
+		version=$1
+	else
+		echo "Usage: activate <version>" >&2
+		return 1
+	fi
 
-tar -xf "$filename"
+	minor_version="${version%.*}"
 
-pushd "${filename%.tar.xz}"
+	printf -v filename "mysql-%s-linux-glibc2.28-x86_64.tar.xz" "$version"
+	printf -v url "https://dev.mysql.com/get/Downloads/MySQL-%s/%s" "$minor_version" "$filename"
+	dirname="${filename%.tar.xz}"
+
+	if [[ -d $dirname ]]; then
+		pushd "$dirname"
+		return
+	fi
+	if [[ ! -f $filename ]]; then
+		wget "$url"
+	fi
+	tar -xf "$filename"
+	pushd "$dirname"
+}
 
 initialize_mysql() {
 	datadir=data
@@ -66,6 +86,7 @@ check_mysql() {
 	if [[ $1 ]]; then
 		datadir=$1
 	fi
+	local i
 	for ((i=0;i<5;i++))
 	do
 		sleep 1
@@ -94,10 +115,8 @@ deploy_replication() {
 	exec_mysql_sock primary "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%'"
 
 	# SOURCE_AUTO_POSITION=1"
-	declare -a repl_sql
-	repl_sql=(
-	)
 
+	local i
 	for ((i=1;i<num_nodes;i++))
 	do
 		name="replica$i"
@@ -117,8 +136,5 @@ exec_mysql_sock() {
 	mysql -u root -S "$datadir/mysql.sock" -e "$2"
 }
 
-# initialize_mysql primary
-# initialize_mysql replica1
-# 
-# start_mysql primary
-# start_mysql replica1
+activate "$version"
+deploy_replication
