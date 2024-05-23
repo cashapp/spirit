@@ -1,15 +1,15 @@
 #!/bin/bash
+#
+# source this file to get the following functions:
+# - setup: install required packages
+# - activate <version>: download and extract the specified version of MySQL
+# - initialize_mysql <name>: initialize a MySQL data directory
+# - start_mysql <name> <port> <server_id>: start a MySQL server
+# - check_mysql <name>: check if a MySQL server is running
+# - deploy_replication <num_nodes> <base_port>: deploy a replication setup
+# - exec_mysql_sock <name> <query>: execute a query on a MySQL server
+
 set -xe
-
-version=8.4.0
-
-# careful, this ubuntu:full-latest image is VERY large ... like 50GB!!!
-# docker run -ti --platform=linux/amd64 ghcr.io/catthehacker/ubuntu:full-latest
-
-#sudo apt install -y libncurses6 #???
-#sudo apt install -y libncurses5 libaio1
-
-pushd /tmp 
 
 setup() {
 	local cmd=()
@@ -162,6 +162,3 @@ exec_mysql_sock() {
 	./bin/mysql -u root -S "$datadir/mysql.sock" -e "$2"
 }
 
-setup
-activate "$version"
-deploy_replication
