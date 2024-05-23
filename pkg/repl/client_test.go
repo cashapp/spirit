@@ -184,6 +184,9 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	if dbconn.IsMySQL84(db) { // handle MySQL 8.4
+		client.isMySQL84 = true
+	}
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
 	pos.Pos = 4
