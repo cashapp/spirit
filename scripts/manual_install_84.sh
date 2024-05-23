@@ -11,6 +11,13 @@ version=8.4.0
 
 pushd /tmp 
 
+mysql_cmd=(
+	./bin/mysqld --no-defaults
+	--socket="mysql.sock"
+	--log-error="mysql.err"
+	--pid-file="mysql.pid"
+)
+
 activate() {
 	if [[ $1 ]]; then
 		version=$1
@@ -41,7 +48,7 @@ initialize_mysql() {
 	if [[ $1 ]]; then
 		datadir="data-$1"
 	fi
-	./bin/mysqld --no-defaults --initialize-insecure --datadir="$datadir"
+	"${mysql_cmd[@]}" --initialize-insecure --datadir="$datadir"
 }
 
 start_mysql() {
@@ -59,16 +66,7 @@ start_mysql() {
 		server_id=$3
 	fi
 
-	cmd=(./bin/mysqld --no-defaults )
-	cmd+=( --datadir="$datadir" 
-	       --socket="mysql.sock"
-	       --log-error="mysql.err"
-	       --pid-file="mysql.pid"
-	       --port="$port"
-	       --server-id="$server_id"
-	)
-
-	"${cmd[@]}" &
+	"${mysql_cmd[@]}" --datadir="$datadir" --port="$port" --server-id="$server_id" &
 
 	pid=$!
 
