@@ -11,12 +11,41 @@ version=8.4.0
 
 pushd /tmp 
 
+setup() {
+	local cmd=()
+	if (( UID != 0 ))
+	then
+		cmd=(sudo)
+	fi
+	cmd+=(apt)
+
+	"${cmd[@]}" update
+
+	packages=(
+		ca-certificates
+		libaio1
+		libnuma1
+		wget
+		sudo
+		xz-utils
+		)
+
+	"${cmd[@]}" install -y  "${packages[@]}"
+}
+
 mysql_cmd=(
 	./bin/mysqld --no-defaults
 	--socket="mysql.sock"
 	--log-error="mysql.err"
 	--pid-file="mysql.pid"
+	--user="$(id -u -n)"
+	--gtid-mode=ON
+	--enforce-gtid-consistency=ON
 )
+if (( UID == 0 ))
+then
+	mysql_cmd+=(--user=root)
+fi
 
 activate() {
 	if [[ $1 ]]; then
@@ -44,7 +73,7 @@ activate() {
 }
 
 initialize_mysql() {
-	datadir=data
+	local datadir=data
 	if [[ $1 ]]; then
 		datadir="data-$1"
 	fi
@@ -52,11 +81,13 @@ initialize_mysql() {
 }
 
 start_mysql() {
-	datadir=data
-	port=3306
-	server_id=1
+	local datadir=data
+	local name
+	local port=3306
+	local server_id=1
 
 	if [[ $1 ]]; then
+		name=$1
 		datadir="data-$1"
 	fi
 	if [[ $2 ]]; then
@@ -76,19 +107,16 @@ start_mysql() {
 		return 1
 	fi
 
-	check_mysql "$datadir"
+	check_mysql "$name"
 }
 
 check_mysql() {
-	datadir=data
-	if [[ $1 ]]; then
-		datadir=$1
-	fi
+	local datadir=$1
 	local i
 	for ((i=0;i<5;i++))
 	do
 		sleep 1
-		mysql -u root -S "$datadir/mysql.sock" -e "SELECT 1" > /dev/null && return
+		exec_mysql_sock "$datadir" 'SELECT 1' > /dev/null && return
 	done
 	printf %s\\n "MySQL check of $datadir failed"
 	return 1
@@ -127,12 +155,13 @@ deploy_replication() {
 }
 
 exec_mysql_sock() {
-	datadir=data
+	local datadir=data
 	if [[ $1 ]]; then
 		datadir="data-$1"
 	fi
-	mysql -u root -S "$datadir/mysql.sock" -e "$2"
+	./bin/mysql -u root -S "$datadir/mysql.sock" -e "$2"
 }
 
+setup
 activate "$version"
 deploy_replication
