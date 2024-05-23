@@ -1,4 +1,4 @@
-name: MySQL 8.2 innovation release
+name: MySQL 8.4 GA
 on:
   push:
     branches: [ main ]
@@ -15,7 +15,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy MySQL
-        run: scripts/dbdeployer_install_82.sh
+        run: scripts/manual_install_84.sh
+             mysql -P 22334 -u root -e "CREATE DATABASE test;"
 
       - name: Test
-        run: MYSQL_DSN="msandbox:msandbox@tcp(127.0.0.1:8200)/test" go test  -race -v ./...
+        run: MYSQL_DSN="root:@tcp(127.0.0.1:22334)/test" go test  -race -v ./...
