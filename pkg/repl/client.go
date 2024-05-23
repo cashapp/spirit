@@ -103,6 +103,8 @@ type Client struct {
 	timingHistory   []time.Duration
 	concurrency     int
 
+	isMySQL84 bool
+
 	// The periodic flush lock is just used for ensuring only one periodic flush runs at a time,
 	// and when we disable it, no more periodic flushes will run. The actual flushing is protected
 	// by a lower level lock (sync.Mutex on Client)
@@ -274,7 +276,11 @@ func (c *Client) pksToRowValueConstructor(d []string) string {
 func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	var binlogFile, fake string
 	var binlogPos uint32
-	err := c.db.QueryRow("SHOW MASTER STATUS").Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
+	var binlogPosStmt = "SHOW MASTER STATUS"
+	if c.isMySQL84 {
+		binlogPosStmt = "SHOW BINARY LOG STATUS"
+	}
+	err := c.db.QueryRow(binlogPosStmt).Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -304,6 +310,9 @@ func (c *Client) Run() (err error) {
 		// is not thread safe when spirit is used as a library.
 		cfg.TLSConfig = dbconn.NewTLSConfig()
 		cfg.TLSConfig.ServerName = utils.StripPort(cfg.Addr)
+	}
+	if dbconn.IsMySQL84(c.db) { // handle MySQL 8.4
+		c.isMySQL84 = true
 	}
 	c.canal, err = canal.NewCanal(cfg)
 	if err != nil {

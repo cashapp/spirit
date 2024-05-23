@@ -4,7 +4,7 @@ go 1.21
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/go-mysql-org/go-mysql v1.7.1-0.20231227030153-e817d9813fe3
+	github.com/go-mysql-org/go-mysql v1.8.0
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20231103042308-035ad5ccbe67
@@ -21,6 +21,7 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/cznic/mathutil v0.0.0-20181122101859-297441e03548 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/uuid v1.4.0 // indirect
 	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c // indirect
