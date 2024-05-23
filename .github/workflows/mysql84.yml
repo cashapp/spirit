@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy MySQL
-        run: scripts/manual_install_84.sh && mysql -u root -h 127.0.0.1 -P 22334 -e "CREATE DATABASE test;"
+        run: scripts/manual_install_84.sh && mysql -u root -h 127.0.0.1 -P 3306 -e "CREATE DATABASE test;"
 
       - name: Test
-        run: MYSQL_DSN="root:@tcp(127.0.0.1:22334)/test" REPLICA_DSN="root:@tcp(127.0.0.1:22335)/test" go test  -race -v ./...
+        run: MYSQL_DSN="root:@tcp(127.0.0.1:3306)/test" REPLICA_DSN="root:@tcp(127.0.0.1:3307)/test" go test  -race -v ./...
