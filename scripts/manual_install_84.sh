@@ -125,7 +125,7 @@ check_mysql() {
 
 deploy_replication() {
 	num_nodes=2
-	base_port=22334
+	base_port=3306
 
 	if [[ $1 ]]; then
 		num_nodes=$1
