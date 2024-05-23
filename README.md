@@ -3,7 +3,7 @@
 Spirit is a _reimplementation_ of the schema change tool [gh-ost](https://github.com/github/gh-ost).
 
 It works very similar to gh-ost except:
-- It only supports MySQL 8.0
+- It only supports MySQL 8.0 and higher
 - It is multi-threaded in both the row-copying and the binlog applying phase
 - It supports resume-from-checkpoint
 
