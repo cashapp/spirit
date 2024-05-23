@@ -143,7 +143,7 @@ deploy_replication() {
 	fi
 
 	initialize_mysql primary
-	start_mysql primary "$base_port"
+	start_mysql primary "$base_port" || return
 
 	exec_mysql_sock primary "CREATE USER 'repl'@'%' IDENTIFIED BY 'replica'"
 	exec_mysql_sock primary "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%'"
@@ -155,8 +155,8 @@ deploy_replication() {
 	do
 		name="replica$i"
 		port=$((base_port + i))
-		initialize_mysql "$name"
-		start_mysql "$name" "$port" "$(( 100 + i ))"
+		initialize_mysql "$name" || continue
+		start_mysql "$name" "$port" "$(( 100 + i ))" || continue
 		exec_mysql_sock "$name" "CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1', SOURCE_PORT=$base_port, GET_SOURCE_PUBLIC_KEY=1"
 		exec_mysql_sock "$name" "START REPLICA USER='repl' PASSWORD='replica'"
 	done
