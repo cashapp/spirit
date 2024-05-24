@@ -9,8 +9,6 @@
 # - deploy_replication <num_nodes> <base_port>: deploy a replication setup
 # - exec_mysql_sock <name> <query>: execute a query on a MySQL server
 
-set -xe
-
 setup() {
 	local cmd=()
 	if (( UID != 0 ))
@@ -25,6 +23,9 @@ setup() {
 		ca-certificates
 		libaio1
 		libnuma1
+		libncurses5
+		libncurses6
+		netcat
 		wget
 		sudo
 		xz-utils
@@ -55,18 +56,23 @@ activate() {
 		return 1
 	fi
 
-	minor_version="${version%.*}"
-
-	printf -v filename "mysql-%s-linux-glibc2.28-x86_64.tar.xz" "$version"
-	printf -v url "https://dev.mysql.com/get/Downloads/MySQL-%s/%s" "$minor_version" "$filename"
-	dirname="${filename%.tar.xz}"
+	if [[ $version = http* ]]; then
+		url=$version
+		filename="${url##*/}"
+		dirname="${filename%.tar.xz}"
+	else
+		minor_version="${version%.*}"
+		printf -v filename "mysql-%s-linux-glibc2.28-x86_64.tar.xz" "$version"
+		printf -v url "https://dev.mysql.com/get/Downloads/MySQL-%s/%s" "$minor_version" "$filename"
+		dirname="${filename%.tar.xz}"
+	fi
 
 	if [[ -d $dirname ]]; then
 		pushd "$dirname"
 		return
 	fi
 	if [[ ! -f $filename ]]; then
-		wget "$url"
+		wget "$url" || return
 	fi
 	tar -xf "$filename"
 	pushd "$dirname"
@@ -96,6 +102,8 @@ start_mysql() {
 	if [[ $3 ]]; then
 		server_id=$3
 	fi
+
+	check_port "$port" || return
 
 	"${mysql_cmd[@]}" --datadir="$datadir" --port="$port" --server-id="$server_id" &
 
@@ -135,7 +143,7 @@ deploy_replication() {
 	fi
 
 	initialize_mysql primary
-	start_mysql primary "$base_port"
+	start_mysql primary "$base_port" || return
 
 	exec_mysql_sock primary "CREATE USER 'repl'@'%' IDENTIFIED BY 'replica'"
 	exec_mysql_sock primary "GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%'"
@@ -147,8 +155,8 @@ deploy_replication() {
 	do
 		name="replica$i"
 		port=$((base_port + i))
-		initialize_mysql "$name"
-		start_mysql "$name" "$port" "$(( 100 + i ))"
+		initialize_mysql "$name" || continue
+		start_mysql "$name" "$port" "$(( 100 + i ))" || continue
 		exec_mysql_sock "$name" "CHANGE REPLICATION SOURCE TO SOURCE_HOST='127.0.0.1', SOURCE_PORT=$base_port, GET_SOURCE_PUBLIC_KEY=1"
 		exec_mysql_sock "$name" "START REPLICA USER='repl' PASSWORD='replica'"
 	done
@@ -156,9 +164,18 @@ deploy_replication() {
 
 exec_mysql_sock() {
 	local datadir=data
-	if [[ $1 ]]; then
+	if [[ $2 ]]; then
 		datadir="data-$1"
+		shift
 	fi
-	./bin/mysql -u root -S "$datadir/mysql.sock" -e "$2"
+
+	./bin/mysql -u root -S "$datadir/mysql.sock" -e "$1"
 }
 
+check_port() {
+	local port=$1
+	if nc -w0 -z localhost "$port" </dev/null >/dev/null; then
+		printf %s\\n "Port $port is in use" >&2
+		return 1
+	fi
+}
