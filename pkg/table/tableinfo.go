@@ -32,6 +32,7 @@ type TableInfo struct {
 	TableName                   string
 	QuotedName                  string
 	Columns                     []string          // all the column names
+	Indexes                     []string          // all the index names
 	columnsMySQLTps             map[string]string // map from column name to MySQL type
 	KeyColumns                  []string          // the column names of the primaryKey
 	keyColumnsMySQLTp           []string          // the MySQL types of the primaryKey
@@ -86,6 +87,9 @@ func (t *TableInfo) SetInfo(ctx context.Context) error {
 	if err := t.setPrimaryKey(ctx); err != nil {
 		return err
 	}
+	if err := t.setIndexes(ctx); err != nil {
+		return err
+	}
 	return t.setMinMax(ctx)
 }
 
@@ -102,6 +106,29 @@ func (t *TableInfo) setRowEstimate(ctx context.Context) error {
 			return fmt.Errorf("table %s.%s does not exist", t.SchemaName, t.TableName)
 		}
 		return err
+	}
+	return nil
+}
+
+func (t *TableInfo) setIndexes(ctx context.Context) error {
+	rows, err := t.db.QueryContext(ctx, "SELECT DISTINCT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=? AND table_name=? AND index_name != 'PRIMARY'",
+		t.SchemaName,
+		t.TableName,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	t.Indexes = []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		t.Indexes = append(t.Indexes, name)
+	}
+	if rows.Err() != nil {
+		return rows.Err()
 	}
 	return nil
 }
