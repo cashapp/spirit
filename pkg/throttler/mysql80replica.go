@@ -15,8 +15,8 @@ type MySQL80Replica struct {
 // The implementation is described in https://github.com/cashapp/spirit/issues/286
 // It uses performance_schema instead of a heartbeat injection or seconds_behind_source.
 const MySQL8LagQuery = `WITH applier_latency AS (
-	SELECT TIMESTAMPDIFF(MICROSECOND, LAST_APPLIED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP, LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP)/1000 as applier_latency_ms
-	FROM performance_schema.replication_applier_status_by_worker ORDER BY LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP DESC LIMIT 1
+	SELECT MAX(TIMESTAMPDIFF(MICROSECOND, APPLYING_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP, NOW())/1000 ) AS applier_latency_ms
+	FROM performance_schema.replication_applier_status_by_worker
    ), queue_latency AS (
 	SELECT MIN(
 	CASE
@@ -33,7 +33,7 @@ const MySQL8LagQuery = `WITH applier_latency AS (
    FROM performance_schema.replication_applier_status_by_worker w
    JOIN performance_schema.replication_connection_status s ON s.channel_name = w.channel_name
    )
-   SELECT IF(queue_status='IDLE',0,CEIL(GREATEST(applier_latency_ms, queue_latency_ms))) as lagMs FROM applier_latency, queue_latency
+   SELECT IFNULL(IF(queue_status='IDLE',0,CEIL(GREATEST(applier_latency_ms, queue_latency_ms))),0) as lagMs FROM applier_latency, queue_latency
 `
 
 var _ Throttler = &MySQL80Replica{}
