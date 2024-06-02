@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 
 	"github.com/cashapp/spirit/pkg/table"
 	_ "github.com/go-sql-driver/mysql"
@@ -22,18 +23,9 @@ func LoadTable(db *sql.DB, schema, tableName string) (*Table, error) {
 	return &Table{ti: ti}, nil
 }
 
-func exists(val string, collection []string) bool {
-	for _, v := range collection {
-		if val == v {
-			return true
-		}
-	}
-	return false
-}
-
 func (t *Table) ContainsColumns(columnNames ...string) error {
 	for _, col := range columnNames {
-		if !exists(col, t.ti.Columns) {
+		if !slices.Contains(t.ti.Columns, col) {
 			return errors.New("missing column " + col + " on table " + t.ti.QuotedName)
 		}
 	}
@@ -42,7 +34,7 @@ func (t *Table) ContainsColumns(columnNames ...string) error {
 
 func (t *Table) NotContainsColumns(columnNames ...string) error {
 	for _, col := range columnNames {
-		if exists(col, t.ti.Columns) {
+		if slices.Contains(t.ti.Columns, col) {
 			return errors.New("unexpected column " + col + " on table " + t.ti.QuotedName)
 		}
 	}
@@ -51,7 +43,7 @@ func (t *Table) NotContainsColumns(columnNames ...string) error {
 
 func (t *Table) ContainsIndexes(indexNames ...string) error {
 	for _, idx := range indexNames {
-		if !exists(idx, t.ti.Indexes) {
+		if !slices.Contains(t.ti.Indexes, idx) {
 			return errors.New("missing index " + idx + " on table " + t.ti.QuotedName)
 		}
 	}
@@ -60,7 +52,7 @@ func (t *Table) ContainsIndexes(indexNames ...string) error {
 
 func (t *Table) NotContainsIndexes(indexNames ...string) error {
 	for _, idx := range indexNames {
-		if exists(idx, t.ti.Indexes) {
+		if slices.Contains(t.ti.Indexes, idx) {
 			return errors.New("unexpected index " + idx + " on table " + t.ti.QuotedName)
 		}
 	}
