@@ -469,6 +469,7 @@ func (r *Runner) setup(ctx context.Context) error {
 			Throttler:       &throttler.Noop{},
 			Logger:          r.logger,
 			MetricsSink:     r.metricsSink,
+			DBConfig:        r.dbConfig,
 		})
 		if err != nil {
 			return err
@@ -747,6 +748,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		Throttler:       &throttler.Noop{},
 		Logger:          r.logger,
 		MetricsSink:     r.metricsSink,
+		DBConfig:        r.dbConfig,
 	}, lowWatermark, rowsCopied, rowsCopiedLogical)
 
 	if err != nil {

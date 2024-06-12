@@ -49,6 +49,7 @@ type Copier struct {
 	startTime            time.Time
 	ExecTime             time.Duration
 	Throttler            throttler.Throttler
+	dbConfig             *dbconn.DBConfig
 	logger               loggers.Advanced
 	metricsSink          metrics.Sink
 }
@@ -60,6 +61,7 @@ type CopierConfig struct {
 	Throttler       throttler.Throttler
 	Logger          loggers.Advanced
 	MetricsSink     metrics.Sink
+	DBConfig        *dbconn.DBConfig
 }
 
 // NewCopierDefaultConfig returns a default config for the copier.
@@ -71,6 +73,7 @@ func NewCopierDefaultConfig() *CopierConfig {
 		Throttler:       &throttler.Noop{},
 		Logger:          logrus.New(),
 		MetricsSink:     &metrics.NoopSink{},
+		DBConfig:        dbconn.NewDBConfig(),
 	}
 }
 
@@ -83,6 +86,9 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 	if err != nil {
 		return nil, err
 	}
+	if config.DBConfig == nil {
+		return nil, errors.New("dbConfig must be non-nil")
+	}
 	return &Copier{
 		db:            db,
 		table:         tbl,
@@ -93,6 +99,7 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 		chunker:       chunker,
 		logger:        config.Logger,
 		metricsSink:   config.MetricsSink,
+		dbConfig:      config.DBConfig,
 	}, nil
 }
 
@@ -131,7 +138,7 @@ func (c *Copier) CopyChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Debugf("running chunk: %s, query: %s", chunk.String(), query)
 	var affectedRows int64
 	var err error
-	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, dbconn.NewDBConfig(), query); err != nil {
+	if affectedRows, err = dbconn.RetryableTransaction(ctx, c.db, c.finalChecksum, c.dbConfig, query); err != nil {
 		return err
 	}
 	atomic.AddUint64(&c.CopyRowsCount, uint64(affectedRows))

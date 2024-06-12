@@ -740,6 +740,8 @@ func TestCheckpoint(t *testing.T) {
 		// the migration process manually.
 		r.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 		assert.NoError(t, err)
+		r.dbConfig = dbconn.NewDBConfig()
+
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
 		err = r.table.SetInfo(context.TODO())
@@ -1202,6 +1204,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		Throttler:       &throttler.Noop{},
 		Logger:          m.logger,
 		MetricsSink:     &metrics.NoopSink{},
+		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
@@ -1330,6 +1333,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		Throttler:       &throttler.Noop{},
 		Logger:          m.logger,
 		MetricsSink:     &metrics.NoopSink{},
+		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
@@ -1931,6 +1935,7 @@ func TestE2ERogueValues(t *testing.T) {
 		Throttler:       &throttler.Noop{},
 		Logger:          m.logger,
 		MetricsSink:     &metrics.NoopSink{},
+		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
@@ -2075,6 +2080,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// Do the initial setup.
 	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	m.dbConfig = dbconn.NewDBConfig()
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
 	assert.NoError(t, m.createNewTable(ctx))
@@ -2093,6 +2099,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		Throttler:       &throttler.Noop{},
 		Logger:          m.logger,
 		MetricsSink:     &metrics.NoopSink{},
+		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
 	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
@@ -2163,6 +2170,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, err)
 	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	m.dbConfig = dbconn.NewDBConfig()
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
 	// check we can resume from checkpoint.
