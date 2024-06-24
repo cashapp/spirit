@@ -1,0 +1,15 @@
+name: MySQL 8.0.28 (Aurora version) /w Docker
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test
+        run: docker compose -f compose.yml -f compose-8.0.28.yml up --abort-on-container-exit
