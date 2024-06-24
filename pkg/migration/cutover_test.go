@@ -3,6 +3,7 @@ package migration
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/testutils"
+	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -51,8 +53,8 @@ func TestCutOver(t *testing.T) {
 	})
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
-
-	cutover, err := NewCutOver(db, t1, t1new, feed, dbconn.NewDBConfig(), logger)
+	startTime := time.Now()
+	cutover, err := NewCutOver(db, t1, t1new, feed, dbconn.NewDBConfig(), logger, startTime)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -67,7 +69,8 @@ func TestCutOver(t *testing.T) {
 	err = db.QueryRow("SELECT COUNT(*) FROM cutovert1").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, count)
-	err = db.QueryRow("SELECT COUNT(*) FROM _cutovert1_old").Scan(&count)
+	oldTableQuery := fmt.Sprintf("SELECT COUNT(*) FROM _cutovert1_old_%s", utils.ConvertToTimestampString(startTime))
+	err = db.QueryRow(oldTableQuery).Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
@@ -111,7 +114,7 @@ func TestMDLLockFails(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1new, feed, config, logger)
+	cutover, err := NewCutOver(db, t1, t1new, feed, config, logger, time.Now())
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -135,7 +138,7 @@ func TestInvalidOptions(t *testing.T) {
 	logger := logrus.New()
 
 	// Invalid options
-	_, err = NewCutOver(db, nil, nil, nil, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(db, nil, nil, nil, dbconn.NewDBConfig(), logger, time.Now())
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
@@ -146,6 +149,6 @@ func TestInvalidOptions(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	_, err = NewCutOver(db, nil, t1new, feed, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(db, nil, t1new, feed, dbconn.NewDBConfig(), logger, time.Now())
 	assert.Error(t, err)
 }

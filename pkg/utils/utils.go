@@ -4,6 +4,7 @@ package utils
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 	"github.com/cashapp/spirit/pkg/table"
@@ -184,4 +185,9 @@ func AlterContainsIndexVisibility(sql string) error {
 
 func TrimAlter(alter string) string {
 	return strings.TrimSuffix(strings.TrimSpace(alter), ";")
+}
+
+func ConvertToTimestampString(t time.Time) string {
+	return fmt.Sprintf("%d%02d%02d%02d%02d%02d%03d", t.Year(), t.Month(), t.Day(),
+		t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000000)
 }

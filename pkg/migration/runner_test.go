@@ -12,6 +12,7 @@ import (
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
 	"github.com/cashapp/spirit/pkg/testutils"
+	"github.com/cashapp/spirit/pkg/utils"
 
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/row"
@@ -2220,7 +2221,6 @@ func TestVarcharE2E(t *testing.T) {
 
 func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
-	oldName := fmt.Sprintf("_%s_old", tableName)
 
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
@@ -2243,6 +2243,8 @@ func TestSkipDropAfterCutover(t *testing.T) {
 		SkipDropAfterCutover: true,
 	})
 	assert.NoError(t, err)
+	timestamp := utils.ConvertToTimestampString(time.Now())
+	oldName := fmt.Sprintf("_%s_old_%s", tableName, timestamp)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 
@@ -2260,8 +2262,8 @@ func TestDropAfterCutover(t *testing.T) {
 	sentinelWaitLimit = 10 * time.Second
 
 	tableName := `drop_test`
-	oldName := fmt.Sprintf("_%s_old", tableName)
-
+	timestamp := utils.ConvertToTimestampString(time.Now())
+	oldName := fmt.Sprintf("_%s_old_%s", tableName, timestamp)
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
@@ -2358,7 +2360,8 @@ func TestDeferCutOverE2E(t *testing.T) {
 
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
-	oldName := fmt.Sprintf("_%s_old", tableName)
+	timestamp := utils.ConvertToTimestampString(time.Now())
+	oldName := fmt.Sprintf("_%s_old_%s", tableName, timestamp)
 	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
 	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 
@@ -2433,7 +2436,8 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e_stage`
-	oldName := fmt.Sprintf("_%s_old", tableName)
+	timestamp := utils.ConvertToTimestampString(time.Now())
+	oldName := fmt.Sprintf("_%s_old_%s", tableName, timestamp)
 	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
 	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 

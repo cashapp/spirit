@@ -278,7 +278,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
+	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger, r.startTime)
 	if err != nil {
 		return err
 	}
@@ -590,7 +590,9 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 }
 
 func (r *Runner) dropOldTable(ctx context.Context) error {
-	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
+	timestamp := utils.ConvertToTimestampString(r.startTime)
+	oldName := fmt.Sprintf("_%s_old_%s", r.table.TableName, timestamp)
+
 	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, oldName)
 }
 

@@ -5,39 +5,45 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/siddontang/loggers"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/utils"
 )
 
 type CutOver struct {
-	db       *sql.DB
-	table    *table.TableInfo
-	newTable *table.TableInfo
-	feed     *repl.Client
-	dbConfig *dbconn.DBConfig
-	logger   loggers.Advanced
+	db        *sql.DB
+	table     *table.TableInfo
+	newTable  *table.TableInfo
+	feed      *repl.Client
+	dbConfig  *dbconn.DBConfig
+	logger    loggers.Advanced
+	timestamp string
 }
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced, startTime time.Time) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
 	if table == nil || newTable == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
+	timestamp := utils.ConvertToTimestampString(startTime)
+
 	return &CutOver{
-		db:       db,
-		table:    table,
-		newTable: newTable,
-		feed:     feed,
-		dbConfig: dbConfig,
-		logger:   logger,
+		db:        db,
+		table:     table,
+		newTable:  newTable,
+		feed:      feed,
+		dbConfig:  dbConfig,
+		logger:    logger,
+		timestamp: timestamp,
 	}, nil
 }
 
@@ -93,7 +99,7 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	if !c.feed.AllChangesFlushed() {
 		return errors.New("not all changes flushed, final flush might be broken")
 	}
-	oldName := fmt.Sprintf("_%s_old", c.table.TableName)
+	oldName := fmt.Sprintf("_%s_old_%s", c.table.TableName, c.timestamp)
 	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 		c.table.QuotedName, oldQuotedName,
