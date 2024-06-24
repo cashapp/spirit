@@ -99,5 +99,5 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 		c.table.QuotedName, oldQuotedName,
 		c.newTable.QuotedName, c.table.QuotedName,
 	)
-	return serverLock.ExecUnderLock(ctx, []string{renameStatement})
+	return serverLock.ExecUnderLock(ctx, renameStatement)
 }

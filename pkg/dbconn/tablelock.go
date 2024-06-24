@@ -71,7 +71,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 }
 
 // ExecUnderLock executes a set of statements under a table lock.
-func (s *TableLock) ExecUnderLock(ctx context.Context, stmts []string) error {
+func (s *TableLock) ExecUnderLock(ctx context.Context, stmts ...string) error {
 	for _, stmt := range stmts {
 		if stmt == "" {
 			continue

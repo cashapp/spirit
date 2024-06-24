@@ -57,7 +57,7 @@ func TestExecUnderLock(t *testing.T) {
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testunderlock", QuotedName: "`test`.`testunderlock`"}
 	lock, err := NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
 	assert.NoError(t, err)
-	err = lock.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)"})
+	err = lock.ExecUnderLock(context.Background(), "INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)")
 	assert.NoError(t, err) // pass, under write lock.
 
 	// Try to execute a statement that is not in the lock transaction though

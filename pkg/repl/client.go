@@ -467,7 +467,7 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 		// Execute under lock means it is a final flush
 		// We need to use the lock connection to do this
 		// so there is no parallelism.
-		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)); err != nil {
+		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)...); err != nil {
 			return err
 		}
 	} else {
@@ -528,7 +528,7 @@ func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.Tabl
 		// Execute under lock means it is a final flush
 		// We need to use the lock connection to do this
 		// so there is no parallelism.
-		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)); err != nil {
+		if err := lock.ExecUnderLock(ctx, extractStmt(stmts)...); err != nil {
 			return err
 		}
 	} else {
