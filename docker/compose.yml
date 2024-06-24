@@ -1,0 +1,21 @@
+services:
+  mysql:
+    image: mysql:8.0.33
+    ports: [ '8033:3306' ]
+    # to supress mbind: Operation not permitted in CI
+    # https://stackoverflow.com/a/55706057
+    cap_add:
+      - SYS_NICE
+    environment:
+      MYSQL_ROOT_PASSWORD: msandbox
+      MYSQL_USER: msandbox
+      MYSQL_PASSWORD: msandbox
+      MYSQL_DATABASE: test
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u $$MYSQL_USER --password=$$MYSQL_PASSWORD
+      start_period: 1s
+      interval: 1s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql

@@ -1,0 +1,5 @@
+services:
+  mysql:
+    image: mysql:8.0.28
+    platform: linux/amd64
+    ports: [ '8028:3306' ]

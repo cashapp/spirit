@@ -1,0 +1,11 @@
+services:
+  test:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    command: go test -race -v ./...
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_DSN: msandbox:msandbox@tcp(mysql)/test

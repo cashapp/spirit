@@ -1,0 +1,15 @@
+name: MySQL 8.0 Build and Run /w docker-compose
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and Run Spirit
+        run: docker compose -f docker/compose.yml -f docker/buildandrun.yml up --abort-on-container-exit
