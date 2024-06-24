@@ -1,9 +1,0 @@
-services:
-  buildandrun:
-    build:
-      context: ../.
-      dockerfile: Dockerfile
-    command: scripts/buildandrun.sh
-    depends_on:
-      mysql:
-        condition: service_healthy
