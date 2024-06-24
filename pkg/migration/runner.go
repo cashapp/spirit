@@ -446,6 +446,11 @@ func (r *Runner) setup(ctx context.Context) error {
 	if err := r.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
 		r.logger.Infof("could not resume from checkpoint: reason=%s", err)
+
+		if r.migration.Strict && err == ErrMismatchedAlter {
+			return err
+		}
+
 		if err := r.createNewTable(ctx); err != nil {
 			return err
 		}
@@ -725,7 +730,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
 	if r.migration.Alter != alterStatement {
-		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
+		return ErrMismatchedAlter
 	}
 	// Populate the objects that would have been set in the other funcs.
 	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)

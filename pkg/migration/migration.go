@@ -3,9 +3,14 @@ package migration
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/check"
+)
+
+var (
+	ErrMismatchedAlter = errors.New("alter statement in checkpoint table does not match the alter statement specified here")
 )
 
 type Migration struct {
@@ -24,6 +29,7 @@ type Migration struct {
 	LockWaitTimeout      time.Duration `name:"lock-wait-timeout" help:"The DDL lock_wait_timeout required for checksum and cutover" optional:"" default:"30s"`
 	SkipDropAfterCutover bool          `name:"skip-drop-after-cutover" help:"Keep old table after completing cutover" optional:"" default:"false"`
 	DeferCutOver         bool          `name:"defer-cutover" help:"Defer cutover (and checksum) until sentinel table is dropped" optional:"" default:"false"`
+	Strict               bool          `name:"strict" help:"Exit on --alter mismatch when incomplete migration is detected" optional:"" default:"false"`
 }
 
 func (m *Migration) Run() error {
