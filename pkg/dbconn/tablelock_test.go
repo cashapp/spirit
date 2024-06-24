@@ -13,12 +13,16 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func testConfig() *DBConfig {
+	config := NewDBConfig()
+	config.LockWaitTimeout = 1
+	return config
+}
+
 func TestTableLock(t *testing.T) {
-	db, err := New(testutils.DSN(), NewDBConfig())
+	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	config := NewDBConfig()
-	config.LockWaitTimeout = 2
 	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlock")
 	assert.NoError(t, err)
 	err = Exec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
@@ -26,25 +30,21 @@ func TestTableLock(t *testing.T) {
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
-	lock1, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	lock1, err := NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
 	assert.NoError(t, err)
 
-	// Try to acquire a table that is already locked, should pass *because*
-	// table locks are actually READ locks. We do this so copies can still occur,
-	// only writes are blocked.
-	lock2, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
-	assert.NoError(t, err)
+	// Try to acquire a table that is already locked, should fail because we use WRITE locks now.
+	// But should also fail very quickly because we've set the lock_wait_timeout to 1s.
+	_, err = NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
+	assert.Error(t, err)
 
 	assert.NoError(t, lock1.Close())
-	assert.NoError(t, lock2.Close())
 }
 
 func TestExecUnderLock(t *testing.T) {
-	db, err := New(testutils.DSN(), NewDBConfig())
+	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	config := NewDBConfig()
-	config.LockWaitTimeout = 2
 	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS testunderlock, _testunderlock_new")
 	assert.NoError(t, err)
 	err = Exec(context.Background(), db, "CREATE TABLE testunderlock (id INT NOT NULL PRIMARY KEY, colb int)")
@@ -53,26 +53,21 @@ func TestExecUnderLock(t *testing.T) {
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testunderlock", QuotedName: "`test`.`testunderlock`"}
-	lock1, err := NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	lock, err := NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
 	assert.NoError(t, err)
-	err = lock1.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)"})
-	assert.ErrorContains(t, err, "Error 1099") // fail, under read lock.
-	assert.NoError(t, lock1.Close())
-
-	lock2, err := NewTableLock(context.Background(), db, tbl, true, config, logrus.New())
-	assert.NoError(t, err)
-	err = lock2.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)"})
+	err = lock.ExecUnderLock(context.Background(), []string{"INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)"})
 	assert.NoError(t, err) // pass, under write lock.
+
+	// Try to execute a statement that is not in the lock transaction though
+	// It is expected to fail.
+	err = Exec(context.Background(), db, "INSERT INTO testunderlock VALUES (3, 3)")
+	assert.Error(t, err)
 }
 
 func TestTableLockFail(t *testing.T) {
-	db, err := New(testutils.DSN(), NewDBConfig())
+	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-
-	config := NewDBConfig()
-	config.MaxRetries = 1
-	config.LockWaitTimeout = 1
 
 	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")
 	assert.NoError(t, err)
@@ -95,6 +90,6 @@ func TestTableLockFail(t *testing.T) {
 	wg.Wait()
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
-	_, err = NewTableLock(context.Background(), db, tbl, false, config, logrus.New())
+	_, err = NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
 	assert.Error(t, err)
 }
