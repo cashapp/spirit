@@ -23,9 +23,11 @@ func TestTableLock(t *testing.T) {
 	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlock")
+	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS testlock, _testlock_new")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE test.testlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(context.Background(), db, "CREATE TABLE testlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	assert.NoError(t, err)
+	err = Exec(context.Background(), db, "CREATE TABLE _testlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
