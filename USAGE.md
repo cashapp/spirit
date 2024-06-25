@@ -157,7 +157,8 @@ Note that the checksum, if enabled, will be computed after the sentinel table is
 - Type: Boolean
 - Default value: FALSE
 
-When set to `TRUE`, Spirit will exit if it finds checkpoints belonging to some other migration with a different --alter to avoid losing progress.
+By default, Spirit will automatically clean up these old checkpoints before starting the schema change. This allows schema changes to always be possible to proceed forward, at the risk of lost progress.
 
-By default, Spirit will automatically clean up these old checkpoints before starting the migration. 
+When set to `TRUE`, if Spirit encounters a checkpoint belonging to a previous migration, it will validate that the alter statement matches the `--alter` parameter. If the validation fails, spirit will exit and prevent the schema change process from proceeding.
+
 
