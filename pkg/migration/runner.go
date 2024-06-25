@@ -278,7 +278,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
+	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.oldTableName(), r.replClient, r.dbConfig, r.logger)
 	if err != nil {
 		return err
 	}

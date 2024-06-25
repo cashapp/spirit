@@ -14,30 +14,35 @@ import (
 )
 
 type CutOver struct {
-	db       *sql.DB
-	table    *table.TableInfo
-	newTable *table.TableInfo
-	feed     *repl.Client
-	dbConfig *dbconn.DBConfig
-	logger   loggers.Advanced
+	db           *sql.DB
+	table        *table.TableInfo
+	newTable     *table.TableInfo
+	oldTableName string
+	feed         *repl.Client
+	dbConfig     *dbconn.DBConfig
+	logger       loggers.Advanced
 }
 
 // NewCutOver contains the logic to perform the final cut over. It requires the original table,
 // new table, and a replication feed which is used to ensure consistency before the cut over.
-func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
+func NewCutOver(db *sql.DB, table, newTable *table.TableInfo, oldTableName string, feed *repl.Client, dbConfig *dbconn.DBConfig, logger loggers.Advanced) (*CutOver, error) {
 	if feed == nil {
 		return nil, errors.New("feed must be non-nil")
 	}
 	if table == nil || newTable == nil {
 		return nil, errors.New("table and newTable must be non-nil")
 	}
+	if oldTableName == "" {
+		return nil, errors.New("oldTableName must be non-empty")
+	}
 	return &CutOver{
-		db:       db,
-		table:    table,
-		newTable: newTable,
-		feed:     feed,
-		dbConfig: dbConfig,
-		logger:   logger,
+		db:           db,
+		table:        table,
+		newTable:     newTable,
+		oldTableName: oldTableName,
+		feed:         feed,
+		dbConfig:     dbConfig,
+		logger:       logger,
 	}, nil
 }
 
@@ -93,7 +98,7 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	if !c.feed.AllChangesFlushed() {
 		return errors.New("not all changes flushed, final flush might be broken")
 	}
-	oldName := fmt.Sprintf("_%s_old", c.table.TableName)
+	oldName := c.oldTableName
 	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
 	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 		c.table.QuotedName, oldQuotedName,
