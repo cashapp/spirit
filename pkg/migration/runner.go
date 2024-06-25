@@ -294,10 +294,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		if err := r.dropOldTable(ctx); err != nil {
 			// Don't return the error because our automation
 			// will retry the migration (but it's already happened)
-			r.logger.Errorf("migration successful but failed to drop old table: %v", err)
+			r.logger.Errorf("migration successful but failed to drop old table: %s - %v", r.oldTableName(), err)
 		} else {
-			r.logger.Info("successfully dropped old table")
+			r.logger.Info("successfully dropped old table: ", r.oldTableName())
 		}
+	} else {
+		r.logger.Info("skipped dropping old table: ", r.oldTableName())
 	}
 	checksumTime := time.Duration(0)
 	if r.checker != nil {
