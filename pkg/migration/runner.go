@@ -47,6 +47,7 @@ var (
 	statusInterval          = 30 * time.Second
 	sentinelCheckInterval   = 1 * time.Second
 	sentinelWaitLimit       = 48 * time.Hour
+	getLockWait             = 5 * time.Second
 )
 
 func (s migrationState) String() string {
@@ -187,6 +188,13 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
 	if err != nil {
+		return err
+	}
+
+	// use `GET_LOCK` to lock the table for the duration of the migration.  This
+	// prevents multiple Spirit instances from attempting to modify the same table
+	// at the same time. The lock will be released when the connection is closed.
+	if err := r.getLock(ctx); err != nil {
 		return err
 	}
 
@@ -433,6 +441,25 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 
 func (r *Runner) dsn() string {
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s", r.migration.Username, r.migration.Password, r.migration.Host, r.migration.Database)
+}
+
+func (r *Runner) getLock(ctx context.Context) error {
+	// use GET_LOCK to acquire a unique lock on the database + table being modified
+	lockName := fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table)
+	r.logger.Infof("attempting to acquire lock: %s", lockName)
+	// return dbconn.Exec(ctx, r.db, "SELECT GET_LOCK(%?, %?)", lockName, getLockWait.Seconds())
+
+	var answer int
+	if err := r.db.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockName, getLockWait.Seconds()).Scan(&answer); err != nil {
+		return fmt.Errorf("could not acquire lock: %s", err)
+
+	}
+	if answer != 1 {
+		return fmt.Errorf("could not acquire lock, GET_LOCK returned: %d", answer)
+	}
+
+	r.logger.Infof("acquired lock")
+	return nil
 }
 
 func (r *Runner) setup(ctx context.Context) error {
