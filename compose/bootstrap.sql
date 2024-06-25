@@ -20,7 +20,7 @@ set default role R_REPLICATION, R_THROTTLER to rsandbox@'%';
 -- using the same password.
 create user if not exists tsandbox@'%' identified with caching_sha2_password by 'msandbox';
 grant R_MIGRATOR, R_REPLICATION to tsandbox@'%' ;
-grant SYSTEM_VARIABLES_ADMIN on *.* to tsandbox@'%'; -- used in tests
+grant references, super, process on *.* to tsandbox@'%'; -- used in tests
 set default role R_MIGRATOR, R_REPLICATION to tsandbox@'%';
 
 flush privileges;
