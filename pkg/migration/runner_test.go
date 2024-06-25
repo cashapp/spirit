@@ -1794,6 +1794,114 @@ FROM compositevarcharpk a WHERE version='1'`)
 	assert.NoError(t, m2.Close())
 }
 
+func TestResumeFromCheckpointStrict(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS resumestricttest, _resumestricttest_old, _resumestricttest_chkpnt`)
+	table := `CREATE TABLE resumestricttest (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+
+	// Insert dummy data.
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	alterSQL := "ADD INDEX(pad);"
+
+	migration := &Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         1,
+		Checksum:        true,
+		Table:           "resumestricttest",
+		Alter:           alterSQL,
+		TargetChunkTime: 100 * time.Millisecond,
+		Strict:          true,
+	}
+
+	// Kick off a migration with --strict enabled and let it run until the first checkpoint is available
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runner, err := NewRunner(migration)
+	assert.NoError(t, err)
+
+	go func() {
+		err := runner.Run(ctx)
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+	}()
+
+	// wait until a checkpoint is saved (which means copy is in progress)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		err = db.QueryRow(`SELECT count(*) from _resumestricttest_chkpnt`).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	// Between cancel and Close() every resource is freed.
+	cancel()
+	assert.NoError(t, runner.Close())
+
+	// Insert some more dummy data
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest LIMIT 1000")
+
+	// Start a _different_ migration on the same table. We don't expect this to work when --strict is enabled
+	// since the --alter doesn't match what is recorded in the checkpoint table
+
+	migrationB := &Migration{
+		Host:            migration.Host,
+		Username:        migration.Username,
+		Password:        migration.Password,
+		Database:        migration.Database,
+		Threads:         migration.Threads,
+		Checksum:        migration.Checksum,
+		Table:           migration.Table,
+		Alter:           "ENGINE=INNODB",
+		TargetChunkTime: migration.TargetChunkTime,
+		Strict:          migration.Strict,
+	}
+
+	runner, err = NewRunner(migrationB)
+	assert.NoError(t, err)
+
+	err = runner.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrMismatchedAlter)
+
+	assert.NoError(t, runner.Close())
+
+	// We should be able to force the migration to run even though there's a mismatched --alter
+	// by disabling --strict
+
+	migrationB.Strict = false
+	migrationB.Threads = 4 // to make the test run faster
+
+	runner, err = NewRunner(migrationB)
+	assert.NoError(t, err)
+
+	err = runner.Run(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, runner.usedResumeFromCheckpoint)
+
+	assert.NoError(t, runner.Close())
+}
+
 // TestE2ERogueValues tests that PRIMARY KEY
 // values that contain single quotes are escaped correctly
 // by the repl feed applier, the copier and checksum.
