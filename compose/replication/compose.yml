@@ -52,7 +52,7 @@ services:
       mysql_replica:
         condition: service_healthy
     environment:
-      MYSQL_DSN: root:msandbox@tcp(mysql)/test
+      MYSQL_DSN: tsandbox:msandbox@tcp(mysql)/test
       REPLICA_DSN: rsandbox:rsandbox@tcp(mysql_replica)/
 
   buildandrun:
