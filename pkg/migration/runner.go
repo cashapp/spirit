@@ -591,8 +591,11 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 }
 
 func (r *Runner) dropOldTable(ctx context.Context) error {
-	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
-	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, oldName)
+	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, r.oldTableName())
+}
+
+func (r *Runner) oldTableName() string {
+	return fmt.Sprintf("_%s_old_%s", r.table.TableName, r.startTime.UTC().Format("20060102_150405Z"))
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {

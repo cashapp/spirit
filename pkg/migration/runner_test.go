@@ -2228,7 +2228,6 @@ func TestVarcharE2E(t *testing.T) {
 
 func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
-	oldName := fmt.Sprintf("_%s_old", tableName)
 
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
@@ -2256,7 +2255,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 
 	sql := fmt.Sprintf(
 		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
-		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, m.oldTableName())
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
@@ -2268,7 +2267,6 @@ func TestDropAfterCutover(t *testing.T) {
 	sentinelWaitLimit = 10 * time.Second
 
 	tableName := `drop_test`
-	oldName := fmt.Sprintf("_%s_old", tableName)
 
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
@@ -2296,7 +2294,7 @@ func TestDropAfterCutover(t *testing.T) {
 
 	sql := fmt.Sprintf(
 		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
-		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, m.oldTableName())
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
@@ -2366,7 +2364,6 @@ func TestDeferCutOverE2E(t *testing.T) {
 
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e`
-	oldName := fmt.Sprintf("_%s_old", tableName)
 	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
 	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 
@@ -2424,7 +2421,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 
 	sql := fmt.Sprintf(
 		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
-		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, m.oldTableName())
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
@@ -2441,7 +2438,6 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 
 	c := make(chan error)
 	tableName := `deferred_cutover_e2e_stage`
-	oldName := fmt.Sprintf("_%s_old", tableName)
 	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
 	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
 
@@ -2503,7 +2499,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 
 	sql := fmt.Sprintf(
 		`SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES 
-		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, oldName)
+		WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='%s'`, m.oldTableName())
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
