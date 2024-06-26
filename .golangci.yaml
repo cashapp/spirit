@@ -60,6 +60,12 @@ linters-settings:
     min-complexity: 20
   exhaustive:
     default-signifies-exhaustive: true
+  testifylint:
+    enable-all: true
+    disable:
+      - suite-thelper # this is disabled by default
+      - float-compare
+      - require-error
 
 issues:
   max-per-linter: 0
@@ -74,5 +80,3 @@ issues:
     - 'bad syntax for struct tag key'
     - 'bad syntax for struct tag pair'
     - 'result .* \(error\) is always nil'
-    - 'require-error: for error assertions use require'
-    - 'float-compare'
