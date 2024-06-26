@@ -2853,6 +2853,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again with visible
 	m, err = NewRunner(&Migration{
@@ -2868,6 +2869,7 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again but include an unsafe INPLACE change at the same time.
 	// This won't work by default.
@@ -2899,6 +2901,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 
 	// But even when force inplace is set, we won't be able to do an operation
 	// that requires a full copy. This is important because invisible should
@@ -2917,4 +2920,64 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
+}
+
+func TestPreventConcurrentRuns(t *testing.T) {
+	sentinelWaitLimit = 10 * time.Second
+
+	tableName := `prevent_concurrent_runs`
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
+
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
+
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
+
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                tableName,
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err = m.Run(context.Background())
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
+	}()
+
+	// While it's waiting, start another run and confirm it fails.
+	time.Sleep(1 * time.Second)
+	m2, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                tableName,
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         false,
+	})
+	assert.NoError(t, err)
+	err = m2.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not acquire metadata lock")
 }

@@ -83,6 +83,7 @@ type Runner struct {
 	table           *table.TableInfo
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
+	metadataLock    *dbconn.MetadataLock
 
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
@@ -186,6 +187,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// during the cutover procedure.
 	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
+	if err != nil {
+		return err
+	}
+
+	// Take a metadata lock to prevent other migrations from running concurrently.
+	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table), r.logger)
 	if err != nil {
 		return err
 	}
@@ -698,6 +705,12 @@ func (r *Runner) Close() error {
 	}
 	if r.db != nil {
 		err := r.db.Close()
+		if err != nil {
+			return err
+		}
+	}
+	if r.metadataLock != nil {
+		err := r.metadataLock.Close()
 		if err != nil {
 			return err
 		}
