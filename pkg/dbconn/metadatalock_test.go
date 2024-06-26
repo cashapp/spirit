@@ -71,6 +71,18 @@ func TestMetadataLockRefresh(t *testing.T) {
 	assert.ErrorContains(t, err, "lock is held by another connection")
 
 	// Close the lock
-	err = mdl.Close()
-	assert.NoError(t, err)
+	assert.NoError(t, mdl.Close())
+}
+
+func TestMetadataLockLength(t *testing.T) {
+	long := "thisisareallylongtablenamethisisareallylongtablenamethisisareallylongtablename"
+	empty := ""
+
+	logger := logrus.New()
+
+	_, err := NewMetadataLock(context.Background(), testutils.DSN(), long, logger)
+	assert.ErrorContains(t, err, "metadata lock name is too long")
+
+	_, err = NewMetadataLock(context.Background(), testutils.DSN(), empty, logger)
+	assert.ErrorContains(t, err, "metadata lock name is empty")
 }
