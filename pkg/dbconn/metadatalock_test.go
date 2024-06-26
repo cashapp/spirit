@@ -19,18 +19,16 @@ func TestMetadataLock(t *testing.T) {
 
 	// Confirm a second lock cannot be acquired
 	_, err = NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
-	assert.Error(t, err)
 	assert.ErrorContains(t, err, "lock is held by another connection")
 
 	// Close the original mdl
-	err = mdl.Close()
-	assert.NoError(t, err)
+	assert.NoError(t, mdl.Close())
 
 	// Confirm a new lock can be acquired
 	mdl3, err := NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
 	assert.NoError(t, err)
-	err = mdl3.Close()
-	assert.NoError(t, err)
+	assert.NoError(t, mdl3.Close())
+
 }
 
 func TestMetadataLockContextCancel(t *testing.T) {
@@ -52,8 +50,7 @@ func TestMetadataLockContextCancel(t *testing.T) {
 	mdl2, err := NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
 	assert.NoError(t, err)
 	assert.NotNil(t, mdl2)
-	err = mdl2.Close()
-	assert.NoError(t, err)
+	assert.NoError(t, mdl2.Close())
 }
 
 func TestMetadataLockRefresh(t *testing.T) {
@@ -71,7 +68,6 @@ func TestMetadataLockRefresh(t *testing.T) {
 
 	// Confirm the lock is still held
 	_, err = NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
-	assert.Error(t, err)
 	assert.ErrorContains(t, err, "lock is held by another connection")
 
 	// Close the lock
