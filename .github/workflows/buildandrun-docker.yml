@@ -1,4 +1,4 @@
-name: MySQL 8.0 Build and Run
+name: MySQL 8.0 Build and Run /w docker-compose
 on:
   push:
     branches: [ main ]
@@ -8,14 +8,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v3
-        with:
-          go-version: 1.22
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy MySQL
-        run: scripts/dbdeployer_install_8028.sh
-
       - name: Build and Run Spirit
-        run: scripts/build_and_run.sh
+        run: docker compose up mysql buildandrun --abort-on-container-exit
+        working-directory: compose

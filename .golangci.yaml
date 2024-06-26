@@ -9,6 +9,7 @@ linters:
   disable:
     - tagalign
     - depguard
+    - mnd
     - musttag
     - nonamedreturns
     - exhaustruct
@@ -26,7 +27,6 @@ linters:
     - ireturn
     - maintidx
     - nilnil
-    - maligned
     - lll
     - gochecknoglobals
     - wsl
@@ -36,11 +36,9 @@ linters:
     - goprintffuncname
     - paralleltest
     - nlreturn
-    - goerr113
-    - ifshort
+    - err113
     - testpackage
     - wrapcheck
-    - exhaustivestruct
     - forbidigo
     - gci
     - godot
@@ -48,9 +46,6 @@ linters:
     - cyclop
     - errorlint
     - nestif
-    - golint
-    - scopelint
-    - interfacer
     - tagliatelle
     - thelper
     - godox
@@ -65,6 +60,12 @@ linters-settings:
     min-complexity: 20
   exhaustive:
     default-signifies-exhaustive: true
+  testifylint:
+    enable-all: true
+    disable:
+      - suite-thelper # this is disabled by default
+      - float-compare
+      - require-error
 
 issues:
   max-per-linter: 0
@@ -79,4 +80,3 @@ issues:
     - 'bad syntax for struct tag key'
     - 'bad syntax for struct tag pair'
     - 'result .* \(error\) is always nil'
-
