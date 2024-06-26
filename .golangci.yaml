@@ -74,3 +74,4 @@ issues:
     - 'bad syntax for struct tag key'
     - 'bad syntax for struct tag pair'
     - 'result .* \(error\) is always nil'
+    - 'require-error: for error assertions use require'
