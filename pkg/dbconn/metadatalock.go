@@ -22,6 +22,12 @@ type MetadataLock struct {
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced) (*MetadataLock, error) {
+	if len(lockName) == 0 {
+		return nil, fmt.Errorf("metadata lock name is empty")
+	}
+	if len(lockName) > 64 {
+		return nil, fmt.Errorf("metadata lock name is too long: %d, max length is 64", len(lockName))
+	}
 
 	mdl := &MetadataLock{
 		refreshInterval: refreshInterval,
