@@ -47,8 +47,6 @@ var (
 	statusInterval          = 30 * time.Second
 	sentinelCheckInterval   = 1 * time.Second
 	sentinelWaitLimit       = 48 * time.Hour
-	getLockTimeout          = 5 * time.Second
-	lockRecheckInterval     = 1 * time.Minute
 )
 
 func (s migrationState) String() string {
@@ -81,11 +79,11 @@ type Runner struct {
 	migration       *Migration
 	db              *sql.DB
 	dbConfig        *dbconn.DBConfig
-	dbLock          *sql.DB
 	replica         *sql.DB
 	table           *table.TableInfo
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
+	metadataLock    *dbconn.MetadataLock
 
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
@@ -193,21 +191,11 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 
-	// Create a dedicated database connection of 1 for our getLock function
-	lockConfig := dbconn.NewDBConfig()
-	lockConfig.MaxOpenConnections = 1
-	r.dbLock, err = dbconn.New(r.dsn(), lockConfig)
+	// Take a metadata lock to prevent other migrations from running concurrently.
+	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table), r.logger)
 	if err != nil {
 		return err
 	}
-
-	// use `GET_LOCK` to lock the table for the duration of the migration.  This
-	// prevents multiple Spirit instances from attempting to modify the same table
-	// at the same time. The lock will be released when the connection is closed.
-	if err := r.getLock(ctx); err != nil {
-		return err
-	}
-	go r.checkLock(ctx) // start periodically re-checking the lock
 
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
@@ -452,42 +440,6 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 
 func (r *Runner) dsn() string {
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s", r.migration.Username, r.migration.Password, r.migration.Host, r.migration.Database)
-}
-
-func (r *Runner) getLock(ctx context.Context) error {
-	// use GET_LOCK to acquire a unique lock on the database + table being modified
-	lockName := fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table)
-	r.logger.Infof("attempting to acquire lock: %s", lockName)
-	// return dbconn.Exec(ctx, r.db, "SELECT GET_LOCK(%?, %?)", lockName, getLockWait.Seconds())
-
-	var answer int
-	if err := r.dbLock.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockName, getLockTimeout.Seconds()).Scan(&answer); err != nil {
-		return fmt.Errorf("could not acquire lock: %s", err)
-
-	}
-	if answer != 1 {
-		return fmt.Errorf("could not acquire lock, GET_LOCK returned: %d", answer)
-	}
-
-	r.logger.Infof("acquired lock")
-	return nil
-}
-
-func (r *Runner) checkLock(ctx context.Context) {
-	// re-GET_LOCK every lockRecheckInterval
-	ticker := time.NewTicker(lockRecheckInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := r.getLock(ctx); err != nil {
-				r.logger.Errorf("could not re-acquire lock: %v", err)
-				// it is unclear what else we should do here, if anything.
-			}
-		}
-	}
 }
 
 func (r *Runner) setup(ctx context.Context) error {
@@ -748,6 +700,12 @@ func (r *Runner) Close() error {
 	}
 	if r.db != nil {
 		err := r.db.Close()
+		if err != nil {
+			return err
+		}
+	}
+	if r.metadataLock != nil {
+		err := r.metadataLock.Close()
 		if err != nil {
 			return err
 		}
