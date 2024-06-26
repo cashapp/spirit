@@ -9,6 +9,7 @@ linters:
   disable:
     - tagalign
     - depguard
+    - mnd
     - musttag
     - nonamedreturns
     - exhaustruct
