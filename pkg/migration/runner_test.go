@@ -2745,6 +2745,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again with visible
 	m, err = NewRunner(&Migration{
@@ -2760,6 +2761,7 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again but include an unsafe INPLACE change at the same time.
 	// This won't work by default.
@@ -2791,6 +2793,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 
 	// But even when force inplace is set, we won't be able to do an operation
 	// that requires a full copy. This is important because invisible should
