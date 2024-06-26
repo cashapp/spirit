@@ -4,6 +4,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
@@ -127,7 +128,7 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 						// to be ignored. *However* if range optimization is disabled the query is going to
 						// tablescan, so it's better to just bail out and present a useful error message.
 						isFatal = true
-						err = fmt.Errorf("MySQL refused to optimize a statement because the value of 'range_optimizer_max_mem_size' is too low. Please decrease the target-chunk-time, or increase the value of 'range_optimizer_max_mem_size'")
+						err = errors.New("MySQL refused to optimize a statement because the value of 'range_optimizer_max_mem_size' is too low. Please decrease the target-chunk-time, or increase the value of 'range_optimizer_max_mem_size'")
 						return
 					} else {
 						isFatal = true

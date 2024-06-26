@@ -3,7 +3,7 @@ package dbconn
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -33,11 +33,11 @@ func TestLockWaitTimeouts(t *testing.T) {
 
 	lockWaitTimeout, err := getVariable(trx, "lock_wait_timeout", true)
 	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(config.LockWaitTimeout), lockWaitTimeout)
+	assert.Equal(t, strconv.Itoa(config.LockWaitTimeout), lockWaitTimeout)
 
 	innodbLockWaitTimeout, err := getVariable(trx, "innodb_lock_wait_timeout", true)
 	assert.NoError(t, err)
-	assert.Equal(t, fmt.Sprint(config.InnodbLockWaitTimeout), innodbLockWaitTimeout)
+	assert.Equal(t, strconv.Itoa(config.InnodbLockWaitTimeout), innodbLockWaitTimeout)
 }
 
 func TestRetryableTrx(t *testing.T) {

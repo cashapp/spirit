@@ -2338,7 +2338,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2378,7 +2378,7 @@ func TestDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2525,7 +2525,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	}
 	assert.NoError(t, err)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2604,7 +2604,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 		binlogPos = newBinlogPos
 	}
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)

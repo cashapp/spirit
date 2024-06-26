@@ -292,7 +292,7 @@ func TestReplClientQueue(t *testing.T) {
 	chk, err := copier.Next4Test()
 	assert.NoError(t, err)
 	prevUpperBound := chk.UpperBound.Value[0].String()
-	assert.Equal(t, fmt.Sprintf("`a` < %s", prevUpperBound), chk.String())
+	assert.Equal(t, "`a` < "+prevUpperBound, chk.String())
 	// read again
 	chk, err = copier.Next4Test()
 	assert.NoError(t, err)
