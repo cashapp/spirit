@@ -28,7 +28,6 @@ func TestMetadataLock(t *testing.T) {
 	mdl3, err := NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
 	assert.NoError(t, err)
 	assert.NoError(t, mdl3.Close())
-
 }
 
 func TestMetadataLockContextCancel(t *testing.T) {

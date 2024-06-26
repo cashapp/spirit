@@ -2,6 +2,7 @@ package dbconn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,7 +24,7 @@ type MetadataLock struct {
 
 func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced) (*MetadataLock, error) {
 	if len(lockName) == 0 {
-		return nil, fmt.Errorf("metadata lock name is empty")
+		return nil, errors.New("metadata lock name is empty")
 	}
 	if len(lockName) > 64 {
 		return nil, fmt.Errorf("metadata lock name is too long: %d, max length is 64", len(lockName))
@@ -47,7 +48,6 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 		var answer int
 		if err := dbConn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockName, getLockTimeout.Seconds()).Scan(&answer); err != nil {
 			return fmt.Errorf("could not acquire metadata lock: %s", err)
-
 		}
 		if answer == 0 {
 			// 0 means the lock is held by another connection
