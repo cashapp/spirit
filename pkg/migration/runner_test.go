@@ -2871,5 +2871,5 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	assert.NoError(t, err)
 	err = m2.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "could not acquire lock")
+	assert.ErrorContains(t, err, "could not acquire metadata lock")
 }
