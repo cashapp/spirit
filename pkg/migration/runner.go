@@ -804,7 +804,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 	}
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
-	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
+	for i := range 3 { // try the checksum up to 3 times.
 		r.checkerLock.Lock()
 		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 			Concurrency:     r.migration.Threads,

@@ -69,7 +69,7 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 		rowsAffected int64
 		isFatal      bool
 	)
-	for i := 0; i < config.MaxRetries; i++ {
+	for i := range config.MaxRetries {
 		func() {
 			// Start a transaction
 			if trx, err = db.BeginTx(ctx, nil); err != nil {

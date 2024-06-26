@@ -209,7 +209,7 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	chunker.Feedback(chunk, 50*time.Microsecond) //must give feedback to advance watermark.
 
 	// Feedback to increase the chunk size is more gradual.
-	for i := 0; i < 10; i++ { // no change
+	for range 10 { // no change
 		chunk, err = chunker.Next()
 		chunker.Feedback(chunk, 50*time.Microsecond) // very short.
 		assert.NoError(t, err)
@@ -223,7 +223,7 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 	chunker.Feedback(chunk, 50*time.Microsecond)
 
 	// Advance the watermark a little bit.
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		chunk, err = chunker.Next()
 		assert.NoError(t, err)
 		chunker.Feedback(chunk, time.Millisecond)

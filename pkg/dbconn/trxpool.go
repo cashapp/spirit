@@ -22,7 +22,7 @@ type TrxPool struct {
 // had their read-view created in REPEATABLE READ isolation.
 func NewTrxPool(ctx context.Context, db *sql.DB, count int, config *DBConfig) (*TrxPool, error) {
 	checksumTxns := make([]*sql.Tx, 0, count)
-	for i := 0; i < count; i++ {
+	for range count {
 		trx, _ := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 		_, err := trx.ExecContext(ctx, "START TRANSACTION WITH CONSISTENT SNAPSHOT")
 		if err != nil {

@@ -344,7 +344,7 @@ func TestFeedback(t *testing.T) {
 
 	// Make it complete 5 times faster than expected
 	// Run 9 times initially.
-	for i := 0; i < 9; i++ {
+	for range 9 {
 		client.feedback(1000, time.Millisecond*100)
 	}
 	assert.Equal(t, int64(1000), client.targetBatchSize) // no change yet
@@ -354,7 +354,7 @@ func TestFeedback(t *testing.T) {
 	assert.Equal(t, int64(5000), client.targetBatchSize) // 5x more keys.
 
 	// test with slower chunk
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		client.feedback(1000, time.Second)
 	}
 	assert.Equal(t, int64(500), client.targetBatchSize) // less keys.

@@ -861,7 +861,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
 	// Let's confirm we do advance the watermark.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
@@ -2595,7 +2595,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	assert.NoError(t, err)
 
 	binlogPos := m.replClient.GetBinlogApplyPosition()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 		time.Sleep(1 * time.Second)
 		m.replClient.Flush(context.Background())
@@ -2793,7 +2793,7 @@ func TestForNonInstantBurn(t *testing.T) {
 	}
 
 	testutils.RunSQL(t, table)
-	for i := 0; i < 32; i++ { // requires 64 instants
+	for range 32 { // requires 64 instants
 		testutils.RunSQL(t, "ALTER TABLE instantburn ADD newcol INT, ALGORITHM=INSTANT")
 		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
 	}
