@@ -597,7 +597,7 @@ func (r *Runner) dropOldTable(ctx context.Context) error {
 }
 
 func (r *Runner) oldTableName() string {
-	return fmt.Sprintf("_%s_old_%s", r.table.TableName, r.startTime.UTC().Format("20060102_150405Z"))
+	return fmt.Sprintf("_%s_old_%s", r.table.TableName, r.startTime.UTC().Format("20060102_150405.000"))
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
