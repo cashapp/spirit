@@ -22,7 +22,7 @@ type MetadataLock struct {
 	refreshInterval time.Duration
 }
 
-func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced) (*MetadataLock, error) {
+func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
 	if len(lockName) == 0 {
 		return nil, errors.New("metadata lock name is empty")
 	}
@@ -32,6 +32,11 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 
 	mdl := &MetadataLock{
 		refreshInterval: refreshInterval,
+	}
+
+	// Apply option functions
+	for _, optionFn := range optionFns {
+		optionFn(mdl)
 	}
 
 	// Setup the dedicated connection for this lock
@@ -71,9 +76,6 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	ctx, mdl.cancel = context.WithCancel(ctx)
 	mdl.closeCh = make(chan error)
 	go func() {
-		// The only reason to sleep here is to give our tests a chance to override the mdl.refreshInterval
-		time.Sleep(1 * time.Second)
-
 		ticker := time.NewTicker(mdl.refreshInterval)
 		defer ticker.Stop()
 		for {

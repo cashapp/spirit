@@ -55,12 +55,12 @@ func TestMetadataLockContextCancel(t *testing.T) {
 func TestMetadataLockRefresh(t *testing.T) {
 	lockName := "test-refresh"
 	logger := logrus.New()
-	mdl, err := NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger)
+	mdl, err := NewMetadataLock(context.Background(), testutils.DSN(), lockName, logger, func(mdl *MetadataLock) {
+		// override the refresh interval for faster testing
+		mdl.refreshInterval = 2 * time.Second
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, mdl)
-
-	// override the refresh interval to 5 seconds
-	mdl.refreshInterval = 2 * time.Second
 
 	// wait for the refresh to happen
 	time.Sleep(5 * time.Second)
