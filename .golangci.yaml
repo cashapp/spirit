@@ -26,7 +26,6 @@ linters:
     - ireturn
     - maintidx
     - nilnil
-    - maligned
     - lll
     - gochecknoglobals
     - wsl
@@ -37,10 +36,8 @@ linters:
     - paralleltest
     - nlreturn
     - goerr113
-    - ifshort
     - testpackage
     - wrapcheck
-    - exhaustivestruct
     - forbidigo
     - gci
     - godot
@@ -48,9 +45,6 @@ linters:
     - cyclop
     - errorlint
     - nestif
-    - golint
-    - scopelint
-    - interfacer
     - tagliatelle
     - thelper
     - godox
@@ -79,4 +73,3 @@ issues:
     - 'bad syntax for struct tag key'
     - 'bad syntax for struct tag pair'
     - 'result .* \(error\) is always nil'
-
