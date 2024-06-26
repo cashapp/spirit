@@ -59,7 +59,7 @@ func TestCopier(t *testing.T) {
 
 	// Verify that testMetricsSink.Send was called >0 times
 	// It will be 1 with the composite chunker, 3 with optimistic.
-	assert.True(t, testMetricsSink.called > 0)
+	assert.Positive(t, testMetricsSink.called)
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 }
 

@@ -30,13 +30,13 @@ const (
 
 type Chunker interface {
 	Open() error
-	OpenAtWatermark(string, Datum) error
+	OpenAtWatermark(watermark string, datum Datum) error
 	IsRead() bool
 	Close() error
 	Next() (*Chunk, error)
-	Feedback(*Chunk, time.Duration)
+	Feedback(chunk *Chunk, duration time.Duration)
 	GetLowWatermark() (string, error)
-	KeyAboveHighWatermark(interface{}) bool
+	KeyAboveHighWatermark(key interface{}) bool
 }
 
 func NewChunker(t *TableInfo, chunkerTarget time.Duration, logger loggers.Advanced) (Chunker, error) {

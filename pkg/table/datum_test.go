@@ -1,8 +1,8 @@
 package table
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,8 +15,8 @@ func TestDatum(t *testing.T) {
 	assert.Equal(t, "1", signed.String())
 	assert.Equal(t, "1", unsigned.String())
 
-	assert.Equal(t, fmt.Sprint(math.MinInt64), signed.MinValue().String())
-	assert.Equal(t, fmt.Sprint(math.MaxInt64), signed.MaxValue().String())
+	assert.Equal(t, strconv.Itoa(math.MinInt64), signed.MinValue().String())
+	assert.Equal(t, strconv.Itoa(math.MaxInt64), signed.MaxValue().String())
 	assert.Equal(t, "0", unsigned.MinValue().String())
 	assert.Equal(t, "18446744073709551615", unsigned.MaxValue().String())
 
@@ -33,7 +33,7 @@ func TestDatum(t *testing.T) {
 	// The add operation truncates: so both should equal the maxValue exactly.
 	overflowSigned := newDatum(uint64(math.MaxInt64)-10, signedType) // wrong type, converts.
 	overflowUnsigned := newDatum(uint64(math.MaxUint64)-10, unsignedType)
-	assert.Equal(t, fmt.Sprint(math.MaxInt64), overflowSigned.Add(100).String())
+	assert.Equal(t, strconv.Itoa(math.MaxInt64), overflowSigned.Add(100).String())
 	assert.Equal(t, "18446744073709551615", overflowUnsigned.Add(100).String())
 
 	// Test unsigned with signed input

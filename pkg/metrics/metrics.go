@@ -41,7 +41,7 @@ type MetricValue struct {
 // Sink sends metrics to an external destination.
 type Sink interface {
 	// Send sends metrics to the sink. It must respect the context timeout, if any.
-	Send(context.Context, *Metrics) error
+	Send(ctx context.Context, metrics *Metrics) error
 }
 
 // NoopSink is the default sink which does nothing

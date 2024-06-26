@@ -145,7 +145,7 @@ func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 	}
 	columns := make([]sql.RawBytes, len(columnNames))
 	columnPointers := make([]interface{}, len(columnNames))
-	for i := 0; i < len(columnNames); i++ {
+	for i := range len(columnNames) {
 		columnPointers[i] = &columns[i]
 	}
 	rowsFound := false

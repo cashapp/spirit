@@ -526,8 +526,8 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "Out of range value") // Error 1264: Out of range value for column 'id' at row 1
-	assert.True(t, m.copier.CopyChunksCount < 500)     // should be very low
+	assert.ErrorContains(t, err, "Out of range value")    // Error 1264: Out of range value for column 'id' at row 1
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // should be very low
 	assert.NoError(t, m.Close())
 }
 
@@ -560,7 +560,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)                                // works because there are no violations.
-	assert.True(t, int64(m.copier.CopyChunksCount) < 500) // prefetch makes it copy fast.
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // prefetch makes it copy fast.
 	assert.NoError(t, m.Close())
 }
 
@@ -861,7 +861,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
 	// Let's confirm we do advance the watermark.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
@@ -2338,7 +2338,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2368,7 +2368,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2378,7 +2378,7 @@ func TestDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 	oldName := fmt.Sprintf("_%s_old", tableName)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2408,7 +2408,7 @@ func TestDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2465,7 +2465,7 @@ func TestDeferCutOver(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2525,7 +2525,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	}
 	assert.NoError(t, err)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2536,7 +2536,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2595,16 +2595,16 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	assert.NoError(t, err)
 
 	binlogPos := m.replClient.GetBinlogApplyPosition()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 		time.Sleep(1 * time.Second)
 		m.replClient.Flush(context.Background())
 		newBinlogPos := m.replClient.GetBinlogApplyPosition()
-		assert.Equal(t, newBinlogPos.Compare(binlogPos), 1)
+		assert.Equal(t, 1, newBinlogPos.Compare(binlogPos))
 		binlogPos = newBinlogPos
 	}
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2615,7 +2615,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2793,7 +2793,7 @@ func TestForNonInstantBurn(t *testing.T) {
 	}
 
 	testutils.RunSQL(t, table)
-	for i := 0; i < 32; i++ { // requires 64 instants
+	for range 32 { // requires 64 instants
 		testutils.RunSQL(t, "ALTER TABLE instantburn ADD newcol INT, ALGORITHM=INSTANT")
 		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
 	}
