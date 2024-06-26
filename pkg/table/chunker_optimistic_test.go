@@ -69,7 +69,7 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 
 	_, err = chunker.Next()
 	assert.Error(t, err) // err: table is read.
-	assert.Equal(t, err.Error(), "table is read")
+	assert.Equal(t, "table is read", err.Error())
 
 	assert.NoError(t, chunker.Close())
 }
@@ -165,7 +165,7 @@ func TestLowWatermark(t *testing.T) {
 
 	// Test that we have applied all stored chunks and the map is empty,
 	// as we gave Feedback for all chunks.
-	assert.Equal(t, 0, len(chunker.lowerBoundWatermarkMap))
+	assert.Empty(t, chunker.lowerBoundWatermarkMap)
 }
 
 func TestOptimisticDynamicChunking(t *testing.T) {

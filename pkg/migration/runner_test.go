@@ -526,8 +526,8 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "Out of range value") // Error 1264: Out of range value for column 'id' at row 1
-	assert.True(t, m.copier.CopyChunksCount < 500)     // should be very low
+	assert.ErrorContains(t, err, "Out of range value")    // Error 1264: Out of range value for column 'id' at row 1
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // should be very low
 	assert.NoError(t, m.Close())
 }
 
@@ -560,7 +560,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)                                // works because there are no violations.
-	assert.True(t, int64(m.copier.CopyChunksCount) < 500) // prefetch makes it copy fast.
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // prefetch makes it copy fast.
 	assert.NoError(t, m.Close())
 }
 
@@ -2368,7 +2368,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2408,7 +2408,7 @@ func TestDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2465,7 +2465,7 @@ func TestDeferCutOver(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2536,7 +2536,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2600,7 +2600,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 		time.Sleep(1 * time.Second)
 		m.replClient.Flush(context.Background())
 		newBinlogPos := m.replClient.GetBinlogApplyPosition()
-		assert.Equal(t, newBinlogPos.Compare(binlogPos), 1)
+		assert.Equal(t, 1, newBinlogPos.Compare(binlogPos))
 		binlogPos = newBinlogPos
 	}
 
@@ -2615,7 +2615,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 

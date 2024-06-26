@@ -48,7 +48,7 @@ func TestReplClient(t *testing.T) {
 	assert.NoError(t, client.BlockWait(context.TODO()))
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
-	assert.Equal(t, client.GetDeltaLen(), 1)
+	assert.Equal(t, 1, client.GetDeltaLen())
 	assert.NoError(t, client.Flush(context.TODO()))
 
 	// We should observe there is a row in t2.
@@ -96,7 +96,7 @@ func TestReplClientComplex(t *testing.T) {
 	// Insert into t1, but because there is no read yet, the key is above the watermark
 	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
 	assert.NoError(t, client.BlockWait(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 0)
+	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// Read from the copier so that the key is below the watermark
 	chk, err := copier.Next4Test()
@@ -314,7 +314,7 @@ func TestReplClientQueue(t *testing.T) {
 
 	// Final flush
 	assert.NoError(t, client.Flush(context.TODO()))
-	assert.Equal(t, client.GetDeltaLen(), 0)
+	assert.Equal(t, 0, client.GetDeltaLen())
 }
 
 func TestFeedback(t *testing.T) {

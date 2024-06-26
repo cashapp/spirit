@@ -25,7 +25,7 @@ import (
 
 func TestReserveBuffer(t *testing.T) {
 	res0 := reserveBuffer(nil, 0)
-	require.Len(t, res0, 0)
+	require.Empty(t, res0)
 
 	res1 := reserveBuffer(res0, 3)
 	require.Len(t, res1, 3)
