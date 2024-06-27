@@ -526,8 +526,8 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "Out of range value") // Error 1264: Out of range value for column 'id' at row 1
-	assert.True(t, m.copier.CopyChunksCount < 500)     // should be very low
+	assert.ErrorContains(t, err, "Out of range value")    // Error 1264: Out of range value for column 'id' at row 1
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // should be very low
 	assert.NoError(t, m.Close())
 }
 
@@ -560,7 +560,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)                                // works because there are no violations.
-	assert.True(t, int64(m.copier.CopyChunksCount) < 500) // prefetch makes it copy fast.
+	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // prefetch makes it copy fast.
 	assert.NoError(t, m.Close())
 }
 
@@ -861,7 +861,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
 	// Let's confirm we do advance the watermark.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
 		assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
@@ -1794,6 +1794,114 @@ FROM compositevarcharpk a WHERE version='1'`)
 	assert.NoError(t, m2.Close())
 }
 
+func TestResumeFromCheckpointStrict(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS resumestricttest, _resumestricttest_old, _resumestricttest_chkpnt`)
+	table := `CREATE TABLE resumestricttest (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		pad varbinary(1024) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+
+	// Insert dummy data.
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM dual")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM resumestricttest a, resumestricttest b, resumestricttest c LIMIT 100000")
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	alterSQL := "ADD INDEX(pad);"
+
+	migration := &Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         1,
+		Checksum:        true,
+		Table:           "resumestricttest",
+		Alter:           alterSQL,
+		TargetChunkTime: 100 * time.Millisecond,
+		Strict:          true,
+	}
+
+	// Kick off a migration with --strict enabled and let it run until the first checkpoint is available
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runner, err := NewRunner(migration)
+	assert.NoError(t, err)
+
+	go func() {
+		err := runner.Run(ctx)
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+	}()
+
+	// wait until a checkpoint is saved (which means copy is in progress)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		err = db.QueryRow(`SELECT count(*) from _resumestricttest_chkpnt`).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	// Between cancel and Close() every resource is freed.
+	cancel()
+	assert.NoError(t, runner.Close())
+
+	// Insert some more dummy data
+	testutils.RunSQL(t, "INSERT INTO resumestricttest (pad) SELECT RANDOM_BYTES(1024) FROM chkpresumetest LIMIT 1000")
+
+	// Start a _different_ migration on the same table. We don't expect this to work when --strict is enabled
+	// since the --alter doesn't match what is recorded in the checkpoint table
+
+	migrationB := &Migration{
+		Host:            migration.Host,
+		Username:        migration.Username,
+		Password:        migration.Password,
+		Database:        migration.Database,
+		Threads:         migration.Threads,
+		Checksum:        migration.Checksum,
+		Table:           migration.Table,
+		Alter:           "ENGINE=INNODB",
+		TargetChunkTime: migration.TargetChunkTime,
+		Strict:          migration.Strict,
+	}
+
+	runner, err = NewRunner(migrationB)
+	assert.NoError(t, err)
+
+	err = runner.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrMismatchedAlter)
+
+	assert.NoError(t, runner.Close())
+
+	// We should be able to force the migration to run even though there's a mismatched --alter
+	// by disabling --strict
+
+	migrationB.Strict = false
+	migrationB.Threads = 4 // to make the test run faster
+
+	runner, err = NewRunner(migrationB)
+	assert.NoError(t, err)
+
+	err = runner.Run(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, runner.usedResumeFromCheckpoint)
+
+	assert.NoError(t, runner.Close())
+}
+
 // TestE2ERogueValues tests that PRIMARY KEY
 // values that contain single quotes are escaped correctly
 // by the repl feed applier, the copier and checksum.
@@ -2229,7 +2337,7 @@ func TestVarcharE2E(t *testing.T) {
 func TestSkipDropAfterCutover(t *testing.T) {
 	tableName := `drop_test`
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2259,7 +2367,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2268,7 +2376,7 @@ func TestDropAfterCutover(t *testing.T) {
 
 	tableName := `drop_test`
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, tableName))
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS "+tableName)
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		pk int UNSIGNED NOT NULL,
 		PRIMARY KEY(pk)
@@ -2298,7 +2406,7 @@ func TestDropAfterCutover(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2355,7 +2463,7 @@ func TestDeferCutOver(t *testing.T) {
 	var tableCount int
 	err = m.db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 1)
+	assert.Equal(t, 1, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2414,7 +2522,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	}
 	assert.NoError(t, err)
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2425,7 +2533,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2483,16 +2591,16 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	assert.NoError(t, err)
 
 	binlogPos := m.replClient.GetBinlogApplyPosition()
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 		time.Sleep(1 * time.Second)
 		m.replClient.Flush(context.Background())
 		newBinlogPos := m.replClient.GetBinlogApplyPosition()
-		assert.Equal(t, newBinlogPos.Compare(binlogPos), 1)
+		assert.Equal(t, 1, newBinlogPos.Compare(binlogPos))
 		binlogPos = newBinlogPos
 	}
 
-	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE %s`, sentinelTableName))
+	testutils.RunSQL(t, "DROP TABLE "+sentinelTableName)
 
 	err = <-c // wait for the migration to finish
 	assert.NoError(t, err)
@@ -2503,7 +2611,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	var tableCount int
 	err = db.QueryRow(sql).Scan(&tableCount)
 	assert.NoError(t, err)
-	assert.Equal(t, tableCount, 0)
+	assert.Equal(t, 0, tableCount)
 	assert.NoError(t, m.Close())
 }
 
@@ -2681,7 +2789,7 @@ func TestForNonInstantBurn(t *testing.T) {
 	}
 
 	testutils.RunSQL(t, table)
-	for i := 0; i < 32; i++ { // requires 64 instants
+	for range 32 { // requires 64 instants
 		testutils.RunSQL(t, "ALTER TABLE instantburn ADD newcol INT, ALGORITHM=INSTANT")
 		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
 	}
@@ -2741,6 +2849,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again with visible
 	m, err = NewRunner(&Migration{
@@ -2756,6 +2865,7 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
+	assert.NoError(t, m.Close())
 
 	// Test again but include an unsafe INPLACE change at the same time.
 	// This won't work by default.
@@ -2787,6 +2897,7 @@ func TestIndexVisibility(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 
 	// But even when force inplace is set, we won't be able to do an operation
 	// that requires a full copy. This is important because invisible should
@@ -2805,4 +2916,64 @@ func TestIndexVisibility(t *testing.T) {
 	err = m.Run(context.Background())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
+}
+
+func TestPreventConcurrentRuns(t *testing.T) {
+	sentinelWaitLimit = 10 * time.Second
+
+	tableName := `prevent_concurrent_runs`
+	sentinelTableName := fmt.Sprintf("_%s_sentinel", tableName)
+	checkpointTableName := fmt.Sprintf("_%s_chkpnt", tableName)
+
+	dropStmt := `DROP TABLE IF EXISTS %s`
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, tableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, sentinelTableName))
+	testutils.RunSQL(t, fmt.Sprintf(dropStmt, checkpointTableName))
+
+	table := fmt.Sprintf(`CREATE TABLE %s (id bigint unsigned not null auto_increment, primary key(id))`, tableName)
+
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s () values (),(),(),(),(),(),(),(),(),()", tableName))
+	testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                tableName,
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         true,
+	})
+	assert.NoError(t, err)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err = m.Run(context.Background())
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
+	}()
+
+	// While it's waiting, start another run and confirm it fails.
+	time.Sleep(1 * time.Second)
+	m2, err := NewRunner(&Migration{
+		Host:                 cfg.Addr,
+		Username:             cfg.User,
+		Password:             cfg.Passwd,
+		Database:             cfg.DBName,
+		Threads:              4,
+		Table:                tableName,
+		Alter:                "ENGINE=InnoDB",
+		SkipDropAfterCutover: false,
+		DeferCutOver:         false,
+	})
+	assert.NoError(t, err)
+	err = m2.Run(context.Background())
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not acquire metadata lock")
 }

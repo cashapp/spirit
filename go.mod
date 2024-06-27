@@ -1,6 +1,6 @@
 module github.com/cashapp/spirit
 
-go 1.21
+go 1.22
 
 require (
 	github.com/alecthomas/kong v0.7.1

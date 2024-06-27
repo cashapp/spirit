@@ -83,6 +83,7 @@ type Runner struct {
 	table           *table.TableInfo
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
+	metadataLock    *dbconn.MetadataLock
 
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
@@ -186,6 +187,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// during the cutover procedure.
 	r.dbConfig.MaxOpenConnections = r.migration.Threads + 1
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
+	if err != nil {
+		return err
+	}
+
+	// Take a metadata lock to prevent other migrations from running concurrently.
+	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table), r.logger)
 	if err != nil {
 		return err
 	}
@@ -448,6 +455,11 @@ func (r *Runner) setup(ctx context.Context) error {
 	if err := r.resumeFromCheckpoint(ctx); err != nil {
 		// Resume failed, do the initial steps.
 		r.logger.Infof("could not resume from checkpoint: reason=%s", err)
+
+		if r.migration.Strict && err == ErrMismatchedAlter {
+			return err
+		}
+
 		if err := r.createNewTable(ctx); err != nil {
 			return err
 		}
@@ -702,6 +714,12 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
+	if r.metadataLock != nil {
+		err := r.metadataLock.Close()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -730,7 +748,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		return fmt.Errorf("could not read from table '%s'", cpName)
 	}
 	if r.migration.Alter != alterStatement {
-		return errors.New("alter statement in checkpoint table does not match the alter statement specified here")
+		return ErrMismatchedAlter
 	}
 	// Populate the objects that would have been set in the other funcs.
 	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
@@ -804,7 +822,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 	}
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
-	for i := 0; i < 3; i++ { // try the checksum up to 3 times.
+	for i := range 3 { // try the checksum up to 3 times.
 		r.checkerLock.Lock()
 		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 			Concurrency:     r.migration.Threads,
@@ -835,9 +853,9 @@ func (r *Runner) checksum(ctx context.Context) error {
 			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
 			// customize the returned error based on it.
 			if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
-				return fmt.Errorf("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
+				return errors.New("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
 			}
-			return fmt.Errorf("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")
+			return errors.New("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")
 		}
 		r.logger.Errorf("checksum failed, retrying %d/%d times", i+1, 3)
 	}

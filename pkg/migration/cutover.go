@@ -56,7 +56,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 		// Because we want to safely flush quickly, we set the limit to 5.
 		c.db.SetMaxOpenConns(5)
 	}
-	for i := 0; i < c.dbConfig.MaxRetries; i++ {
+	for i := range c.dbConfig.MaxRetries {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
