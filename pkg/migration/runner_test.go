@@ -2624,7 +2624,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 	sentinelWaitLimit = 10 * time.Second
 	statusInterval = 500 * time.Millisecond
 
-	tableName := `resume_from_checkpoint_e2e_with_sentinel`
+	tableName := `resume_checkpoint_e2e_w_sentinel`
 	testutils.RunSQL(t, fmt.Sprintf(`DROP TABLE IF EXISTS %s, _%s_old, _%s_chkpnt, _%s_sentinel`, tableName, tableName, tableName, tableName))
 	table := fmt.Sprintf(`CREATE TABLE %s (
 		id int(11) NOT NULL AUTO_INCREMENT,
@@ -2663,7 +2663,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 
 	go func() {
 		err := runner.Run(ctx)
-		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+		assert.ErrorContains(t, err, "context canceled") // it gets interrupted as soon as there is a checkpoint saved.
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
