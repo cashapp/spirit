@@ -2,6 +2,7 @@ package check
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,7 +47,7 @@ func init() {
 func tableNameCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	tableName := r.Table.TableName
 	if len(tableName) < 1 {
-		return fmt.Errorf("table name must be at least 1 character")
+		return errors.New("table name must be at least 1 character")
 	}
 
 	timestampTableNameLength := maxTableNameLength - NameFormatTimestampExtraChars

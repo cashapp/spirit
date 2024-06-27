@@ -11,8 +11,8 @@ import (
 
 func TestCheckTableNameConstants(t *testing.T) {
 	// Calculated extra chars should always be greater than 0
-	assert.Greater(t, NameFormatNormalExtraChars, 0)
-	assert.Greater(t, NameFormatTimestampExtraChars, 0)
+	assert.Positive(t, NameFormatNormalExtraChars)
+	assert.Positive(t, NameFormatTimestampExtraChars)
 
 	// Calculated extra chars should be less than the max table name length
 	assert.Less(t, NameFormatNormalExtraChars, maxTableNameLength)
@@ -39,5 +39,4 @@ func TestCheckTableName(t *testing.T) {
 	longName := "thisisareallylongtablenamethisisareallylongtablenamethisisareallylongtablename"
 	assert.ErrorContains(t, testTableName(longName, false), "table name must be less than")
 	assert.ErrorContains(t, testTableName(longName, true), "table name must be less than")
-
 }
