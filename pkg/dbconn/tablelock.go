@@ -26,7 +26,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 	var err error
 	var isFatal bool
 	var lockTxn *sql.Tx
-	for i := 0; i < config.MaxRetries; i++ {
+	for i := range config.MaxRetries {
 		func() {
 			lockTxn, _ = db.BeginTx(ctx, nil)
 			defer func() {

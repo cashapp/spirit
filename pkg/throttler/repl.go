@@ -24,7 +24,7 @@ func (l *Repl) IsThrottled() bool {
 // BlockWait blocks until the lag is within the tolerance, or up to 60s
 // to allow some progress to be made.
 func (l *Repl) BlockWait() {
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		if atomic.LoadInt64(&l.currentLagInMs) < l.lagTolerance.Milliseconds() {
 			return
 		}

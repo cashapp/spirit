@@ -95,7 +95,7 @@ func TestDiscovery(t *testing.T) {
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"int"}, t1.keyColumnsMySQLTp)
 	assert.True(t, t1.KeyIsAutoInc)
-	assert.Equal(t, 2, len(t1.Columns))
+	assert.Len(t, t1.Columns, 2)
 }
 
 func TestDiscoveryUInt(t *testing.T) {
@@ -125,7 +125,7 @@ func TestDiscoveryUInt(t *testing.T) {
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"int unsigned"}, t1.keyColumnsMySQLTp)
 	assert.True(t, t1.KeyIsAutoInc)
-	assert.Equal(t, 2, len(t1.Columns))
+	assert.Len(t, t1.Columns, 2)
 }
 
 func TestDiscoveryNoKeyColumnsOrNoTable(t *testing.T) {

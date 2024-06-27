@@ -1,0 +1,16 @@
+name: MySQL 8.0.33 (with replicas) /w docker-compose
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test
+        run: docker compose -f compose.yml up mysql mysql_replica test --abort-on-container-exit
+        working-directory: compose/replication

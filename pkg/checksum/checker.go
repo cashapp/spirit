@@ -90,7 +90,7 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 	return checksum, nil
 }
 
-func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
+func (c *Checker) ChecksumChunk(ctx context.Context, trxPool *dbconn.TrxPool, chunk *table.Chunk) error {
 	startTime := time.Now()
 	trx, err := trxPool.Get()
 	if err != nil {
@@ -131,7 +131,7 @@ func (c *Checker) ChecksumChunk(trxPool *dbconn.TrxPool, chunk *table.Chunk) err
 			return errors.New("checksum mismatch")
 		}
 		// Since we can fix differences, replace the chunk.
-		if err = c.replaceChunk(chunk); err != nil {
+		if err = c.replaceChunk(ctx, chunk); err != nil {
 			return err
 		}
 	}
@@ -220,7 +220,7 @@ SELECT source.row_checksum as source_row_checksum, target.row_checksum as target
 // that it takes to copy the data. Maybe in future we could consider splitting
 // the chunk here, but this is expected to be a very rare situation, so a small
 // stall from an XL sized chunk is considered acceptable.
-func (c *Checker) replaceChunk(chunk *table.Chunk) error {
+func (c *Checker) replaceChunk(ctx context.Context, chunk *table.Chunk) error {
 	c.logger.Warnf("recopying chunk: %s", chunk.String())
 	deleteStmt := "DELETE FROM " + c.newTable.QuotedName + " WHERE " + chunk.String()
 	replaceStmt := fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE %s",
@@ -292,10 +292,10 @@ func (c *Checker) replaceChunk(chunk *table.Chunk) error {
 	c.recopyLock.Lock()
 	defer c.recopyLock.Unlock()
 
-	if _, err := dbconn.RetryableTransaction(context.TODO(), c.db, false, dbconn.NewDBConfig(), deleteStmt); err != nil {
+	if _, err := dbconn.RetryableTransaction(ctx, c.db, false, dbconn.NewDBConfig(), deleteStmt); err != nil {
 		return err
 	}
-	if _, err := dbconn.RetryableTransaction(context.TODO(), c.db, false, dbconn.NewDBConfig(), replaceStmt); err != nil {
+	if _, err := dbconn.RetryableTransaction(ctx, c.db, false, dbconn.NewDBConfig(), replaceStmt); err != nil {
 		return err
 	}
 	return nil
@@ -396,7 +396,7 @@ func (c *Checker) Run(ctx context.Context) error {
 				c.setInvalid(true)
 				return err
 			}
-			if err := c.ChecksumChunk(c.trxPool, chunk); err != nil {
+			if err := c.ChecksumChunk(errGrpCtx, c.trxPool, chunk); err != nil {
 				c.setInvalid(true)
 				return err
 			}

@@ -1,0 +1,77 @@
+services:
+  mysql:
+    image: mysql:8.0.33
+    ports: [ '8033:3306' ]
+    # to supress mbind: Operation not permitted in CI
+    # https://stackoverflow.com/a/55706057
+    cap_add:
+      - SYS_NICE
+    environment:
+      MYSQL_ROOT_PASSWORD: msandbox
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u root --password=$$MYSQL_ROOT_PASSWORD
+      start_period: 1s
+      interval: 1s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - mysql-data-dir:/var/lib/mysql
+      - ../bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql
+    command: --server-id=1 --log-bin=mysql-bin --gtid-mode=on --enforce-gtid-consistency=on
+
+  mysql_replica:
+    image: mysql:8.0.33
+    ports: [ '8133:3306' ]
+    # to supress mbind: Operation not permitted in CI
+    # https://stackoverflow.com/a/55706057
+    cap_add:
+      - SYS_NICE
+    environment:
+      MYSQL_ROOT_PASSWORD: msandbox
+    healthcheck:
+      test: ["CMD", "./replication_health_check.sh"]
+      start_period: 1s
+      interval: 1s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - mysql-replica-data-dir:/var/lib/mysql
+      - ./bootstrap_replica.sql:/docker-entrypoint-initdb.d/bootstrap_replica.sql
+      - ./replication_health_check.sh:/replication_health_check.sh
+    command: --server-id=2 --relay-log=mysql-relay-bin --gtid-mode=on --enforce-gtid-consistency=on
+    depends_on:
+      mysql:
+        condition: service_healthy
+  test:
+    build:
+      context: ../../.
+    command: go test -race -v ./...
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mysql_replica:
+        condition: service_healthy
+    environment:
+      MYSQL_DSN: tsandbox:msandbox@tcp(mysql)/test
+      REPLICA_DSN: rsandbox:rsandbox@tcp(mysql_replica)/
+
+  buildandrun:
+    build:
+      context: ../../.
+    command: scripts/buildandrun.sh
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mysql_replica:
+        condition: service_healthy
+    environment:
+      HOST: mysql:3306
+      USERNAME: msandbox
+      PASSWORD: msandbox
+      DATABASE: test
+      TABLE: t1
+      REPLICA_DSN: rsandbox:rsandbox@tcp(mysql_replica)/
+
+volumes:
+  mysql-data-dir:
+  mysql-replica-data-dir:

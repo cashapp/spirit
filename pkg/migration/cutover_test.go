@@ -41,6 +41,7 @@ func TestCutOver(t *testing.T) {
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
+	t1old := "_cutovert1_old"
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -52,7 +53,7 @@ func TestCutOver(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1new, feed, dbconn.NewDBConfig(), logger)
+	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
 
 	err = cutover.Run(context.Background())
@@ -100,6 +101,7 @@ func TestMDLLockFails(t *testing.T) {
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
+	t1old := "test_old"
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -111,7 +113,7 @@ func TestMDLLockFails(t *testing.T) {
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
-	cutover, err := NewCutOver(db, t1, t1new, feed, config, logger)
+	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, config, logger)
 	assert.NoError(t, err)
 
 	// Before we cutover, we READ LOCK the table.
@@ -135,10 +137,11 @@ func TestInvalidOptions(t *testing.T) {
 	logger := logrus.New()
 
 	// Invalid options
-	_, err = NewCutOver(db, nil, nil, nil, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(db, nil, nil, "", nil, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "t1")
 	t1new := table.NewTableInfo(db, "test", "t1_new")
+	t1old := "test_old"
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
@@ -146,6 +149,8 @@ func TestInvalidOptions(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	_, err = NewCutOver(db, nil, t1new, feed, dbconn.NewDBConfig(), logger)
+	_, err = NewCutOver(db, nil, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
+	assert.Error(t, err)
+	_, err = NewCutOver(db, nil, t1new, "", feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 }

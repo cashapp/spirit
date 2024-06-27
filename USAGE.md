@@ -151,3 +151,14 @@ You can resume a migration from checkpoint and Spirit will start waiting again f
 If you start a migration and realize that you forgot to set defer-cutover, worry not! You can manually create a sentinel table using the pattern `_<table>_sentinel`, and Spirit will detect the table before the cutover is completed and block as though defer-cutover had been enabled from the beginning.
 
 Note that the checksum, if enabled, will be computed after the sentinel table is dropped. Because the checksum step takes an estimated 10-20% of the migration, the cutover will not occur immediately after the sentinel table is dropped.
+
+### strict
+
+- Type: Boolean
+- Default value: FALSE
+
+By default, Spirit will automatically clean up these old checkpoints before starting the schema change. This allows schema changes to always be possible to proceed forward, at the risk of lost progress.
+
+When set to `TRUE`, if Spirit encounters a checkpoint belonging to a previous migration, it will validate that the alter statement matches the `--alter` parameter. If the validation fails, spirit will exit and prevent the schema change process from proceeding.
+
+

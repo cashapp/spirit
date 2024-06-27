@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -97,9 +98,9 @@ func AlgorithmInplaceConsideredSafe(sql string) error {
 	}
 	if unsafeClauses > 0 {
 		if len(alterStmt.Specs) > 1 {
-			return fmt.Errorf("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check")
+			return errors.New("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check")
 		}
-		return fmt.Errorf("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check")
+		return errors.New("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check")
 	}
 	return nil
 }
@@ -152,7 +153,7 @@ func AlterContainsAddUnique(sql string) error {
 	}
 	for _, spec := range alterStmt.Specs {
 		if spec.Tp == ast.AlterTableAddConstraint && spec.Constraint.Tp == ast.ConstraintUniq {
-			return fmt.Errorf("contains adding a unique index")
+			return errors.New("contains adding a unique index")
 		}
 	}
 	return nil
@@ -176,7 +177,7 @@ func AlterContainsIndexVisibility(sql string) error {
 	}
 	for _, spec := range alterStmt.Specs {
 		if spec.Tp == ast.AlterTableIndexInvisible {
-			return fmt.Errorf("the ALTER operation contains a change to index visibility and could not be completed as a meta-data only operation. This is a safety check! Please split the ALTER statement into separate statements for changing the invisible index and other operations")
+			return errors.New("the ALTER operation contains a change to index visibility and could not be completed as a meta-data only operation. This is a safety check! Please split the ALTER statement into separate statements for changing the invisible index and other operations")
 		}
 	}
 	return nil

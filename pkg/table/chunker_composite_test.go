@@ -101,7 +101,7 @@ func TestCompositeChunkerCompositeBinary(t *testing.T) {
 	// Add to the total chunks
 	totalChunks := 3 // 3 so far
 
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		chunk, err = chunker.Next()
 		if err != nil {
 			break
@@ -177,7 +177,7 @@ func TestCompositeChunkerBinary(t *testing.T) {
 	// Add to the total chunks
 	totalChunks := 3 // 3 so far
 
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		chunk, err = chunker.Next()
 		if err != nil {
 			break
@@ -238,7 +238,7 @@ func TestCompositeChunkerInt(t *testing.T) {
 	assert.Equal(t, "`pk` >= 2032 AND `pk` < 3033", chunk.String())
 
 	totalChunks := 3 // 3 so far
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		chunk, err = chunker.Next()
 		if err != nil {
 			break
@@ -355,7 +355,7 @@ func TestCompositeLowWatermark(t *testing.T) {
 
 	// Give enough feedback that the chunk size recalculation runs.
 	assert.Equal(t, 10, int(chunker.chunkSize))
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		chunk, err = chunker.Next()
 		assert.NoError(t, err)
 		if chunk.ChunkSize != 10 {
@@ -363,12 +363,12 @@ func TestCompositeLowWatermark(t *testing.T) {
 		}
 		chunker.Feedback(chunk, time.Millisecond*5) // say that it took 5ms to process 10 rows
 	}
-	assert.Len(t, chunker.chunkTimingInfo, 0)
+	assert.Empty(t, chunker.chunkTimingInfo)
 	assert.Equal(t, 15, int(chunker.chunkSize)) // scales up a maximum of 50% at a time.
 
 	// Test that we have applied all stored chunks and the map is empty,
 	// as we gave Feedback for all chunks.
-	assert.Equal(t, 0, len(chunker.lowerBoundWatermarkMap))
+	assert.Empty(t, chunker.lowerBoundWatermarkMap)
 }
 
 func TestCompositeSmallTable(t *testing.T) {
@@ -478,7 +478,7 @@ func TestSetKey(t *testing.T) {
 	assert.Equal(t, "((`status` > \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` >= 1008)) AND ((`status` < \"PENDING\")\n OR (`status` = \"PENDING\" AND `id` < 2032)) AND (status = 'PENDING' AND updated_at > NOW() - INTERVAL 1 DAY)", chunk.String())
 
 	// repeat ~10 more times without calling Feedback()
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		_, err = chunker.Next()
 		assert.NoError(t, err)
 	}
