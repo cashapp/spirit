@@ -87,7 +87,7 @@ func (c *CutOver) Run(ctx context.Context) error {
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, true, c.dbConfig, c.logger)
+	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
@@ -104,5 +104,5 @@ func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 		c.table.QuotedName, oldQuotedName,
 		c.newTable.QuotedName, c.table.QuotedName,
 	)
-	return serverLock.ExecUnderLock(ctx, []string{renameStatement})
+	return serverLock.ExecUnderLock(ctx, renameStatement)
 }

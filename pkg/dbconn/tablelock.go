@@ -22,14 +22,7 @@ type TableLock struct {
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
-func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, writeLock bool, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
-	lockStmt := "LOCK TABLES " + table.QuotedName + " READ"
-	if writeLock {
-		lockStmt = fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
-			table.QuotedName,
-			table.SchemaName, table.TableName,
-		)
-	}
+func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
 	var err error
 	var isFatal bool
 	var lockTxn *sql.Tx
@@ -49,7 +42,10 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 			// instead, we DROP IF EXISTS just before the rename, which
 			// has a brief race.
 			logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
-			_, err = lockTxn.ExecContext(ctx, lockStmt)
+			_, err = lockTxn.ExecContext(ctx, fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
+				table.QuotedName,
+				table.SchemaName, table.TableName,
+			))
 			if err != nil {
 				// See if the error is retryable, many are
 				if !canRetryError(err) {
@@ -75,7 +71,7 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, write
 }
 
 // ExecUnderLock executes a set of statements under a table lock.
-func (s *TableLock) ExecUnderLock(ctx context.Context, stmts []string) error {
+func (s *TableLock) ExecUnderLock(ctx context.Context, stmts ...string) error {
 	for _, stmt := range stmts {
 		if stmt == "" {
 			continue
