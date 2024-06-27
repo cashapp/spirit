@@ -26,13 +26,14 @@ const (
 )
 
 type Resources struct {
-	DB              *sql.DB
-	Replica         *sql.DB
-	Table           *table.TableInfo
-	Alter           string
-	TargetChunkTime time.Duration
-	Threads         int
-	ReplicaMaxLag   time.Duration
+	DB                   *sql.DB
+	Replica              *sql.DB
+	Table                *table.TableInfo
+	Alter                string
+	TargetChunkTime      time.Duration
+	Threads              int
+	ReplicaMaxLag        time.Duration
+	SkipDropAfterCutover bool
 	// The following resources are only used by the
 	// pre-run checks
 	Host     string

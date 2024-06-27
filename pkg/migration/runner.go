@@ -285,7 +285,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It's time for the final cut-over, where
 	// the tables are swapped under a lock.
 	r.setCurrentState(stateCutOver)
-	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.replClient, r.dbConfig, r.logger)
+	cutover, err := NewCutOver(r.db, r.table, r.newTable, r.oldTableName(), r.replClient, r.dbConfig, r.logger)
 	if err != nil {
 		return err
 	}
@@ -301,10 +301,12 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		if err := r.dropOldTable(ctx); err != nil {
 			// Don't return the error because our automation
 			// will retry the migration (but it's already happened)
-			r.logger.Errorf("migration successful but failed to drop old table: %v", err)
+			r.logger.Errorf("migration successful but failed to drop old table: %s - %v", r.oldTableName(), err)
 		} else {
-			r.logger.Info("successfully dropped old table")
+			r.logger.Info("successfully dropped old table: ", r.oldTableName())
 		}
+	} else {
+		r.logger.Info("skipped dropping old table: ", r.oldTableName())
 	}
 	checksumTime := time.Duration(0)
 	if r.checker != nil {
@@ -391,9 +393,10 @@ func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
 		// For the pre-run checks we don't have a DB connection yet.
 		// Instead we check the credentials provided.
-		Host:     r.migration.Host,
-		Username: r.migration.Username,
-		Password: r.migration.Password,
+		Host:                 r.migration.Host,
+		Username:             r.migration.Username,
+		Password:             r.migration.Password,
+		SkipDropAfterCutover: r.migration.SkipDropAfterCutover,
 	}, r.logger, scope)
 }
 
@@ -564,10 +567,7 @@ func (r *Runner) dropCheckpoint(ctx context.Context) error {
 }
 
 func (r *Runner) createNewTable(ctx context.Context) error {
-	newName := fmt.Sprintf("_%s_new", r.table.TableName)
-	if len(newName) > 64 {
-		return fmt.Errorf("table name is too long: '%s'. new table name will exceed 64 characters", r.table.TableName)
-	}
+	newName := fmt.Sprintf(check.NameFormatNew, r.table.TableName)
 	// drop both if we've decided to call this func.
 	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, newName); err != nil {
 		return err
@@ -603,8 +603,16 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 }
 
 func (r *Runner) dropOldTable(ctx context.Context) error {
-	oldName := fmt.Sprintf("_%s_old", r.table.TableName)
-	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, oldName)
+	return dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, r.oldTableName())
+}
+
+func (r *Runner) oldTableName() string {
+	// By default we just set the old table name to _<table>_old
+	// but if they've enabled SkipDropAfterCutover, we add a timestamp
+	if !r.migration.SkipDropAfterCutover {
+		return fmt.Sprintf(check.NameFormatOld, r.table.TableName)
+	}
+	return fmt.Sprintf(check.NameFormatOldTimeStamp, r.table.TableName, r.startTime.UTC().Format(check.NameFormatTimestamp))
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
@@ -616,7 +624,7 @@ func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 }
 
 func (r *Runner) createCheckpointTable(ctx context.Context) error {
-	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
+	cpName := fmt.Sprintf(check.NameFormatCheckpoint, r.table.TableName)
 	// drop both if we've decided to call this func.
 	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, cpName); err != nil {
 		return err
@@ -653,7 +661,7 @@ func (r *Runner) GetProgress() Progress {
 }
 
 func (r *Runner) sentinelTableName() string {
-	return fmt.Sprintf("_%s_sentinel", r.table.TableName)
+	return fmt.Sprintf(check.NameFormatSentinel, r.table.TableName)
 }
 
 func (r *Runner) createSentinelTable(ctx context.Context) error {
@@ -724,8 +732,8 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// The objects for these are not available until we confirm
 	// tables exist and we
-	newName := fmt.Sprintf("_%s_new", r.table.TableName)
-	cpName := fmt.Sprintf("_%s_chkpnt", r.table.TableName)
+	newName := fmt.Sprintf(check.NameFormatNew, r.table.TableName)
+	cpName := fmt.Sprintf(check.NameFormatCheckpoint, r.table.TableName)
 
 	// Make sure we can read from the new table.
 	if err := dbconn.Exec(ctx, r.db, "SELECT * FROM %n.%n LIMIT 1",
