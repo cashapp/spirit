@@ -16,25 +16,26 @@ type copierETA struct {
 	asOf     time.Time
 }
 
-type CopierEtaHistory struct {
+type copierEtaHistory struct {
 	latestEstimate *copierETA
 	etaHistory     []copierETA
 	mutex          sync.Mutex
 }
 
-func NewCopierEtaHistory() *CopierEtaHistory {
-	return &CopierEtaHistory{
+func newcopierEtaHistory() *copierEtaHistory {
+	return &copierEtaHistory{
 		etaHistory: make([]copierETA, 0),
 	}
 }
 
 // Store the given duration as an eta with the current time
-func (c *CopierEtaHistory) AddCurrentEstimateAndCompare(estimate time.Duration) string {
+func (c *copierEtaHistory) addCurrentEstimateAndCompare(estimate time.Duration) string {
 	c.addETA(copierETA{estimate: estimate, asOf: time.Now()})
 	return c.getComparison()
 }
 
 // Store the given eta if history is empty or if the last ETA was >= historyIncrements ago
+func (c *copierEtaHistory) addETA(eta copierETA) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -60,6 +61,7 @@ func (c *CopierEtaHistory) AddCurrentEstimateAndCompare(estimate time.Duration) 
 }
 
 // Return a string showing the difference between the latest ETA and the oldest ETA in the format "+30h from 1d ago"
+func (c *copierEtaHistory) getComparison() string {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 

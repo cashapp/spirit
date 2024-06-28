@@ -52,7 +52,7 @@ type Copier struct {
 	dbConfig             *dbconn.DBConfig
 	logger               loggers.Advanced
 	metricsSink          metrics.Sink
-	CopierEtaHistory     *CopierEtaHistory
+	copierEtaHistory     *copierEtaHistory
 }
 
 type CopierConfig struct {
@@ -101,7 +101,7 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 		logger:           config.Logger,
 		metricsSink:      config.MetricsSink,
 		dbConfig:         config.DBConfig,
-		CopierEtaHistory: NewCopierEtaHistory(),
+		copierEtaHistory: newcopierEtaHistory(),
 	}, nil
 }
 
@@ -279,7 +279,7 @@ func (c *Copier) GetETA() string {
 	remainingSeconds := math.Floor(float64(remainingRows) / float64(rowsPerSecond))
 
 	estimate := time.Duration(remainingSeconds * float64(time.Second))
-	comparison := c.CopierEtaHistory.AddCurrentEstimateAndCompare(estimate)
+	comparison := c.copierEtaHistory.addCurrentEstimateAndCompare(estimate)
 	if comparison != "" {
 		return fmt.Sprintf("%s (%s)", estimate.String(), comparison)
 	}
