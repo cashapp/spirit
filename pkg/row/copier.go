@@ -52,6 +52,7 @@ type Copier struct {
 	dbConfig             *dbconn.DBConfig
 	logger               loggers.Advanced
 	metricsSink          metrics.Sink
+	CopierEtaHistory     *CopierEtaHistory
 }
 
 type CopierConfig struct {
@@ -90,16 +91,17 @@ func NewCopier(db *sql.DB, tbl, newTable *table.TableInfo, config *CopierConfig)
 		return nil, errors.New("dbConfig must be non-nil")
 	}
 	return &Copier{
-		db:            db,
-		table:         tbl,
-		newTable:      newTable,
-		concurrency:   config.Concurrency,
-		finalChecksum: config.FinalChecksum,
-		Throttler:     config.Throttler,
-		chunker:       chunker,
-		logger:        config.Logger,
-		metricsSink:   config.MetricsSink,
-		dbConfig:      config.DBConfig,
+		db:               db,
+		table:            tbl,
+		newTable:         newTable,
+		concurrency:      config.Concurrency,
+		finalChecksum:    config.FinalChecksum,
+		Throttler:        config.Throttler,
+		chunker:          chunker,
+		logger:           config.Logger,
+		metricsSink:      config.MetricsSink,
+		dbConfig:         config.DBConfig,
+		CopierEtaHistory: NewCopierEtaHistory(),
 	}, nil
 }
 
@@ -275,7 +277,13 @@ func (c *Copier) GetETA() string {
 	// c.getCopyStats() and rowsPerSecond change estimation method when the PK is auto-inc.
 	remainingRows := totalRows - copiedRows
 	remainingSeconds := math.Floor(float64(remainingRows) / float64(rowsPerSecond))
-	return time.Duration(remainingSeconds * float64(time.Second)).String()
+
+	estimate := time.Duration(remainingSeconds * float64(time.Second))
+	comparison := c.CopierEtaHistory.AddCurrentEstimateAndCompare(estimate)
+	if comparison != "" {
+		return fmt.Sprintf("%s (%s)", estimate.String(), comparison)
+	}
+	return estimate.String()
 }
 
 func (c *Copier) estimateRowsPerSecondLoop(ctx context.Context) {
