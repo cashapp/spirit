@@ -2,6 +2,7 @@ package dbconn
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -18,9 +19,10 @@ var (
 
 type MetadataLock struct {
 	cancel          context.CancelFunc
-	canCloseCh      chan bool
 	closeCh         chan error
 	refreshInterval time.Duration
+	ticker          *time.Ticker
+	dbConn          *sql.DB
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
@@ -31,11 +33,8 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 		return nil, fmt.Errorf("metadata lock name is too long: %d, max length is 64", len(lockName))
 	}
 
-	canCloseCh := make(chan bool, 1)
-
 	mdl := &MetadataLock{
 		refreshInterval: refreshInterval,
-		canCloseCh:      canCloseCh,
 	}
 
 	// Apply option functions
@@ -50,6 +49,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	if err != nil {
 		return nil, err
 	}
+	mdl.dbConn = dbConn
 
 	// Function to acquire the lock
 	getLock := func() error {
@@ -80,9 +80,8 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	ctx, mdl.cancel = context.WithCancel(ctx)
 	mdl.closeCh = make(chan error)
 	go func() {
-		ticker := time.NewTicker(mdl.refreshInterval)
-		defer ticker.Stop()
-		close(canCloseCh)
+		mdl.ticker = time.NewTicker(mdl.refreshInterval)
+		defer mdl.ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -90,7 +89,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 				logger.Warnf("releasing metadata lock: %s", lockName)
 				mdl.closeCh <- dbConn.Close()
 				return
-			case <-ticker.C:
+			case <-mdl.ticker.C:
 				if err = getLock(); err != nil {
 					logger.Errorf("could not refresh metadata lock: %s", err)
 				}
@@ -103,12 +102,19 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 }
 
 func (m *MetadataLock) Close() error {
-	// Wait for the caller to signal that it's safe to close
-	<-m.canCloseCh
-
-	// Ensure the cancel function is not nil so we don't get a nil pointer
+	// Handle odd race situation here where the cancel func is nil somehow
 	if m.cancel == nil {
-		panic("cancel should never be nil")
+		// Make a best effort to cleanup
+		if m.ticker != nil {
+			m.ticker.Stop()
+		}
+		if m.closeCh != nil {
+			close(m.closeCh)
+		}
+		if m.dbConn != nil {
+			return m.dbConn.Close()
+		}
+		return nil
 	}
 
 	// Cancel the background refresh runner
