@@ -18,6 +18,7 @@ var (
 
 type MetadataLock struct {
 	cancel          context.CancelFunc
+	canCloseCh      chan bool
 	closeCh         chan error
 	refreshInterval time.Duration
 }
@@ -30,8 +31,11 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 		return nil, fmt.Errorf("metadata lock name is too long: %d, max length is 64", len(lockName))
 	}
 
+	canCloseCh := make(chan bool, 1)
+
 	mdl := &MetadataLock{
 		refreshInterval: refreshInterval,
+		canCloseCh:      canCloseCh,
 	}
 
 	// Apply option functions
@@ -78,6 +82,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	go func() {
 		ticker := time.NewTicker(mdl.refreshInterval)
 		defer ticker.Stop()
+		close(canCloseCh)
 		for {
 			select {
 			case <-ctx.Done():
@@ -98,6 +103,14 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 }
 
 func (m *MetadataLock) Close() error {
+	// Wait for the caller to signal that it's safe to close
+	<-m.canCloseCh
+
+	// Ensure the cancel function is not nil so we don't get a nil pointer
+	if m.cancel == nil {
+		panic("cancel should never be nil")
+	}
+
 	// Cancel the background refresh runner
 	m.cancel()
 
