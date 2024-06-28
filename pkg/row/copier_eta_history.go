@@ -2,6 +2,7 @@ package row
 
 import (
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type copierETA struct {
 type CopierEtaHistory struct {
 	latestEstimate *copierETA
 	etaHistory     []copierETA
+	mutex          sync.Mutex
 }
 
 func NewCopierEtaHistory() *CopierEtaHistory {
@@ -33,7 +35,9 @@ func (c *CopierEtaHistory) AddCurrentEstimateAndCompare(estimate time.Duration) 
 }
 
 // Store the given eta if history is empty or if the last ETA was >= historyIncrements ago
-func (c *CopierEtaHistory) addETA(eta copierETA) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	// If history is empty, store the eta
 	if len(c.etaHistory) == 0 {
 		c.etaHistory = append(c.etaHistory, eta)
@@ -56,7 +60,9 @@ func (c *CopierEtaHistory) addETA(eta copierETA) {
 }
 
 // Return a string showing the difference between the latest ETA and the oldest ETA in the format "+30h from 1d ago"
-func (c *CopierEtaHistory) getComparison() string {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
 	if c.latestEstimate == nil || len(c.etaHistory) == 0 {
 		return ""
 	}
