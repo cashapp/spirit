@@ -18,19 +18,19 @@ import (
 )
 
 func TestBasicChecksum(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, _t1_new, _t1_chkpnt")
-	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE _t1_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE _t1_chkpnt (a INT)") // for binlog advancement
-	testutils.RunSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO _t1_new VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS basic_checksum, _basic_checksum_new, _basic_checksum_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE basic_checksum (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _basic_checksum_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _basic_checksum_chkpnt (a INT)") // for binlog advancement
+	testutils.RunSQL(t, "INSERT INTO basic_checksum VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _basic_checksum_new VALUES (1, 2, 3)")
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo(db, "test", "t1")
+	t1 := table.NewTableInfo(db, "test", "basic_checksum")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "_t1_new")
+	t2 := table.NewTableInfo(db, "test", "_basic_checksum_new")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 
@@ -53,19 +53,19 @@ func TestBasicChecksum(t *testing.T) {
 }
 
 func TestBasicValidation(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1, t2, _t1_chkpnt")
-	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
-	testutils.RunSQL(t, "CREATE TABLE _t1_chkpnt (a INT)") // for binlog advancement
-	testutils.RunSQL(t, "INSERT INTO t1 VALUES (1, 2, 3)")
-	testutils.RunSQL(t, "INSERT INTO t2 VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS basic_validation, basic_validation2, _basic_validation_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE basic_validation (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE basic_validation2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _basic_validation_chkpnt (a INT)") // for binlog advancement
+	testutils.RunSQL(t, "INSERT INTO basic_validation VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO basic_validation2 VALUES (1, 2, 3)")
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 
-	t1 := table.NewTableInfo(db, "test", "t1")
+	t1 := table.NewTableInfo(db, "test", "basic_validation")
 	assert.NoError(t, t1.SetInfo(context.TODO()))
-	t2 := table.NewTableInfo(db, "test", "t2")
+	t2 := table.NewTableInfo(db, "test", "basic_validation2")
 	assert.NoError(t, t2.SetInfo(context.TODO()))
 	logger := logrus.New()
 

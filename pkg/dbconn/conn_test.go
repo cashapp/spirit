@@ -61,8 +61,8 @@ func TestNewConn(t *testing.T) {
 }
 
 func TestNewConnRejectsReadOnlyConnections(t *testing.T) {
-	testutils.RunSQL(t, "DROP TABLE IF EXISTS t1")
-	testutils.RunSQL(t, "CREATE TABLE t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS conn_read_only")
+	testutils.RunSQL(t, "CREATE TABLE conn_read_only (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	config := NewDBConfig()
 	// Setting the connection pool size = 1 && transaction_read_only = 1 for the session.
@@ -77,11 +77,11 @@ func TestNewConnRejectsReadOnlyConnections(t *testing.T) {
 	// This would error, but `database/sql` automatically retries on a
 	// new connection which is not read-only, and eventually succeed.
 	// See also: rejectReadOnly test in `go-sql-driver/mysql`: https://github.com/go-sql-driver/mysql/blob/52c1917d99904701db2b0e4f14baffa948009cd7/driver_test.go#L2270-L2301
-	_, err = db.Exec("insert into t1 values (1, 2, 3)")
+	_, err = db.Exec("insert into conn_read_only values (1, 2, 3)")
 	assert.NoError(t, err)
 
 	var count int
-	err = db.QueryRow("select count(*) from t1 where a = 1").Scan(&count)
+	err = db.QueryRow("select count(*) from conn_read_only where a = 1").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
