@@ -45,7 +45,7 @@ services:
   test:
     build:
       context: ../../.
-    command: go test -race -v ./...
+    command: go test -race ./...
     depends_on:
       mysql:
         condition: service_healthy
