@@ -653,6 +653,7 @@ func (r *Runner) GetProgress() Progress {
 	case stateChecksum:
 		r.checkerLock.Lock()
 		summary = fmt.Sprintf("Checksum Progress=%s/%s", r.checker.RecentValue(), r.table.MaxValue())
+		r.checkerLock.Unlock()
 	}
 	return Progress{
 		CurrentState: r.getCurrentState().String(),
