@@ -632,6 +632,7 @@ func (r *Runner) GetProgress() Progress {
 		summary = fmt.Sprintf("Applying Changeset Deltas=%v", r.replClient.GetDeltaLen())
 	case stateChecksum:
 		r.checkerLock.Lock()
+		defer r.checkerLock.Unlock()
 		summary = fmt.Sprintf("Checksum Progress=%s/%s", r.checker.RecentValue(), r.table.MaxValue())
 	}
 	return Progress{
