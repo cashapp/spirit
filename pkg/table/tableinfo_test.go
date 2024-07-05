@@ -298,3 +298,29 @@ func TestKeyColumnsValuesExtraction(t *testing.T) {
 	assert.Equal(t, age, pkVals[1])
 	assert.NoError(t, err)
 }
+
+func TestDiscoveryGeneratedCols(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS generatedcolst1`)
+	table := `CREATE TABLE generatedcolst1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		b INT NOT NULL,
+		c1 int GENERATED ALWAYS AS  (b + 1),
+		c2 int GENERATED ALWAYS AS  (b + 1) VIRTUAL,
+		c3 int GENERATED ALWAYS AS  (b + 1) STORED,
+		d datetime(3) not null default current_timestamp(3),
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+
+	db, err := sql.Open("mysql", testutils.DSN())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	t1 := NewTableInfo(db, "test", "generatedcolst1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+
+	// Can't check estimated rows (depends on MySQL version etc)
+	assert.Equal(t, []string{"id", "name", "b", "c1", "c2", "c3", "d"}, t1.Columns)
+	assert.Equal(t, []string{"id", "name", "b", "d"}, t1.NonGeneratedColumns)
+}

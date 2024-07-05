@@ -225,8 +225,8 @@ func (c *Checker) replaceChunk(ctx context.Context, chunk *table.Chunk) error {
 	deleteStmt := "DELETE FROM " + c.newTable.QuotedName + " WHERE " + chunk.String()
 	replaceStmt := fmt.Sprintf("REPLACE INTO %s (%s) SELECT %s FROM %s WHERE %s",
 		c.newTable.QuotedName,
-		utils.IntersectColumns(c.table, c.newTable),
-		utils.IntersectColumns(c.table, c.newTable),
+		utils.IntersectNonGeneratedColumns(c.table, c.newTable),
+		utils.IntersectNonGeneratedColumns(c.table, c.newTable),
 		c.table.QuotedName,
 		chunk.String(),
 	)
