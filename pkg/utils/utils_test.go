@@ -11,17 +11,17 @@ import (
 func TestIntersectColumns(t *testing.T) {
 	t1 := table.NewTableInfo(nil, "test", "t1")
 	t1new := table.NewTableInfo(nil, "test", "t1_new")
-	t1.Columns = []string{"a", "b", "c"}
-	t1new.Columns = []string{"a", "b", "c"}
-	str := IntersectColumns(t1, t1new)
+	t1.NonGeneratedColumns = []string{"a", "b", "c"}
+	t1new.NonGeneratedColumns = []string{"a", "b", "c"}
+	str := IntersectNonGeneratedColumns(t1, t1new)
 	assert.Equal(t, "`a`, `b`, `c`", str)
 
-	t1new.Columns = []string{"a", "c"}
-	str = IntersectColumns(t1, t1new)
+	t1new.NonGeneratedColumns = []string{"a", "c"}
+	str = IntersectNonGeneratedColumns(t1, t1new)
 	assert.Equal(t, "`a`, `c`", str)
 
-	t1new.Columns = []string{"a", "c", "d"}
-	str = IntersectColumns(t1, t1new)
+	t1new.NonGeneratedColumns = []string{"a", "c", "d"}
+	str = IntersectNonGeneratedColumns(t1, t1new)
 	assert.Equal(t, "`a`, `c`", str)
 }
 

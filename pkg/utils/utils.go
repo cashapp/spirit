@@ -26,11 +26,11 @@ func HashKey(key []interface{}) string {
 	return strings.Join(pk, PrimaryKeySeparator)
 }
 
-// IntersectColumns returns a string of columns that are in both tables.
-func IntersectColumns(t1, t2 *table.TableInfo) string {
+// IntersectNonGeneratedColumns returns a string of columns that are in both tables
+func IntersectNonGeneratedColumns(t1, t2 *table.TableInfo) string {
 	var intersection []string
-	for _, col := range t1.Columns {
-		for _, col2 := range t2.Columns {
+	for _, col := range t1.NonGeneratedColumns {
+		for _, col2 := range t2.NonGeneratedColumns {
 			if col == col2 {
 				intersection = append(intersection, "`"+col+"`")
 			}

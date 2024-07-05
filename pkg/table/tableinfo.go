@@ -32,6 +32,7 @@ type TableInfo struct {
 	TableName                   string
 	QuotedName                  string
 	Columns                     []string          // all the column names
+	NonGeneratedColumns         []string          // all the non-generated column names
 	Indexes                     []string          // all the index names
 	columnsMySQLTps             map[string]string // map from column name to MySQL type
 	KeyColumns                  []string          // the column names of the primaryKey
@@ -134,7 +135,7 @@ func (t *TableInfo) setIndexes(ctx context.Context) error {
 }
 
 func (t *TableInfo) setColumns(ctx context.Context) error {
-	rows, err := t.db.QueryContext(ctx, "SELECT column_name, column_type FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
+	rows, err := t.db.QueryContext(ctx, "SELECT column_name, column_type, GENERATION_EXPRESSION FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
@@ -143,14 +144,18 @@ func (t *TableInfo) setColumns(ctx context.Context) error {
 	}
 	defer rows.Close()
 	t.Columns = []string{}
+	t.NonGeneratedColumns = []string{}
 	t.columnsMySQLTps = make(map[string]string)
 	for rows.Next() {
-		var col, tp string
-		if err := rows.Scan(&col, &tp); err != nil {
+		var col, tp, expression string
+		if err := rows.Scan(&col, &tp, &expression); err != nil {
 			return err
 		}
 		t.Columns = append(t.Columns, col)
 		t.columnsMySQLTps[col] = tp
+		if expression == "" {
+			t.NonGeneratedColumns = append(t.NonGeneratedColumns, col)
+		}
 	}
 	if rows.Err() != nil {
 		return rows.Err()

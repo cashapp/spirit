@@ -23,8 +23,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestE2ENullAlterEmpty(t *testing.T) {
-	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1, _t1_new`)
-	table := `CREATE TABLE t1 (
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1e2e, _t1e2e_new`)
+	table := `CREATE TABLE t1e2e (
 		id int(11) NOT NULL AUTO_INCREMENT,
 		name varchar(255) NOT NULL,
 		PRIMARY KEY (id)
@@ -40,7 +40,7 @@ func TestE2ENullAlterEmpty(t *testing.T) {
 	migration.Database = cfg.DBName
 	migration.Threads = 1
 	migration.Checksum = true
-	migration.Table = "t1"
+	migration.Table = "t1e2e"
 	migration.Alter = "ENGINE=InnoDB"
 
 	err = migration.Run()
@@ -219,4 +219,29 @@ func TestUniqueOnNonUniqueData(t *testing.T) {
 	err = migration.Run()
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
+}
+
+func TestGeneratedColumns(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1generated, _t1generated_new`)
+	table := `CREATE TABLE t1generated (
+	 id int not null primary key auto_increment,
+    b int not null,
+    c int GENERATED ALWAYS AS  (b + 1)
+	)`
+	testutils.RunSQL(t, table)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 1
+	migration.Checksum = true
+	migration.Table = "t1generated"
+	migration.Alter = "ENGINE=InnoDB"
+
+	err = migration.Run()
+	assert.NoError(t, err)
 }
