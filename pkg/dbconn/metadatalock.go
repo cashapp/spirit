@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 	"github.com/siddontang/loggers"
 )
 
@@ -51,7 +52,8 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	getLock := func() error {
 		// https://dev.mysql.com/doc/refman/8.0/en/locking-functions.html#function_get-lock
 		var answer int
-		if err := dbConn.QueryRowContext(ctx, "SELECT GET_LOCK(?, ?)", lockName, getLockTimeout.Seconds()).Scan(&answer); err != nil {
+		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK(%?, %?)", lockName, getLockTimeout.Seconds())
+		if err := dbConn.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
 			return fmt.Errorf("could not acquire metadata lock: %s", err)
 		}
 		if answer == 0 {
@@ -66,7 +68,8 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	}
 
 	// Acquire the lock or return an error immediately
-	logger.Infof("attempting to acquire metadata lock: %s", lockName)
+	// We only Infof the initial acquisition.
+	logger.Infof("attempting to acquiring metadata lock: %s", lockName)
 	if err = getLock(); err != nil {
 		return nil, err
 	}
@@ -87,9 +90,15 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 				return
 			case <-ticker.C:
 				if err = getLock(); err != nil {
-					logger.Errorf("could not refresh metadata lock: %s", err)
+					// if we can't refresh the lock, it's okay.
+					// We have other safety mechanisms in place to prevent corruption
+					// for example, we watch the binary log to see metadata changes
+					// that we did not make. This makes it a warning, not an error,
+					// and we can try again on the next tick interval.
+					logger.Warnf("could not refresh metadata lock: %s", err)
+				} else {
+					logger.Debugf("refreshed metadata lock: %s", lockName)
 				}
-				logger.Infof("refreshed metadata lock: %s", lockName)
 			}
 		}
 	}()
