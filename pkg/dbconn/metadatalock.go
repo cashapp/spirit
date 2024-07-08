@@ -69,7 +69,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 
 	// Acquire the lock or return an error immediately
 	// We only Infof the initial acquisition.
-	logger.Infof("attempting to acquiring metadata lock: %s", lockName)
+	logger.Infof("attempting to acquire metadata lock: %s", lockName)
 	if err = getLock(); err != nil {
 		return nil, err
 	}
