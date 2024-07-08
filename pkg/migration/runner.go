@@ -896,8 +896,9 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	// We believe this is OK but may change it in the future. Please do not
 	// add any other fields to this log line.
 	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
-	return dbconn.Exec(ctx, r.db, "INSERT INTO %n (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (%?, %?, %?, %?, %?, %?)",
-		r.checkpointTable.QuotedName,
+	return dbconn.Exec(ctx, r.db, "INSERT INTO %n.%n (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (%?, %?, %?, %?, %?, %?)",
+		r.checkpointTable.SchemaName,
+		r.checkpointTable.TableName,
 		lowWatermark,
 		binlog.Name,
 		binlog.Pos,
