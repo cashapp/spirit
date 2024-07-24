@@ -115,7 +115,7 @@ func (t *TableInfo) IsModified(ctx context.Context) (bool, error) {
 	}
 
 	// Compare key columns.
-	keyColumns, _, _, _, err := t.fetchPrimaryKey(ctx)
+	keyColumns, _, _, _, err := t.fetchPrimaryKey(ctx) //nolint: dogsled
 	if err != nil {
 		return true, err
 	}
@@ -235,7 +235,7 @@ func (t *TableInfo) fetchPrimaryKey(ctx context.Context) (keyColumns []string, k
 		t.TableName,
 	)
 	if err != nil {
-		return
+		return //nolint: nakedret
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -247,11 +247,11 @@ func (t *TableInfo) fetchPrimaryKey(ctx context.Context) (keyColumns []string, k
 	}
 	if rows.Err() != nil {
 		err = rows.Err()
-		return
+		return //nolint: nakedret
 	}
 	if len(keyColumns) == 0 {
 		err = errors.New("no primary key found (not supported)")
-		return
+		return //nolint: nakedret
 	}
 	for i, col := range keyColumns {
 		// Get primary key type and auto_inc info.
@@ -259,7 +259,7 @@ func (t *TableInfo) fetchPrimaryKey(ctx context.Context) (keyColumns []string, k
 		var extra, pkType string
 		err = t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&pkType, &extra)
 		if err != nil {
-			return nil, false, nil, nil, err
+			return //nolint: nakedret
 		}
 		pkType = removeWidth(pkType)
 		keyColumnsMySQLTp = append(keyColumnsMySQLTp, pkType)
@@ -269,7 +269,7 @@ func (t *TableInfo) fetchPrimaryKey(ctx context.Context) (keyColumns []string, k
 		}
 	}
 	err = nil
-	return
+	return //nolint: nakedret
 }
 
 // PrimaryKeyIsMemoryComparable checks that the PRIMARY KEY type is compatible.

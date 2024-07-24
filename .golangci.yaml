@@ -33,6 +33,7 @@ linters:
     - wsl
     - funlen
     - gocognit
+    - gomnd
     - goprintffuncname
     - paralleltest
     - nlreturn
