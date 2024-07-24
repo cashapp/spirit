@@ -229,12 +229,19 @@ func (c *Client) SetPos(pos mysql.Position) {
 }
 
 func (c *Client) AllChangesFlushed() bool {
-	if c.GetDeltaLen() > 0 {
-		return false
-	}
+	deltaLen := c.GetDeltaLen()
 	c.Lock()
 	defer c.Unlock()
-	return c.canal.SyncedPosition().Compare(c.binlogPosSynced) == 0
+
+	// We check if the position canal is up to is the same position
+	// as what we've made changes for. If this is zero it's a good
+	// indicator that we are up to date. However, because the
+	// "server lock" is not a global lock, it's possible that the synced
+	// position could still advance.
+	if c.canal.SyncedPosition().Compare(c.binlogPosSynced) != 0 {
+		c.logger.Warnf("Binlog reader info canal-position=%v synced-position=%v. Discrepancies could be due to modifications on other tables.", c.canal.SyncedPosition(), c.binlogPosSynced)
+	}
+	return deltaLen == 0
 }
 
 func (c *Client) GetBinlogApplyPosition() mysql.Position {
