@@ -293,7 +293,8 @@ func (c *Client) Run() (err error) {
 	cfg.Password = c.password
 	cfg.Logger = NewLogWrapper(c.logger) // wrapper to filter the noise.
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
-	cfg.Dump.ExecutionPath = "" // skip dump
+	cfg.Dump.ExecutionPath = ""               // skip dump
+	cfg.DisableFlushBinlogWhileWaiting = true // can't guarantee privileges exist.
 	if dbconn.IsRDSHost(cfg.Addr) {
 		// create a new TLSConfig for RDS
 		// It needs to be a copy because sharing a global pointer
@@ -368,7 +369,8 @@ func (c *Client) startCanal() {
 			// but since canal is now closed we can safely return
 			return
 		}
-		c.logger.Errorf("canal has failed. error: %v", err)
+
+		c.logger.Errorf("canal has failed. error: %v, table: %s", err, c.table.TableName)
 		panic("canal has failed")
 	}
 }

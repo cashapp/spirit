@@ -41,4 +41,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/go-mysql-org/go-mysql => github.com/morgo/go-mysql v0.0.0-20240724121709-5edecf639700
+replace github.com/go-mysql-org/go-mysql => github.com/morgo/go-mysql v0.0.0-20240724140746-ec163036a879

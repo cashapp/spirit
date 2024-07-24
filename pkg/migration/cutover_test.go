@@ -40,6 +40,7 @@ func TestCutOver(t *testing.T) {
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
+	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
 	t1old := "_cutovert1_old"
 	logger := logrus.New()
@@ -100,6 +101,7 @@ func TestMDLLockFails(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
+	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
 	t1old := "test_old"
 	logger := logrus.New()
@@ -136,11 +138,25 @@ func TestInvalidOptions(t *testing.T) {
 	assert.NoError(t, err)
 	logger := logrus.New()
 
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS invalid_t1, _invalid_t1_new`)
+	tbl := `CREATE TABLE invalid_t1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, tbl)
+	tbl = `CREATE TABLE _invalid_t1_new (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, tbl)
 	// Invalid options
 	_, err = NewCutOver(db, nil, nil, "", nil, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
-	t1 := table.NewTableInfo(db, "test", "t1")
-	t1new := table.NewTableInfo(db, "test", "t1_new")
+	t1 := table.NewTableInfo(db, "test", "invalid_t1")
+	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
+	t1new := table.NewTableInfo(db, "test", "_invalid_t1_new")
 	t1old := "test_old"
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
