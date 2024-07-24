@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -92,6 +93,44 @@ func (t *TableInfo) SetInfo(ctx context.Context) error {
 		return err
 	}
 	return t.setMinMax(ctx)
+}
+
+// IsModified checks if the table has been modified since we ran SetInfo
+func (t *TableInfo) IsModified(ctx context.Context) (bool, error) {
+	t.statisticsLock.Lock()
+	defer t.statisticsLock.Unlock()
+
+	// Copy what we know about and cache it.
+	columns := t.Columns
+	columnTps := t.columnsMySQLTps
+	keyColumns := t.KeyColumns
+	indexes := t.Indexes
+
+	// Refetch the values
+	if err := t.setColumns(ctx); err != nil {
+		return true, err
+	}
+	if err := t.setPrimaryKey(ctx); err != nil {
+		return true, err
+	}
+	if err := t.setIndexes(ctx); err != nil {
+		return true, err
+	}
+	// Compare the values.
+	if !reflect.DeepEqual(columns, t.Columns) {
+		return true, nil
+	}
+	if !reflect.DeepEqual(columnTps, t.columnsMySQLTps) {
+		return true, nil
+	}
+	if !reflect.DeepEqual(keyColumns, t.KeyColumns) {
+		return true, nil
+	}
+	if !reflect.DeepEqual(indexes, t.Indexes) {
+		return true, nil
+	}
+	// If we get here, nothing has changed.
+	return false, nil
 }
 
 // setRowEstimate is a separate function so it can be repeated continuously

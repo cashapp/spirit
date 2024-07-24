@@ -324,3 +324,65 @@ func TestDiscoveryGeneratedCols(t *testing.T) {
 	assert.Equal(t, []string{"id", "name", "b", "c1", "c2", "c3", "d"}, t1.Columns)
 	assert.Equal(t, []string{"id", "name", "b", "d"}, t1.NonGeneratedColumns)
 }
+
+func TestTableIsModified(t *testing.T) {
+	db, err := sql.Open("mysql", testutils.DSN())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS modifiedt1`)
+	table := `CREATE TABLE modifiedt1 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(255) NOT NULL,
+		PRIMARY KEY (id)
+	)`
+	testutils.RunSQL(t, table)
+
+	t1 := NewTableInfo(db, "test", "modifiedt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+
+	modified, err := t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.False(t, modified)
+
+	testutils.RunSQL(t, `ALTER TABLE modifiedt1 ADD COLUMN age INT`)
+
+	// There's a new column.
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, modified)
+
+	// Subsequent calls should return false.
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.False(t, modified)
+
+	// Now add an index.
+	testutils.RunSQL(t, `ALTER TABLE modifiedt1 ADD INDEX idx_age (age)`)
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, modified)
+
+	// Change a datatype.
+	testutils.RunSQL(t, `ALTER TABLE modifiedt1 MODIFY COLUMN age VARCHAR(255)`)
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, modified)
+
+	// Drop an index
+	testutils.RunSQL(t, `ALTER TABLE modifiedt1 DROP INDEX idx_age`)
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, modified)
+
+	// Drop a column
+	testutils.RunSQL(t, `ALTER TABLE modifiedt1 DROP COLUMN age`)
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, modified)
+
+	// No changes if run again.
+	modified, err = t1.IsModified(context.TODO())
+	assert.NoError(t, err)
+	assert.False(t, modified)
+}
