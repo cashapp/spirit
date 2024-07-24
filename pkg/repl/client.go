@@ -75,8 +75,6 @@ type Client struct {
 	binlogChangeset      map[string]bool // bool is deleted
 	binlogChangesetDelta int64           // a special "fix" for keys that have been popped off, use atomic get/set
 	binlogPosSynced      mysql.Position  // safely written to new table
-	binlogPosInMemory    mysql.Position  // available in the binlog binlogChangeset
-	lastLogFileName      string          // last log file name we've seen in a rotation event
 
 	queuedChanges []queuedChange // used when disableDeltaMap is true
 
@@ -204,22 +202,6 @@ func (c *Client) KeyAboveWatermarkEnabled() bool {
 	return c.enableKeyAboveWatermark && c.KeyAboveCopierCallback != nil
 }
 
-// OnRotate is called when a rotate event is discovered via replication.
-// We use this to capture the log file name, since only the position is caught on the row event.
-func (c *Client) OnRotate(header *replication.EventHeader, rotateEvent *replication.RotateEvent) error {
-	c.Lock()
-	defer c.Unlock()
-	c.lastLogFileName = string(rotateEvent.NextLogName)
-	return nil
-}
-
-func (c *Client) OnPosSynced(header *replication.EventHeader, pos mysql.Position, _ mysql.GTIDSet, _ bool) error {
-	if header != nil {
-		c.updatePosInMemory(header.LogPos)
-	}
-	return nil
-}
-
 // OnTableChanged is called when a table is changed via DDL.
 // This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
 func (c *Client) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
@@ -252,7 +234,7 @@ func (c *Client) AllChangesFlushed() bool {
 	}
 	c.Lock()
 	defer c.Unlock()
-	return c.binlogPosInMemory.Compare(c.binlogPosSynced) == 0
+	return c.canal.SyncedPosition().Compare(c.binlogPosSynced) == 0
 }
 
 func (c *Client) GetBinlogApplyPosition() mysql.Position {
@@ -343,9 +325,6 @@ func (c *Client) Run() (err error) {
 		return errors.New("binlog position is impossible, the source may have already purged it")
 	}
 
-	c.binlogPosInMemory = c.binlogPosSynced
-	c.lastLogFileName = c.binlogPosInMemory.Name
-
 	// Call start canal as a go routine.
 	go c.startCanal()
 	return nil
@@ -403,15 +382,6 @@ func (c *Client) Close() {
 	}
 }
 
-func (c *Client) updatePosInMemory(pos uint32) {
-	c.Lock()
-	defer c.Unlock()
-	c.binlogPosInMemory = mysql.Position{
-		Name: c.lastLogFileName,
-		Pos:  pos,
-	}
-}
-
 // FlushUnderLock is a final flush under an exclusive lock using the connection
 // that holds a write lock. Because flushing generates binary log events,
 // we actually want to call flush *twice*:
@@ -451,7 +421,7 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 	c.Lock()
 	changesToFlush := c.queuedChanges
 	c.queuedChanges = nil // reset
-	posOfFlush := c.binlogPosInMemory
+	posOfFlush := c.canal.SyncedPosition()
 	c.Unlock()
 
 	// Early return if there is nothing to flush.
@@ -508,7 +478,7 @@ func (c *Client) flushQueue(ctx context.Context, underLock bool, lock *dbconn.Ta
 func (c *Client) flushMap(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
 	c.Lock()
 	setToFlush := c.binlogChangeset
-	posOfFlush := c.binlogPosInMemory         // copy the value, not the pointer
+	posOfFlush := c.canal.SyncedPosition()    // copy the value, not the pointer
 	c.binlogChangeset = make(map[string]bool) // set new value
 	c.Unlock()                                // unlock immediately so others can write to the changeset
 	// The changeset delta is because the status output is based on len(binlogChangeset)
