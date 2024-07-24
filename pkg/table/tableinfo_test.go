@@ -345,44 +345,22 @@ func TestTableIsModified(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, modified)
 
-	testutils.RunSQL(t, `ALTER TABLE modifiedt1 ADD COLUMN age INT`)
+	var stmts = []string{
+		`ALTER TABLE modifiedt1 ADD COLUMN age INT`,
+		`ALTER TABLE modifiedt1 ADD INDEX idx_age (age)`,
+		`ALTER TABLE modifiedt1 MODIFY COLUMN age VARCHAR(255)`,
+		`ALTER TABLE modifiedt1 DROP INDEX idx_age`,
+		`ALTER TABLE modifiedt1 DROP COLUMN age`,
+	}
 
-	// There's a new column.
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.True(t, modified)
+	for _, stmt := range stmts {
+		// reset tbl each time.
+		tbl := NewTableInfo(db, "test", "modifiedt1")
+		assert.NoError(t, tbl.SetInfo(context.TODO()))
 
-	// Subsequent calls should return false.
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.False(t, modified)
-
-	// Now add an index.
-	testutils.RunSQL(t, `ALTER TABLE modifiedt1 ADD INDEX idx_age (age)`)
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.True(t, modified)
-
-	// Change a datatype.
-	testutils.RunSQL(t, `ALTER TABLE modifiedt1 MODIFY COLUMN age VARCHAR(255)`)
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.True(t, modified)
-
-	// Drop an index
-	testutils.RunSQL(t, `ALTER TABLE modifiedt1 DROP INDEX idx_age`)
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.True(t, modified)
-
-	// Drop a column
-	testutils.RunSQL(t, `ALTER TABLE modifiedt1 DROP COLUMN age`)
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.True(t, modified)
-
-	// No changes if run again.
-	modified, err = t1.IsModified(context.TODO())
-	assert.NoError(t, err)
-	assert.False(t, modified)
+		testutils.RunSQL(t, stmt) // run a statement that modifies the table.
+		modified, err = tbl.IsModified(context.TODO())
+		assert.NoError(t, err)
+		assert.True(t, modified, "expected table to be modified after running %s", stmt)
+	}
 }
