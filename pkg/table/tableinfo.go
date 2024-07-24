@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,62 +76,22 @@ func (t *TableInfo) PrimaryKeyValues(row interface{}) ([]interface{}, error) {
 }
 
 // SetInfo reads from MySQL metadata (usually infoschema) and sets the values in TableInfo.
-// To avoid data races, the functions return values which can then be set.
 func (t *TableInfo) SetInfo(ctx context.Context) error {
 	t.statisticsLock.Lock()
 	defer t.statisticsLock.Unlock()
-	var err error
-	if err = t.setRowEstimate(ctx); err != nil {
+	if err := t.setRowEstimate(ctx); err != nil {
 		return err
 	}
-	if t.Columns, t.NonGeneratedColumns, t.columnsMySQLTps, err = t.fetchColumns(ctx); err != nil {
+	if err := t.setColumns(ctx); err != nil {
 		return err
 	}
-	if t.KeyColumns, t.KeyIsAutoInc, t.keyColumnsMySQLTp, t.keyDatums, err = t.fetchPrimaryKey(ctx); err != nil {
+	if err := t.setPrimaryKey(ctx); err != nil {
 		return err
 	}
-	if t.Indexes, err = t.fetchIndexes(ctx); err != nil {
+	if err := t.setIndexes(ctx); err != nil {
 		return err
 	}
 	return t.setMinMax(ctx)
-}
-
-// IsModified checks if the table has been modified since we ran SetInfo
-func (t *TableInfo) IsModified(ctx context.Context) (bool, error) {
-	t.statisticsLock.Lock()
-	defer t.statisticsLock.Unlock()
-
-	// Compare columns
-	columns, _, columnsMySQLTps, err := t.fetchColumns(ctx)
-	if err != nil {
-		return true, err
-	}
-	if !reflect.DeepEqual(columns, t.Columns) {
-		return true, nil
-	}
-	if !reflect.DeepEqual(columnsMySQLTps, t.columnsMySQLTps) {
-		return true, nil
-	}
-
-	// Compare key columns.
-	keyColumns, _, _, _, err := t.fetchPrimaryKey(ctx) //nolint: dogsled
-	if err != nil {
-		return true, err
-	}
-	if !reflect.DeepEqual(keyColumns, t.KeyColumns) {
-		return true, nil
-	}
-
-	// Compare indexes.
-	indexes, err := t.fetchIndexes(ctx)
-	if err != nil {
-		return true, err
-	}
-	if !reflect.DeepEqual(indexes, t.Indexes) {
-		return true, nil
-	}
-	// If we get here, nothing has changed.
-	return false, nil
 }
 
 // setRowEstimate is a separate function so it can be repeated continuously
@@ -152,59 +111,61 @@ func (t *TableInfo) setRowEstimate(ctx context.Context) error {
 	return nil
 }
 
-func (t *TableInfo) fetchIndexes(ctx context.Context) (indexes []string, err error) {
+func (t *TableInfo) setIndexes(ctx context.Context) error {
 	rows, err := t.db.QueryContext(ctx, "SELECT DISTINCT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=? AND table_name=? AND index_name != 'PRIMARY'",
 		t.SchemaName,
 		t.TableName,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
+	t.Indexes = []string{}
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return err
 		}
-		indexes = append(indexes, name)
+		t.Indexes = append(t.Indexes, name)
 	}
 	if rows.Err() != nil {
-		return nil, rows.Err()
+		return rows.Err()
 	}
-	return indexes, nil
+	return nil
 }
 
-func (t *TableInfo) fetchColumns(ctx context.Context) (columns []string, nonGeneratedColumns []string, columnsMySQLTps map[string]string, err error) {
+func (t *TableInfo) setColumns(ctx context.Context) error {
 	rows, err := t.db.QueryContext(ctx, "SELECT column_name, column_type, GENERATION_EXPRESSION FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
-	columnsMySQLTps = make(map[string]string)
+	t.Columns = []string{}
+	t.NonGeneratedColumns = []string{}
+	t.columnsMySQLTps = make(map[string]string)
 	for rows.Next() {
 		var col, tp, expression string
-		if err = rows.Scan(&col, &tp, &expression); err != nil {
-			return
+		if err := rows.Scan(&col, &tp, &expression); err != nil {
+			return err
 		}
-		columns = append(columns, col)
-		columnsMySQLTps[col] = tp
+		t.Columns = append(t.Columns, col)
+		t.columnsMySQLTps[col] = tp
 		if expression == "" {
-			nonGeneratedColumns = append(nonGeneratedColumns, col)
+			t.NonGeneratedColumns = append(t.NonGeneratedColumns, col)
 		}
 	}
 	if rows.Err() != nil {
-		err = rows.Err()
-		return
+		return rows.Err()
 	}
-	return
+	return nil
 }
 
 // DescIndex describes the columns in an index.
 func (t *TableInfo) DescIndex(keyName string) ([]string, error) {
-	var cols []string
+	cols := []string{}
 	rows, err := t.db.Query("SELECT column_name FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND index_name=? ORDER BY seq_in_index",
 		t.SchemaName,
 		t.TableName,
@@ -227,49 +188,47 @@ func (t *TableInfo) DescIndex(keyName string) ([]string, error) {
 	return cols, nil
 }
 
-// fetchPrimaryKey sets the primary key and also the primary key type.
+// setPrimaryKey sets the primary key and also the primary key type.
 // A primary key can contain multiple columns.
-func (t *TableInfo) fetchPrimaryKey(ctx context.Context) (keyColumns []string, keyIsAutoInc bool, keyColumnsMySQLTp []string, keyDatums []datumTp, err error) {
+func (t *TableInfo) setPrimaryKey(ctx context.Context) error {
 	rows, err := t.db.QueryContext(ctx, "SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=? and table_name=? and constraint_name='PRIMARY' ORDER BY ORDINAL_POSITION",
 		t.SchemaName,
 		t.TableName,
 	)
 	if err != nil {
-		return //nolint: nakedret
+		return err
 	}
 	defer rows.Close()
+	t.KeyColumns = []string{}
 	for rows.Next() {
 		var col string
 		if err := rows.Scan(&col); err != nil {
-			return nil, false, nil, nil, err
+			return err
 		}
-		keyColumns = append(keyColumns, col)
+		t.KeyColumns = append(t.KeyColumns, col)
 	}
 	if rows.Err() != nil {
-		err = rows.Err()
-		return //nolint: nakedret
+		return rows.Err()
 	}
-	if len(keyColumns) == 0 {
-		err = errors.New("no primary key found (not supported)")
-		return //nolint: nakedret
+	if len(t.KeyColumns) == 0 {
+		return errors.New("no primary key found (not supported)")
 	}
-	for i, col := range keyColumns {
+	for i, col := range t.KeyColumns {
 		// Get primary key type and auto_inc info.
 		query := "SELECT column_type, extra FROM information_schema.columns WHERE table_schema=? AND table_name=? and column_name=?"
 		var extra, pkType string
 		err = t.db.QueryRowContext(ctx, query, t.SchemaName, t.TableName, col).Scan(&pkType, &extra)
 		if err != nil {
-			return //nolint: nakedret
+			return err
 		}
 		pkType = removeWidth(pkType)
-		keyColumnsMySQLTp = append(keyColumnsMySQLTp, pkType)
-		keyDatums = append(keyDatums, mySQLTypeToDatumTp(pkType))
+		t.keyColumnsMySQLTp = append(t.keyColumnsMySQLTp, pkType)
+		t.keyDatums = append(t.keyDatums, mySQLTypeToDatumTp(pkType))
 		if i == 0 {
-			keyIsAutoInc = (extra == "auto_increment")
+			t.KeyIsAutoInc = (extra == "auto_increment")
 		}
 	}
-	err = nil
-	return //nolint: nakedret
+	return nil
 }
 
 // PrimaryKeyIsMemoryComparable checks that the PRIMARY KEY type is compatible.

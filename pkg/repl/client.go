@@ -41,6 +41,8 @@ const (
 	// Longer values require more memory, but permit more merging.
 	// I expect we will change this to 1hr-24hr in the future.
 	DefaultFlushInterval = 30 * time.Second
+	// DefaultTimeout is how long BlockWait is supposed to wait before returning errors.
+	DefaultTimeout = 10 * time.Second
 )
 
 type queuedChange struct {
@@ -220,23 +222,10 @@ func (c *Client) OnPosSynced(header *replication.EventHeader, pos mysql.Position
 
 // OnTableChanged is called when a table is changed via DDL.
 // This is a failsafe because we don't expect DDL to be performed on the table while we are operating.
-// We don't know anything about this change. It could be ANALYZE TABLE, which should
-// soon send a notification: https://github.com/go-mysql-org/go-mysql/pull/900
 func (c *Client) OnTableChanged(header *replication.EventHeader, schema string, table string) error {
-	if c.TableChangeNotificationCallback == nil || schema != c.table.SchemaName {
-		return nil // can't callback.
-	}
-	// If it matches the existing table, or it matches the new table,
-	// check for modifications at the source.
-	if table == c.table.TableName {
-		modified, err := c.table.IsModified(context.TODO())
-		if err != nil || modified {
-			c.TableChangeNotificationCallback()
-		}
-	}
-	if table == c.newTable.TableName {
-		modified, err := c.newTable.IsModified(context.TODO())
-		if err != nil || modified {
+	if (c.table.SchemaName == schema && c.table.TableName == table) ||
+		(c.newTable.SchemaName == schema && c.newTable.TableName == table) {
+		if c.TableChangeNotificationCallback != nil {
 			c.TableChangeNotificationCallback()
 		}
 	}
@@ -739,22 +728,7 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 // **Caveat** Unless you are calling this from Flush(), calling this DOES NOT ensure that
 // changes have been applied to the database.
 func (c *Client) BlockWait(ctx context.Context) error {
-	targetPos, err := c.canal.GetMasterPos() // what the server is at.
-	if err != nil {
-		return err
-	}
-	for i := 100; ; i++ {
-		canalPos := c.canal.SyncedPosition()
-		if i%100 == 0 {
-			// Print status every 100 loops = 10s
-			c.logger.Infof("blocking until we have read all binary logs: current-pos=%s target-pos=%s", canalPos, targetPos)
-		}
-		if canalPos.Compare(targetPos) >= 0 {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return nil
+	return c.canal.CatchMasterPos(DefaultTimeout)
 }
 
 func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
