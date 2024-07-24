@@ -7,6 +7,7 @@ output:
 linters:
   enable-all: true
   disable:
+    - gomoddirectives
     - tagalign
     - depguard
     - mnd
@@ -32,7 +33,6 @@ linters:
     - wsl
     - funlen
     - gocognit
-    - gomnd
     - goprintffuncname
     - paralleltest
     - nlreturn
