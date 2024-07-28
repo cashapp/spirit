@@ -87,22 +87,21 @@ func (c *CutOver) Run(ctx context.Context) error {
 func (c *CutOver) algorithmRenameUnderLock(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
+	tableLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
-	defer serverLock.Close()
-	if err := c.feed.FlushUnderLock(ctx, serverLock); err != nil {
+	defer tableLock.Close()
+	if err := c.feed.FlushUnderTableLock(ctx, tableLock); err != nil {
 		return err
 	}
 	if !c.feed.AllChangesFlushed() {
 		return errors.New("not all changes flushed, final flush might be broken")
 	}
-	oldName := c.oldTableName
-	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, oldName)
+	oldQuotedName := fmt.Sprintf("`%s`.`%s`", c.table.SchemaName, c.oldTableName)
 	renameStatement := fmt.Sprintf("RENAME TABLE %s TO %s, %s TO %s",
 		c.table.QuotedName, oldQuotedName,
 		c.newTable.QuotedName, c.table.QuotedName,
 	)
-	return serverLock.ExecUnderLock(ctx, renameStatement)
+	return tableLock.ExecUnderLock(ctx, renameStatement)
 }
