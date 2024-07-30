@@ -76,7 +76,7 @@ func (l *MySQL80Replica) UpdateLag() error {
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)
 	if l.IsThrottled() {
-		l.logger.Warnf("replication delayed,  throttling in progress. lag: %v tolerance: %v",
+		l.logger.Warnf("replication delayed, throttling in progress. lag: %v tolerance: %v",
 			atomic.LoadInt64(&l.currentLagInMs), l.lagTolerance)
 	}
 	return nil
