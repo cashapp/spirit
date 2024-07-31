@@ -332,15 +332,15 @@ func (c *Checker) initConnPool(ctx context.Context) error {
 	// Lock the source table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	serverLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
+	tableLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}
-	defer serverLock.Close()
+	defer tableLock.Close()
 	// With the lock held, flush one more time under the lock tables.
 	// Because we know canal is up to date this now guarantees
 	// we have everything in the new table.
-	if err := c.feed.FlushUnderLock(ctx, serverLock); err != nil {
+	if err := c.feed.FlushUnderTableLock(ctx, tableLock); err != nil {
 		return err
 	}
 	// Assert that the change set is empty. This should always

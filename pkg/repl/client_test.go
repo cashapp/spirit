@@ -359,3 +359,50 @@ func TestFeedback(t *testing.T) {
 	}
 	assert.Equal(t, int64(500), client.targetBatchSize) // less keys.
 }
+
+// TestBlockWait tests that the BlockWait function will:
+// - check the server's binary log position
+// - block waiting until the repl client is at that position.
+func TestBlockWait(t *testing.T) {
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS blockwaitt1, blockwaitt2")
+	testutils.RunSQL(t, "CREATE TABLE blockwaitt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE blockwaitt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+
+	t1 := table.NewTableInfo(db, "test", "blockwaitt1")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "blockwaitt2")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+
+	logger := logrus.New()
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
+	})
+	assert.NoError(t, client.Run())
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // if it takes any longer block wait is failing.
+	defer cancel()
+
+	assert.NoError(t, client.BlockWait(ctx))
+
+	// Insert into t1.
+	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (1, 2, 3)")
+	assert.NoError(t, client.Flush(ctx))                                      // apply the changes (not required, they only need to be received for block wait to unblock)
+	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick still.
+	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (2, 2, 3)") // don't apply changes.
+	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick because apply not required.
+
+	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
+	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
+	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
+	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
+	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
+	assert.NoError(t, client.BlockWait(ctx)) // should be quick
+}

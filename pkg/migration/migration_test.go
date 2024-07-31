@@ -181,7 +181,7 @@ func TestRenameInMySQL80(t *testing.T) {
 	migration.Database = cfg.DBName
 	migration.Threads = 16
 	migration.Checksum = true
-	migration.Table = "t1"
+	migration.Table = "renamet1"
 	migration.Alter = "CHANGE name nameNew varchar(255) not null"
 
 	err = migration.Run()

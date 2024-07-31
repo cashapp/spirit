@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/go-mysql-org/go-mysql v1.8.0
+	github.com/go-mysql-org/go-mysql v1.8.1-0.20240728143959-24fbb5be92c3
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20231103042308-035ad5ccbe67
@@ -23,7 +23,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/google/uuid v1.4.0 // indirect
-	github.com/klauspost/compress v1.17.1 // indirect
+	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c // indirect
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
