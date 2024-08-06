@@ -358,6 +358,12 @@ func TestFeedback(t *testing.T) {
 		client.feedback(1000, time.Second)
 	}
 	assert.Equal(t, int64(500), client.targetBatchSize) // less keys.
+
+	// Test with a way slower chunk.
+	for range 10 {
+		client.feedback(500, time.Second*100)
+	}
+	assert.Equal(t, int64(5), client.targetBatchSize) // equals the minimum.
 }
 
 // TestBlockWait tests that the BlockWait function will:

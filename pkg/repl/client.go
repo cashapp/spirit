@@ -33,7 +33,8 @@ const (
 	// multiple-flush-threads, which should help it group commit and still be fast.
 	// This is only used as an initial starting value. It will auto-scale based on the DefaultTargetBatchTime.
 	DefaultBatchSize = 1000
-
+	// minBatchSize is the minimum batch size that we will allow the targetBatchSize to be.
+	minBatchSize = 5
 	// DefaultTargetBatchTime is the target time for flushing REPLACE/DELETE statements.
 	DefaultTargetBatchTime = time.Millisecond * 500
 
@@ -623,6 +624,9 @@ func (c *Client) feedback(numberOfKeys int, d time.Duration) {
 	if len(c.timingHistory) >= 10 {
 		timePerKey := table.LazyFindP90(c.timingHistory)
 		newBatchSize := int64(float64(c.targetBatchTime) / float64(timePerKey))
+		if newBatchSize < minBatchSize {
+			newBatchSize = minBatchSize
+		}
 		atomic.StoreInt64(&c.targetBatchSize, newBatchSize)
 		c.timingHistory = nil // reset
 	}
