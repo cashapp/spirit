@@ -40,3 +40,5 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/go-mysql-org/go-mysql => github.com/morgo/go-mysql v0.0.0-20240809144225-c94bbea2a85e
