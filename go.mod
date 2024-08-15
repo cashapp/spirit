@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/go-mysql-org/go-mysql v1.8.1-0.20240728143959-24fbb5be92c3
+	github.com/go-mysql-org/go-mysql v1.8.1-0.20240805131754-ccf204bf2b2a
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20231103042308-035ad5ccbe67
@@ -40,5 +40,3 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/go-mysql-org/go-mysql => github.com/morgo/go-mysql v0.0.0-20240809144225-c94bbea2a85e

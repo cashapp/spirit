@@ -301,8 +301,7 @@ func (c *Client) Run() (err error) {
 	cfg.Password = c.password
 	cfg.Logger = NewLogWrapper(c.logger) // wrapper to filter the noise.
 	cfg.IncludeTableRegex = []string{fmt.Sprintf("^%s\\.%s$", c.table.SchemaName, c.table.TableName)}
-	cfg.Dump.ExecutionPath = ""               // skip dump
-	cfg.DisableFlushBinlogWhileWaiting = true // can't guarantee privileges exist.
+	cfg.Dump.ExecutionPath = "" // skip dump
 	if dbconn.IsRDSHost(cfg.Addr) {
 		// create a new TLSConfig for RDS
 		// It needs to be a copy because sharing a global pointer
@@ -404,10 +403,15 @@ func (c *Client) FlushUnderTableLock(ctx context.Context, lock *dbconn.TableLock
 	if err := c.flush(ctx, true, lock); err != nil {
 		return err
 	}
-	// Wait for the changes flushed to be received.
-	if err := c.BlockWait(ctx); err != nil {
-		return err
-	}
+	// TODO: Wait for the changes flushed to be received.
+	// Ideally we can call c.BlockWait() when
+	// https://github.com/cashapp/spirit/issues/337 merges.
+	// For now, we skip block wait. Because the check in AllChangesFlushed()
+	// now only returns a warning, this is fine.
+	// if err := c.BlockWait(ctx); err != nil {
+	// 	return err
+	// }
+
 	// Do a final flush
 	return c.flush(ctx, true, lock)
 }
@@ -711,7 +715,36 @@ func (c *Client) StartPeriodicFlush(ctx context.Context, interval time.Duration)
 // **Caveat** Unless you are calling this from Flush(), calling this DOES NOT ensure that
 // changes have been applied to the database.
 func (c *Client) BlockWait(ctx context.Context) error {
-	return c.canal.CatchMasterPos(DefaultTimeout)
+	targetPos, err := c.canal.GetMasterPos() // what the server is at.
+	if err != nil {
+		return err
+	}
+	for i := 100; ; i++ {
+		if err := c.injectBinlogNoise(ctx); err != nil {
+			return err
+		}
+		canalPos := c.canal.SyncedPosition()
+		if i%100 == 0 {
+			// Print status every 100 loops = 10s
+			c.logger.Infof("blocking until we have read all binary logs: current-pos=%s target-pos=%s", canalPos, targetPos)
+		}
+		if canalPos.Compare(targetPos) >= 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil
+}
+
+// injectBinlogNoise is used to inject some noise into the binlog stream
+// This helps ensure that we are "past" a binary log position if there is some off-by-one
+// problem where the most recent canal event is not yet updating the canal SyncedPosition,
+// and there are no current changes on the MySQL server to advance itself.
+// Note: We can not update the table or the newTable, because this intentionally
+// causes a panic (c.tableChanged() is called).
+func (c *Client) injectBinlogNoise(ctx context.Context) error {
+	tblName := fmt.Sprintf("_%s_chkpnt", c.table.TableName)
+	return dbconn.Exec(ctx, c.db, "ALTER TABLE %n.%n AUTO_INCREMENT=0", c.table.SchemaName, tblName)
 }
 
 func (c *Client) keyHasChanged(key []interface{}, deleted bool) {
