@@ -19,7 +19,7 @@ func init() {
 func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	// This is a re-implementation of the gh-ost check
 	// validateGrants() in gh-ost/go/logic/inspect.go
-	var foundAll, foundSuper, foundReplicationClient, foundReplicationSlave, foundDBAll bool
+	var foundAll, foundSuper, foundReplicationClient, foundReplicationSlave, foundDBAll, foundReload bool
 	rows, err := r.DB.QueryContext(ctx, `SHOW GRANTS`) //nolint: execinquery
 	if err != nil {
 		return err
@@ -41,6 +41,9 @@ func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) 
 		}
 		if strings.Contains(grant, `REPLICATION SLAVE`) && strings.Contains(grant, ` ON *.*`) {
 			foundReplicationSlave = true
+		}
+		if strings.Contains(grant, `RELOAD`) && strings.Contains(grant, ` ON *.*`) {
+			foundReload = true
 		}
 		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", r.Table.SchemaName)) {
 			foundDBAll = true
@@ -64,10 +67,10 @@ func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) 
 	if foundSuper && foundReplicationSlave && foundDBAll {
 		return nil
 	}
-	if foundReplicationClient && foundReplicationSlave && foundDBAll {
+	if foundReplicationClient && foundReplicationSlave && foundDBAll && foundReload {
 		return nil
 	}
-	return errors.New("insufficient privileges to run a migration. Needed: SUPER|REPLICATION CLIENT, REPLICATION SLAVE and ALL on %s.*")
+	return errors.New("insufficient privileges to run a migration. Needed: SUPER|REPLICATION CLIENT, RELOAD, REPLICATION SLAVE and ALL on %s.*")
 }
 
 // stringContainsAll returns true if `s` contains all non empty given `substrings`

@@ -107,6 +107,7 @@ Spirit requires an account with these privileges:
 
 * `ALTER, CREATE, DELETE, DROP, INDEX, INSERT, LOCK TABLES, SELECT, TRIGGER, UPDATE` on the schema where the table is being migrated.
 * Either `SUPER, REPLICATION SLAVE on *.*` or `REPLICATION CLIENT, REPLICATION SLAVE on *.*`.
+* The `RELOAD` privilege.
 
 For replica throttling, Spirit requires:
 
