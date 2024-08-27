@@ -46,7 +46,7 @@ func TestPrivileges(t *testing.T) {
 	err = privilegesCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err) // still not enough, needs replication client
 
-	_, err = db.Exec("GRANT REPLICATION CLIENT, REPLICATION SLAVE ON *.* TO testprivsuser")
+	_, err = db.Exec("GRANT REPLICATION CLIENT, REPLICATION SLAVE, RELOAD ON *.* TO testprivsuser")
 	assert.NoError(t, err)
 
 	err = privilegesCheck(context.Background(), r, logrus.New())
