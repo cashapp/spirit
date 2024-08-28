@@ -191,17 +191,18 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 
-	// Take a metadata lock to prevent other migrations from running concurrently.
-	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), fmt.Sprintf("spirit_%s_%s", r.migration.Database, r.migration.Table), r.logger)
-	if err != nil {
-		return err
-	}
-
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
 	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
+
+	// Take a metadata lock to prevent other migrations from running concurrently.
+	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), r.table.QuotedName, r.logger)
+	if err != nil {
+		return err
+	}
+
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
 	// when it is compatible. If it returns no error, that means it
