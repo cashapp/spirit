@@ -924,9 +924,20 @@ func TestCheckpointRestore(t *testing.T) {
 	// from issue #125
 	watermark := "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\":[\"53926425\"],\"Inclusive\":true},\"UpperBound\":{\"Value\":[\"53926425\"],\"Inclusive\":false}}"
 	binlog := r.replClient.GetBinlogApplyPosition()
-	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
-		r.checkpointTable.QuotedName)
-	_, err = r.db.ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
+	err = dbconn.Exec(context.TODO(), r.db, `INSERT INTO %n.%n
+	(copier_watermark, checksum_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement)
+	VALUES
+	(%?, %?, %?, %?, %?, %?, %?)`,
+		r.checkpointTable.SchemaName,
+		r.checkpointTable.TableName,
+		watermark,
+		"",
+		binlog.Name,
+		binlog.Pos,
+		0,
+		0,
+		r.migration.Alter,
+	)
 	assert.NoError(t, err)
 
 	r2, err := NewRunner(&Migration{
