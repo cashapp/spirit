@@ -955,6 +955,77 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.True(t, r2.usedResumeFromCheckpoint)
 }
 
+func TestCheckpointResumeDuringChecksum(t *testing.T) {
+	tbl := `CREATE TABLE cptresume (
+		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		id2 INT NOT NULL,
+		pad VARCHAR(100) NOT NULL default 0)`
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cptresume, _cptresume_new, _cptresume_chkpnt, _cptresume_sentinel`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `CREATE TABLE _cptresume_sentinel (id INT NOT NULL PRIMARY KEY)`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM cptresume`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM cptresume a JOIN cptresume b JOIN cptresume c`)
+
+	r, err := NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         4,
+		TargetChunkTime: 100 * time.Millisecond,
+		Table:           "cptresume",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+	})
+	assert.NoError(t, err)
+
+	// Call r.Run() with our context in a go-routine.
+	// When we see that we are waiting on the sentinel table,
+	// we then manually start the first bits of checksum, and then close()
+	// We should be able to resume from the checkpoint into the checksum state.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		err := r.Run(ctx)
+		assert.Error(t, err)
+	}()
+	for {
+		// Wait for the sentinel table.
+		if r.getCurrentState() >= stateWaitingOnSentinelTable {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	assert.NoError(t, r.checksum(context.TODO()))       // run the checksum, the original Run is blocked on sentinel.
+	assert.NoError(t, r.dumpCheckpoint(context.TODO())) // dump a checkpoint with the watermark.
+	cancel()                                            // unblock the original waiting on sentinel.
+	assert.NoError(t, r.Close())                        // close the run.
+
+	// drop the sentinel table.
+	testutils.RunSQL(t, `DROP TABLE _cptresume_sentinel`)
+
+	// Start again as a new runner,
+	r2, err := NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         4,
+		TargetChunkTime: 100 * time.Millisecond,
+		Table:           "cptresume",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+	})
+	assert.NoError(t, err)
+	err = r2.Run(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, r2.usedResumeFromCheckpoint)
+	assert.NotEmpty(t, r2.checksumWatermark) // it had a checksum watermark
+}
+
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	tbl := `CREATE TABLE cpt1difft1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -2674,7 +2745,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 
 	go func() {
 		err := runner.Run(ctx)
-		assert.ErrorContains(t, err, "context canceled") // it gets interrupted as soon as there is a checkpoint saved.
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)

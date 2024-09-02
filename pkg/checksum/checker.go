@@ -25,23 +25,23 @@ import (
 
 type Checker struct {
 	sync.Mutex
-	table                  *table.TableInfo
-	newTable               *table.TableInfo
-	concurrency            int
-	feed                   *repl.Client
-	db                     *sql.DB
-	trxPool                *dbconn.TrxPool
-	isInvalid              bool
-	chunker                table.Chunker
-	startTime              time.Time
-	ExecTime               time.Duration
-	recentValue            interface{} // used for status
-	dbConfig               *dbconn.DBConfig
-	logger                 loggers.Advanced
-	fixDifferences         bool
-	differencesFound       atomic.Uint64
-	recopyLock             sync.Mutex
-	isResumeFromCheckpoint bool
+	table            *table.TableInfo
+	newTable         *table.TableInfo
+	concurrency      int
+	feed             *repl.Client
+	db               *sql.DB
+	trxPool          *dbconn.TrxPool
+	isInvalid        bool
+	chunker          table.Chunker
+	startTime        time.Time
+	ExecTime         time.Duration
+	recentValue      interface{} // used for status
+	dbConfig         *dbconn.DBConfig
+	logger           loggers.Advanced
+	fixDifferences   bool
+	differencesFound atomic.Uint64
+	recopyLock       sync.Mutex
+	isResume         bool
 }
 
 type CheckerConfig struct {
@@ -87,16 +87,16 @@ func NewChecker(db *sql.DB, tbl, newTable *table.TableInfo, feed *repl.Client, c
 		}
 	}
 	checksum := &Checker{
-		table:                  tbl,
-		newTable:               newTable,
-		concurrency:            config.Concurrency,
-		db:                     db,
-		feed:                   feed,
-		chunker:                chunker,
-		dbConfig:               config.DBConfig,
-		logger:                 config.Logger,
-		fixDifferences:         config.FixDifferences,
-		isResumeFromCheckpoint: config.Watermark != "",
+		table:          tbl,
+		newTable:       newTable,
+		concurrency:    config.Concurrency,
+		db:             db,
+		feed:           feed,
+		chunker:        chunker,
+		dbConfig:       config.DBConfig,
+		logger:         config.Logger,
+		fixDifferences: config.FixDifferences,
+		isResume:       config.Watermark != "",
 	}
 	return checksum, nil
 }
@@ -170,6 +170,9 @@ func (c *Checker) RecentValue() string {
 }
 
 func (c *Checker) GetLowWatermark() (string, error) {
+	if c.chunker == nil {
+		return "", errors.New("chunker not initialized")
+	}
 	return c.chunker.GetLowWatermark()
 }
 
@@ -380,7 +383,7 @@ func (c *Checker) Run(ctx context.Context) error {
 	// Open the chunker if it's not open.
 	// It will already be open if this is a resume from checkpoint.
 	// This is a little annoying, but just the way the chunker API works.
-	if !c.isResumeFromCheckpoint {
+	if !c.isResume {
 		if err := c.chunker.Open(); err != nil {
 			return err
 		}

@@ -258,3 +258,36 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, checker.Run(context.Background())) // fails
 }
+
+func TestFromWatermark(t *testing.T) {
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS tfromwatermark, _tfromwatermark_new, _tfromwatermark_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE tfromwatermark (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _tfromwatermark_new (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE _tfromwatermark_chkpnt (a INT)") // for binlog advancement
+	testutils.RunSQL(t, "INSERT INTO tfromwatermark VALUES (1, 2, 3)")
+	testutils.RunSQL(t, "INSERT INTO _tfromwatermark_new VALUES (1, 2, 3)")
+
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "tfromwatermark")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "_tfromwatermark_new")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+	logger := logrus.New()
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
+	})
+	assert.NoError(t, feed.Run())
+
+	config := NewCheckerDefaultConfig()
+	config.Watermark = "{\"Key\":[\"a\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"2\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"3\"],\"Inclusive\":false}}"
+	checker, err := NewChecker(db, t1, t2, feed, config)
+	assert.NoError(t, err)
+	assert.NoError(t, checker.Run(context.Background()))
+}

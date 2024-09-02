@@ -42,7 +42,7 @@ const (
 
 // These are really consts, but set to var for testing.
 var (
-	checkpointDumpInterval  = 2 * time.Second
+	checkpointDumpInterval  = 50 * time.Second
 	tableStatUpdateInterval = 5 * time.Minute
 	statusInterval          = 30 * time.Second
 	sentinelCheckInterval   = 1 * time.Second
@@ -917,10 +917,12 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	var checksumWatermark string
 	if r.getCurrentState() >= stateChecksum {
 		r.checkerLock.Lock()
-		checksumWatermark, err = r.checker.GetLowWatermark()
-		r.checkerLock.Unlock()
-		if err != nil {
-			return err
+		defer r.checkerLock.Unlock()
+		if r.checker != nil {
+			checksumWatermark, err = r.checker.GetLowWatermark()
+			if err != nil {
+				return err
+			}
 		}
 	}
 	copyRows := atomic.LoadUint64(&r.copier.CopyRowsCount)
