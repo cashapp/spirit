@@ -3036,6 +3036,8 @@ func newDSN(dsn string, config *DBConfig) (string, error) {
 	// This behaviour has been observed during blue/green upgrades and failover on AWS Aurora.
 	// See also: https://github.com/go-sql-driver/mysql?tab=readme-ov-file#rejectreadonly
 	ops = append(ops, fmt.Sprintf("%s=%s", "rejectReadOnly", "true"))
+	// Set interpolateParams
+	ops = append(ops, fmt.Sprintf("%s=%t", "interpolateParams", config.InterpolateParams))
 	dsn = fmt.Sprintf("%s?%s", dsn, strings.Join(ops, "&"))
 	return dsn, nil
 }
