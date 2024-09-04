@@ -92,6 +92,9 @@ type Runner struct {
 	checker      *checksum.Checker
 	checkerLock  sync.Mutex
 
+	// used to recover direct to checksum.
+	checksumWatermark string
+
 	// Track some key statistics.
 	startTime             time.Time
 	sentinelWaitStartTime time.Time
@@ -252,7 +255,9 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	go r.dumpCheckpointContinuously(ctx) // start periodically dumping the checkpoint.
 
 	// Perform the main copy rows task. This is where the majority
-	// of migrations usually spend time.
+	// of migrations usually spend time. It is not strictly necessary,
+	// but we always recopy the last-bit, even if we are resuming
+	// partially through the checksum.
 	r.setCurrentState(stateCopyRows)
 	if err := r.copier.Run(ctx); err != nil {
 		return err
@@ -630,7 +635,16 @@ func (r *Runner) createCheckpointTable(ctx context.Context) error {
 	if err := dbconn.Exec(ctx, r.db, "DROP TABLE IF EXISTS %n.%n", r.table.SchemaName, cpName); err != nil {
 		return err
 	}
-	if err := dbconn.Exec(ctx, r.db, "CREATE TABLE %n.%n (id int NOT NULL AUTO_INCREMENT PRIMARY KEY, low_watermark TEXT,  binlog_name VARCHAR(255), binlog_pos INT, rows_copied BIGINT, rows_copied_logical BIGINT, alter_statement TEXT)",
+	if err := dbconn.Exec(ctx, r.db, `CREATE TABLE %n.%n (
+	id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+	copier_watermark TEXT,
+	checksum_watermark TEXT,
+	binlog_name VARCHAR(255),
+	binlog_pos INT,
+	rows_copied BIGINT,
+	rows_copied_logical BIGINT,
+	alter_statement TEXT
+	)`,
 		r.table.SchemaName, cpName); err != nil {
 		return err
 	}
@@ -740,17 +754,21 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// Make sure we can read from the new table.
 	if err := dbconn.Exec(ctx, r.db, "SELECT * FROM %n.%n LIMIT 1",
 		r.migration.Database, newName); err != nil {
-		return fmt.Errorf("could not read from table '%s'", newName)
+		return fmt.Errorf("could not find any checkpoints in table '%s'", newName)
 	}
 
-	query := fmt.Sprintf("SELECT low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
+	// We intentionally SELECT * FROM the checkpoint table because if the structure
+	// changes, we want this operation to fail. This will indicate that the checkpoint
+	// was created by either an earlier or later version of spirit, in which case
+	// we do not support recovery.
+	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
 		r.migration.Database, cpName)
-	var lowWatermark, binlogName, alterStatement string
-	var binlogPos int
+	var copierWatermark, binlogName, alterStatement string
+	var id, binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
-	err := r.db.QueryRow(query).Scan(&lowWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
+	err := r.db.QueryRow(query).Scan(&id, &copierWatermark, &r.checksumWatermark, &binlogName, &binlogPos, &rowsCopied, &rowsCopiedLogical, &alterStatement)
 	if err != nil {
-		return fmt.Errorf("could not read from table '%s'", cpName)
+		return fmt.Errorf("could not read from table '%s', err:%v", cpName, err)
 	}
 	if r.migration.Alter != alterStatement {
 		return ErrMismatchedAlter
@@ -777,8 +795,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		Logger:          r.logger,
 		MetricsSink:     r.metricsSink,
 		DBConfig:        r.dbConfig,
-	}, lowWatermark, rowsCopied, rowsCopiedLogical)
-
+	}, copierWatermark, rowsCopied, rowsCopiedLogical)
 	if err != nil {
 		return err
 	}
@@ -796,9 +813,6 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	})
 
 	r.checkpointTable = table.NewTableInfo(r.db, r.table.SchemaName, cpName)
-	if err != nil {
-		return err
-	}
 
 	// Start the replClient now. This is because if the checkpoint is so old there
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
@@ -808,7 +822,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		r.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
-	r.logger.Warnf("resuming from checkpoint. low-watermark: %s log-file: %s log-pos: %d copy-rows: %d", lowWatermark, binlogName, binlogPos, rowsCopied)
+	r.logger.Warnf("resuming from checkpoint. copier-watermark: %s checksum-watermark: %s log-file: %s log-pos: %d copy-rows: %d", copierWatermark, r.checksumWatermark, binlogName, binlogPos, rowsCopied)
 	r.usedResumeFromCheckpoint = true
 	return nil
 }
@@ -821,13 +835,16 @@ func (r *Runner) checksum(ctx context.Context) error {
 	// - background flushing
 	// - checkpoint thread
 	// - checksum "replaceChunk" DB connections
-	// Handle a case in the tests not having a dbConfig
+	// Handle a case just in the tests not having a dbConfig
 	if r.dbConfig == nil {
 		r.dbConfig = dbconn.NewDBConfig()
 	}
 	r.db.SetMaxOpenConns(r.dbConfig.MaxOpenConnections + 2)
 	var err error
 	for i := range 3 { // try the checksum up to 3 times.
+		if i > 0 {
+			r.checksumWatermark = "" // reset the watermark if we are retrying.
+		}
 		r.checkerLock.Lock()
 		r.checker, err = checksum.NewChecker(r.db, r.table, r.newTable, r.replClient, &checksum.CheckerConfig{
 			Concurrency:     r.migration.Threads,
@@ -835,6 +852,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			DBConfig:        r.dbConfig,
 			Logger:          r.logger,
 			FixDifferences:  true, // we want to repair the differences.
+			Watermark:       r.checksumWatermark,
 		})
 		r.checkerLock.Unlock()
 		if err != nil {
@@ -881,14 +899,31 @@ func (r *Runner) setCurrentState(s migrationState) {
 	atomic.StoreInt32((*int32)(&r.currentState), int32(s))
 }
 
+// dumpCheckpoint is called approximately every minute.
+// It writes the current state of the migration to the checkpoint table,
+// which can be used in recovery. Previously resuming from checkpoint
+// would always restart at the copier, but it can now also resume at
+// the checksum phase.
 func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	// Retrieve the binlog position first and under a mutex.
-	// Currently, it never advances, but it's possible it might in future
-	// and this race condition is missed.
 	binlog := r.replClient.GetBinlogApplyPosition()
-	lowWatermark, err := r.copier.GetLowWatermark()
+	copierWatermark, err := r.copier.GetLowWatermark()
 	if err != nil {
 		return err // it might not be ready, we can try again.
+	}
+	// We only dump the checksumWatermark if we are in >= checksum state.
+	// We require a mutex because the checker can be replaced during
+	// operation, leaving a race condition.
+	var checksumWatermark string
+	if r.getCurrentState() >= stateChecksum {
+		r.checkerLock.Lock()
+		defer r.checkerLock.Unlock()
+		if r.checker != nil {
+			checksumWatermark, err = r.checker.GetLowWatermark()
+			if err != nil {
+				return err
+			}
+		}
 	}
 	copyRows := atomic.LoadUint64(&r.copier.CopyRowsCount)
 	logicalCopyRows := atomic.LoadUint64(&r.copier.CopyRowsLogicalCount)
@@ -896,11 +931,12 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 	// when using the composite chunker are based on actual user-data.
 	// We believe this is OK but may change it in the future. Please do not
 	// add any other fields to this log line.
-	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", lowWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
-	return dbconn.Exec(ctx, r.db, "INSERT INTO %n.%n (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (%?, %?, %?, %?, %?, %?)",
+	r.logger.Infof("checkpoint: low-watermark=%s log-file=%s log-pos=%d rows-copied=%d rows-copied-logical=%d", copierWatermark, binlog.Name, binlog.Pos, copyRows, logicalCopyRows)
+	return dbconn.Exec(ctx, r.db, "INSERT INTO %n.%n (copier_watermark, checksum_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (%?, %?, %?, %?, %?, %?, %?)",
 		r.checkpointTable.SchemaName,
 		r.checkpointTable.TableName,
-		lowWatermark,
+		copierWatermark,
+		checksumWatermark,
 		binlog.Name,
 		binlog.Pos,
 		copyRows,

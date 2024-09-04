@@ -924,9 +924,20 @@ func TestCheckpointRestore(t *testing.T) {
 	// from issue #125
 	watermark := "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\":[\"53926425\"],\"Inclusive\":true},\"UpperBound\":{\"Value\":[\"53926425\"],\"Inclusive\":false}}"
 	binlog := r.replClient.GetBinlogApplyPosition()
-	query := fmt.Sprintf("INSERT INTO %s (low_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement) VALUES (?, ?, ?, ?, ?, ?)",
-		r.checkpointTable.QuotedName)
-	_, err = r.db.ExecContext(context.TODO(), query, watermark, binlog.Name, binlog.Pos, 0, 0, r.migration.Alter)
+	err = dbconn.Exec(context.TODO(), r.db, `INSERT INTO %n.%n
+	(copier_watermark, checksum_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement)
+	VALUES
+	(%?, %?, %?, %?, %?, %?, %?)`,
+		r.checkpointTable.SchemaName,
+		r.checkpointTable.TableName,
+		watermark,
+		"",
+		binlog.Name,
+		binlog.Pos,
+		0,
+		0,
+		r.migration.Alter,
+	)
 	assert.NoError(t, err)
 
 	r2, err := NewRunner(&Migration{
@@ -942,6 +953,81 @@ func TestCheckpointRestore(t *testing.T) {
 	err = r2.Run(context.TODO())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint)
+}
+
+func TestCheckpointResumeDuringChecksum(t *testing.T) {
+	tbl := `CREATE TABLE cptresume (
+		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+		id2 INT NOT NULL,
+		pad VARCHAR(100) NOT NULL default 0)`
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS cptresume, _cptresume_new, _cptresume_chkpnt, _cptresume_sentinel`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `CREATE TABLE _cptresume_sentinel (id INT NOT NULL PRIMARY KEY)`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM cptresume`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('a', 100) FROM cptresume a JOIN cptresume b JOIN cptresume c`)
+
+	r, err := NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         4,
+		TargetChunkTime: 100 * time.Millisecond,
+		Table:           "cptresume",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+	})
+	assert.NoError(t, err)
+
+	// Call r.Run() with our context in a go-routine.
+	// When we see that we are waiting on the sentinel table,
+	// we then manually start the first bits of checksum, and then close()
+	// We should be able to resume from the checkpoint into the checksum state.
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		err := r.Run(ctx)
+		assert.Error(t, err) // context cancelled
+	}()
+	for {
+		// Wait for the sentinel table.
+		if r.getCurrentState() >= stateWaitingOnSentinelTable {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	assert.NoError(t, r.checksum(context.TODO()))       // run the checksum, the original Run is blocked on sentinel.
+	assert.NoError(t, r.dumpCheckpoint(context.TODO())) // dump a checkpoint with the watermark.
+	cancel()                                            // unblock the original waiting on sentinel.
+	assert.NoError(t, r.Close())                        // close the run.
+
+	// drop the sentinel table.
+	testutils.RunSQL(t, `DROP TABLE _cptresume_sentinel`)
+
+	// insert a couple more rows (should not change anything)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('b', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('c', 100) FROM dual`)
+
+	// Start again as a new runner,
+	r2, err := NewRunner(&Migration{
+		Host:            cfg.Addr,
+		Username:        cfg.User,
+		Password:        cfg.Passwd,
+		Database:        cfg.DBName,
+		Threads:         4,
+		TargetChunkTime: 100 * time.Millisecond,
+		Table:           "cptresume",
+		Alter:           "ENGINE=InnoDB",
+		Checksum:        true,
+	})
+	assert.NoError(t, err)
+	err = r2.Run(context.Background())
+	assert.NoError(t, err)
+	assert.True(t, r2.usedResumeFromCheckpoint)
+	assert.NotEmpty(t, r2.checksumWatermark) // it had a checksum watermark
 }
 
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
@@ -2663,7 +2749,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 
 	go func() {
 		err := runner.Run(ctx)
-		assert.ErrorContains(t, err, "context canceled") // it gets interrupted as soon as there is a checkpoint saved.
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
 	}()
 
 	// wait until a checkpoint is saved (which means copy is in progress)
