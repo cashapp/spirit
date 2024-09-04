@@ -989,7 +989,7 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		err := r.Run(ctx)
-		assert.Error(t, err)
+		assert.Error(t, err) // context cancelled
 	}()
 	for {
 		// Wait for the sentinel table.
@@ -1006,6 +1006,10 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 
 	// drop the sentinel table.
 	testutils.RunSQL(t, `DROP TABLE _cptresume_sentinel`)
+
+	// insert a couple more rows (should not change anything)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('b', 100) FROM dual`)
+	testutils.RunSQL(t, `insert into cptresume (id2,pad) SELECT 1, REPEAT('c', 100) FROM dual`)
 
 	// Start again as a new runner,
 	r2, err := NewRunner(&Migration{
