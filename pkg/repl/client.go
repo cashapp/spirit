@@ -641,9 +641,14 @@ func (c *Client) Flush(ctx context.Context) error {
 			return err
 		}
 		// Wait for canal to catch up before determining if the changeset
-		// length is considered trivial.
+		// length is considered trivial. If it can't catch up before the
+		// timeout is reached (default 10s), it will return an error.
+		// In which case we are fine to just continue, which will start
+		// the loop again. After we flush what new changes we discovered here,
+		// we can try BlockWaiting again.
 		if err := c.BlockWait(ctx); err != nil {
-			return err
+			c.logger.Warnf("error waiting for canal to catch up: %v", err)
+			continue
 		}
 		if c.GetDeltaLen() < binlogTrivialThreshold {
 			break
