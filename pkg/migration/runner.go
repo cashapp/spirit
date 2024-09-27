@@ -202,7 +202,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 
 	// Take a metadata lock to prevent other migrations from running concurrently.
-	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), r.table.QuotedName, r.logger)
+	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), r.table.TableName, r.logger)
 	if err != nil {
 		return err
 	}
