@@ -333,7 +333,7 @@ func TestTableLength(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "is too long")
+	assert.ErrorContains(t, err, "table name must be less than 54 characters")
 	assert.NoError(t, m.Close())
 
 	// There is another condition where the error will be in dropping the _old table first
@@ -350,7 +350,7 @@ func TestTableLength(t *testing.T) {
 	assert.NoError(t, err)
 	err = m.Run(context.Background())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "is too long")
+	assert.ErrorContains(t, err, "table name must be less than 54 characters")
 	assert.NoError(t, m.Close())
 }
 
@@ -2763,6 +2763,12 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 			continue // table does not exist yet
 		}
 		if rowCount > 0 {
+			// Test that it's not possible to acquire metadata lock with name
+			// as tablename while the migration is running.
+			lock, err := dbconn.NewMetadataLock(ctx, testutils.DSN(),
+				tableName, &testLogger{})
+			assert.ErrorContains(t, err, "could not acquire metadata lock: resume_checkpoint_e2e_w_sentinel, lock is held by another connection")
+			assert.Nil(t, lock)
 			break
 		}
 	}
