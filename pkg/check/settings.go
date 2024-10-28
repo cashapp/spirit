@@ -25,9 +25,9 @@ func settingsCheck(ctx context.Context, r Resources, logger loggers.Advanced) er
 	if r.TargetChunkTime < 100*time.Millisecond || r.TargetChunkTime > 5*time.Second {
 		return errors.New("--target-chunk-time must be in the range of 100ms-5s")
 	}
-	// ReplicaMaxLag must be in the range of 10s-1hr
-	if r.ReplicaMaxLag < 10*time.Second || r.ReplicaMaxLag > time.Hour {
-		return errors.New("--replica-max-lag must be in the range of 10s-1hr")
+	// ReplicaMaxLag must be in the range of 10s-4hr
+	if r.ReplicaMaxLag < 10*time.Second || r.ReplicaMaxLag > time.Hour*4 {
+		return errors.New("--replica-max-lag must be in the range of 10s-4hr")
 	}
 	return nil
 }
