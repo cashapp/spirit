@@ -2,6 +2,7 @@ package dbconn
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -21,6 +22,8 @@ type MetadataLock struct {
 	cancel          context.CancelFunc
 	closeCh         chan error
 	refreshInterval time.Duration
+	ticker          *time.Ticker
+	dbConn          *sql.DB
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
@@ -47,6 +50,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	if err != nil {
 		return nil, err
 	}
+	mdl.dbConn = dbConn
 
 	// Function to acquire the lock
 	getLock := func() error {
@@ -79,8 +83,8 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 	ctx, mdl.cancel = context.WithCancel(ctx)
 	mdl.closeCh = make(chan error)
 	go func() {
-		ticker := time.NewTicker(mdl.refreshInterval)
-		defer ticker.Stop()
+		mdl.ticker = time.NewTicker(mdl.refreshInterval)
+		defer mdl.ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
@@ -88,7 +92,7 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 				logger.Warnf("releasing metadata lock: %s", lockName)
 				mdl.closeCh <- dbConn.Close()
 				return
-			case <-ticker.C:
+			case <-mdl.ticker.C:
 				if err = getLock(); err != nil {
 					// if we can't refresh the lock, it's okay.
 					// We have other safety mechanisms in place to prevent corruption
@@ -107,6 +111,21 @@ func NewMetadataLock(ctx context.Context, dsn string, lockName string, logger lo
 }
 
 func (m *MetadataLock) Close() error {
+	// Handle odd race situation here where the cancel func is nil somehow
+	if m.cancel == nil {
+		// Make a best effort to cleanup
+		if m.ticker != nil {
+			m.ticker.Stop()
+		}
+		if m.closeCh != nil {
+			close(m.closeCh)
+		}
+		if m.dbConn != nil {
+			return m.dbConn.Close()
+		}
+		return nil
+	}
+
 	// Cancel the background refresh runner
 	m.cancel()
 
