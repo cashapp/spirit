@@ -2,6 +2,7 @@ package migration
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -244,4 +245,49 @@ func TestGeneratedColumns(t *testing.T) {
 
 	err = migration.Run()
 	assert.NoError(t, err)
+}
+
+type testcase struct {
+	OldType string
+	NewType string
+}
+
+// TestBinaryChecksum tests that we can alter a binary column and still get a checksum match.
+// It works fine from varbinary(50)->varbinary(100), but not from binary(50)->binary(100),
+// without an intermediate cast.
+func TestBinaryChecksum(t *testing.T) {
+	tests := []testcase{
+		{"binary(50)", "varbinary(100)"},
+		{"binary(50)", "binary(100)"},
+		{"varbinary(100)", "varbinary(50)"},
+		{"varbinary(100)", "binary(50)"},
+		{"blob", "tinyblob"},
+		{"tinyblob", "blob"},
+		{"mediumblob", "tinyblob"},
+		{"longblob", "mediumblob"},
+		{"binary(100)", "blob"},
+		{"blob", "binary(100)"},
+	}
+	for _, test := range tests {
+		testutils.RunSQL(t, `DROP TABLE IF EXISTS t1varbin, _t1varbin_new`)
+		table := fmt.Sprintf(`CREATE TABLE t1varbin (
+	 id int not null primary key auto_increment,
+    b %s not null
+	)`, test.OldType)
+		testutils.RunSQL(t, table)
+		testutils.RunSQL(t, `insert into t1varbin values (null, 'abcdefg')`)
+		migration := &Migration{}
+		cfg, err := mysql.ParseDSN(testutils.DSN())
+		assert.NoError(t, err)
+		migration.Host = cfg.Addr
+		migration.Username = cfg.User
+		migration.Password = cfg.Passwd
+		migration.Database = cfg.DBName
+		migration.Threads = 1
+		migration.Checksum = true
+		migration.Table = "t1varbin"
+		migration.Alter = fmt.Sprintf("CHANGE b b %s not null", test.NewType) //nolint: dupword
+		err = migration.Run()
+		assert.NoError(t, err)
+	}
 }

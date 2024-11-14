@@ -52,7 +52,7 @@ func TestCastableTp(t *testing.T) {
 		{"longblob", "binary"},
 		{"varbinary", "binary"},
 		{"char(100)", "char"},
-		{"binary(100)", "binary"},
+		{"binary(100)", "binary(0)"},
 		{"datetime", "datetime"},
 		{"datetime(6)", "datetime"},
 		{"year", "char"},
