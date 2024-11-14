@@ -36,8 +36,10 @@ func castableTp(tp string) string {
 		return "datetime"
 	case "varchar", "enum", "set", "text", "mediumtext", "longtext":
 		return "char"
-	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary", "binary":
+	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary":
 		return "binary"
+	case "binary":
+		return "binary(0)" // weirdly only binary needs special handling; blob etc is fine.
 	case "float", "double": // required for MySQL 5.7
 		return "char"
 	case "json":
