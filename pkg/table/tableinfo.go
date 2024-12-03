@@ -257,17 +257,17 @@ func (t *TableInfo) setMinMax(ctx context.Context) error {
 		return nil // we don't min/max binary types for now.
 	}
 	query := fmt.Sprintf("SELECT IFNULL(min(%s),'0'), IFNULL(max(%s),'0') FROM %s", t.KeyColumns[0], t.KeyColumns[0], t.QuotedName)
-	var min, max string
-	err := t.db.QueryRowContext(ctx, query).Scan(&min, &max)
+	var minimum, maximum string
+	err := t.db.QueryRowContext(ctx, query).Scan(&minimum, &maximum)
 	if err != nil {
 		return err
 	}
 
-	t.minValue, err = newDatumFromMySQL(min, t.keyColumnsMySQLTp[0])
+	t.minValue, err = newDatumFromMySQL(minimum, t.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}
-	t.maxValue, err = newDatumFromMySQL(max, t.keyColumnsMySQLTp[0])
+	t.maxValue, err = newDatumFromMySQL(maximum, t.keyColumnsMySQLTp[0])
 	if err != nil {
 		return err
 	}

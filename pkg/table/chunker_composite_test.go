@@ -305,7 +305,7 @@ func TestCompositeLowWatermark(t *testing.T) {
 
 	watermark, err := chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1008\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2032\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1008\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2032\"],\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
@@ -313,7 +313,7 @@ func TestCompositeLowWatermark(t *testing.T) {
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
 
 	chunkAsync1, err := chunker.Next()
 	assert.NoError(t, err)
@@ -330,28 +330,28 @@ func TestCompositeLowWatermark(t *testing.T) {
 	chunker.Feedback(chunkAsync2, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync3, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":100,\"LowerBound\":{\"Value\": [\"2032\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2133\"],\"Inclusive\":false}}", watermark)
 
 	chunker.Feedback(chunkAsync1, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2155\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2166\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2155\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2166\"],\"Inclusive\":false}}", watermark)
 
 	chunk, err = chunker.Next()
 	assert.NoError(t, err)
 	assert.Equal(t, "`pk` >= 2166 AND `pk` < 2177", chunk.String())
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2155\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2166\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2155\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2166\"],\"Inclusive\":false}}", watermark)
 	chunker.Feedback(chunk, time.Second)
 	watermark, err = chunker.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2166\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2177\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"pk\"],\"ChunkSize\":10,\"LowerBound\":{\"Value\": [\"2166\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2177\"],\"Inclusive\":false}}", watermark)
 
 	// Give enough feedback that the chunk size recalculation runs.
 	assert.Equal(t, 10, int(chunker.chunkSize))

@@ -324,7 +324,7 @@ applyStoredChunks:
 }
 
 func (t *chunkerOptimistic) waterMarkMapNotEmpty() bool {
-	return t.lowerBoundWatermarkMap != nil && len(t.lowerBoundWatermarkMap) != 0
+	return len(t.lowerBoundWatermarkMap) != 0
 }
 
 func (t *chunkerOptimistic) open() (err error) {
