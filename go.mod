@@ -2,6 +2,8 @@ module github.com/cashapp/spirit
 
 go 1.22
 
+toolchain go1.22.9
+
 require (
 	github.com/alecthomas/kong v0.7.1
 	github.com/go-mysql-org/go-mysql v1.8.1-0.20240805131754-ccf204bf2b2a
