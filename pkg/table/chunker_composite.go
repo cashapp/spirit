@@ -145,7 +145,7 @@ func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 	}
 	columns := make([]sql.RawBytes, len(columnNames))
 	columnPointers := make([]interface{}, len(columnNames))
-	for i := range len(columnNames) {
+	for i := range columnNames {
 		columnPointers[i] = &columns[i]
 	}
 	rowsFound := false
@@ -330,7 +330,7 @@ applyStoredChunks:
 }
 
 func (t *chunkerComposite) waterMarkMapNotEmpty() bool {
-	return t.lowerBoundWatermarkMap != nil && len(t.lowerBoundWatermarkMap) != 0
+	return len(t.lowerBoundWatermarkMap) != 0
 }
 
 func (t *chunkerComposite) open() (err error) {

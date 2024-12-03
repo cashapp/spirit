@@ -33,7 +33,6 @@ linters:
     - wsl
     - funlen
     - gocognit
-    - gomnd
     - goprintffuncname
     - paralleltest
     - nlreturn
@@ -51,6 +50,7 @@ linters:
     - thelper
     - godox
     - goconst
+    - exportloopref
 
 linters-settings:
   govet:

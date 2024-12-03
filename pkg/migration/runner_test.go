@@ -821,7 +821,7 @@ func TestCheckpoint(t *testing.T) {
 	// gives feedback back to table.
 	watermark, err := r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
@@ -856,7 +856,7 @@ func TestCheckpoint(t *testing.T) {
 	// the last checkpoint because on restore, the LowerBound is taken.
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
 
@@ -869,7 +869,7 @@ func TestCheckpoint(t *testing.T) {
 
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
 	assert.NoError(t, r.db.Close())
 }
 
@@ -1128,7 +1128,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 
 	watermark, err := m.copier.GetLowWatermark()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
+	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
 	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
 
