@@ -1,6 +1,6 @@
 ## Minimum Requirements
 
-Spirit requires go 1.22 or higher. MySQL version 8.0 and higher is required for performing schema changes.
+Spirit requires go 1.23 or higher. MySQL version 8.0 and higher is required for performing schema changes.
 
 ## Running tests
 
