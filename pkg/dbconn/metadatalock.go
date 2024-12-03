@@ -57,6 +57,11 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 		// The hash is truncated to 8 characters to avoid the maximum lock length.
 		// bizarrely_long_schema_name.thisisareallylongtablenamethisisareallylongtablename60charac ==>
 		// bizarrely_long_schem.thisisareallylongtablenamethisis-66fec116
+		//
+		// The computation of the hash is done server-side to simplify the whole process,
+		// but that means we can't easily log the actual lock name used. If you want to do that
+		// in the future, just add another MySQL round-trip to compute the lock name server-side
+		// and then use the returned string in the GET_LOCK call.
 		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK( concat(left(%?,20),'.',left(%?,32),'-',left(sha1(concat(%?,%?)),8)), %?)", table.SchemaName, table.TableName, table.SchemaName, table.TableName, getLockTimeout.Seconds())
 		if err := dbConn.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
 			return fmt.Errorf("could not acquire metadata lock: %s", err)
