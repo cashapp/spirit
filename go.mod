@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/alecthomas/kong v0.7.1
-	github.com/go-mysql-org/go-mysql v1.8.1-0.20240805131754-ccf204bf2b2a
+	github.com/go-mysql-org/go-mysql v1.9.1
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20231103042308-035ad5ccbe67
