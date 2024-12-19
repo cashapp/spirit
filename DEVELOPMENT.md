@@ -10,10 +10,6 @@ The tests require a MySQL server to run. If you have MySQL installed locally, yo
 MYSQL_DSN="root:mypassword@tcp(127.0.0.1:3306)/test" go test -v ./...
 ```
 
-### Install dbdeployer
-
-We use (and recommend) [dbdeployer](https://github.com/datacharmer/dbdeployer) for running the tests against multiple MySQL versions at once. For example, with MySQL 8.0.32 installed from dbdeployer:
-
 ```bash
 # deploy 8.0.32
 dbdeployer deploy single 8.0.32
