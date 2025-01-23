@@ -1,6 +1,9 @@
 package dbconn
 
 import (
+	"crypto/x509"
+	"encoding/pem"
+	"os"
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/testutils"
@@ -91,4 +94,45 @@ func TestNewConnRejectsReadOnlyConnections(t *testing.T) {
 	err = db.QueryRow("select count(*) from conn_read_only where a = 1").Scan(&count)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, count)
+}
+
+func TestLoadCertificateBundle(t *testing.T) {
+	// create a temp cert bundle
+	tempFile, err := os.CreateTemp(t.TempDir(), "cert_bundle_*.pem")
+	assert.NoError(t, err, "Failed to create temp file")
+	defer os.Remove(tempFile.Name())
+
+	testData := []byte("-----BEGIN CERTIFICATE-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7\n-----END CERTIFICATE-----")
+	_, err = tempFile.Write(testData)
+	assert.NoError(t, err, "Failed to write to temp file")
+	err = tempFile.Close()
+	assert.NoError(t, err, "Failed to close temp file")
+
+	certBundle, err := LoadCertificateBundle(tempFile.Name())
+	assert.NoError(t, err, "Failed to load certificate bundle")
+
+	// verify the loaded cert bundle
+	assert.Equal(t, testData, certBundle, "Loaded certificate bundle does not match expected data")
+}
+
+func TestValidCertificateBundle(t *testing.T) {
+	// load certificate bundle from file
+	certBundle, err := LoadCertificateBundle("../../certs/rds/rdsGlobalBundle.pem")
+	assert.NoError(t, err, "Failed to load certificate bundle")
+
+	// parse certificate bundle
+	var block *pem.Block
+	foundCertificates := false
+	for {
+		block, certBundle = pem.Decode(certBundle)
+		if block == nil {
+			break
+		}
+		_, err := x509.ParseCertificate(block.Bytes)
+		assert.NoError(t, err, "Failed to parse certificate")
+		foundCertificates = true
+	}
+
+	// ensure that at least one certificate was parsed
+	assert.True(t, foundCertificates, "No certificates found in bundle")
 }
