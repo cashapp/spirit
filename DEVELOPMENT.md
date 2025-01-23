@@ -22,5 +22,5 @@ docker compose up mysql test --abort-on-container-exit
 ## Running linter
 
 ```bash
-golanglint-ci run
+golangci-lint run
 ```
