@@ -30,7 +30,7 @@ var (
 	once    sync.Once
 )
 
-// loads certificate bundle from a file
+// LoadCertificateBundle loads certificate bundle from a file
 func LoadCertificateBundle(filePath string) ([]byte, error) {
 	certBundle, err := os.ReadFile(filePath)
 	if err != nil {
