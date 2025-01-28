@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/siddontang/loggers"
 
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/sirupsen/logrus"
@@ -57,6 +58,8 @@ func TestMetadataLockContextCancel(t *testing.T) {
 func TestMetadataLockRefresh(t *testing.T) {
 	lockTableInfo := table.TableInfo{SchemaName: "test", TableName: "test-refresh"}
 	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
+
 	mdl, err := NewMetadataLock(context.Background(), testutils.DSN(), &lockTableInfo, logger, func(mdl *MetadataLock) {
 		// override the refresh interval for faster testing
 		mdl.refreshInterval = 2 * time.Second
@@ -87,4 +90,42 @@ func TestMetadataLockLength(t *testing.T) {
 
 	_, err = NewMetadataLock(context.Background(), testutils.DSN(), empty, logger)
 	assert.ErrorContains(t, err, "metadata lock table info is nil")
+}
+
+// simulateConnectionClose simulates a temporary network issue by closing the connection
+func simulateConnectionClose(t *testing.T, mdl *MetadataLock, logger loggers.Advanced) {
+	// close the existing connection to simulate a network issue
+	err := mdl.CloseDBConnection(logger)
+	assert.NoError(t, err)
+
+	// wait a bit to ensure the connection is closed
+	time.Sleep(1 * time.Second)
+}
+
+func TestMetadataLockRefreshWithConnIssueSimulation(t *testing.T) {
+	lockTableInfo := table.TableInfo{SchemaName: "test", TableName: "test-refresh"}
+	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
+
+	// create a new MetadataLock with a short refresh interval for testing
+	mdl, err := NewMetadataLock(context.Background(), testutils.DSN(), &lockTableInfo, logger, func(mdl *MetadataLock) {
+		mdl.refreshInterval = 2 * time.Second
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, mdl)
+
+	time.Sleep(4 * time.Second)
+
+	// simulate a temporary network issue by closing the connection
+	simulateConnectionClose(t, mdl, logger)
+
+	// wait for the refresh interval to trigger the connection failure and recovery
+	time.Sleep(4 * time.Second)
+
+	// confirm the lock is still held by attempting to acquire it with a new connection
+	_, err = NewMetadataLock(context.Background(), testutils.DSN(), &lockTableInfo, logger)
+	assert.ErrorContains(t, err, "lock is held by another connection")
+
+	// close the lock
+	assert.NoError(t, mdl.Close())
 }
