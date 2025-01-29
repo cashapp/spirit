@@ -58,7 +58,6 @@ func TestMetadataLockContextCancel(t *testing.T) {
 func TestMetadataLockRefresh(t *testing.T) {
 	lockTableInfo := table.TableInfo{SchemaName: "test", TableName: "test-refresh"}
 	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
 
 	mdl, err := NewMetadataLock(context.Background(), testutils.DSN(), &lockTableInfo, logger, func(mdl *MetadataLock) {
 		// override the refresh interval for faster testing
