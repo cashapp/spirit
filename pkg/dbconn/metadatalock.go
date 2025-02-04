@@ -24,7 +24,7 @@ type MetadataLock struct {
 	cancel          context.CancelFunc
 	closeCh         chan error
 	refreshInterval time.Duration
-	dbConn          *sql.DB
+	db              *sql.DB
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
@@ -45,7 +45,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 	dbConfig := NewDBConfig()
 	dbConfig.MaxOpenConnections = 1
 	var err error
-	mdl.dbConn, err = New(dsn, dbConfig)
+	mdl.db, err = New(dsn, dbConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 		// in the future, just add another MySQL round-trip to compute the lock name server-side
 		// and then use the returned string in the GET_LOCK call.
 		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK( concat(left(%?,20),'.',left(%?,32),'-',left(sha1(concat(%?,%?)),8)), %?)", table.SchemaName, table.TableName, table.SchemaName, table.TableName, getLockTimeout.Seconds())
-		if err := mdl.dbConn.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
+		if err := mdl.db.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
 			return fmt.Errorf("could not acquire metadata lock: %s", err)
 		}
 		if answer == 0 {
@@ -102,7 +102,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 			case <-ctx.Done():
 				// Close the dedicated connection to release the lock
 				logger.Warnf("releasing metadata lock for %s.%s", table.SchemaName, table.TableName)
-				mdl.closeCh <- mdl.dbConn.Close()
+				mdl.closeCh <- mdl.db.Close()
 				return
 			case <-ticker.C:
 				if err = getLock(); err != nil {
@@ -114,13 +114,13 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 					logger.Warnf("could not refresh metadata lock: %s", err)
 
 					// try to close the existing connection
-					if closeErr := mdl.dbConn.Close(); closeErr != nil {
+					if closeErr := mdl.db.Close(); closeErr != nil {
 						logger.Warnf("could not close database connection: %s", closeErr)
 						continue
 					}
 
 					// try to re-establish the connection
-					mdl.dbConn, err = New(dsn, dbConfig)
+					mdl.db, err = New(dsn, dbConfig)
 					if err != nil {
 						logger.Warnf("could not re-establish database connection: %s", err)
 						continue
@@ -154,8 +154,8 @@ func (m *MetadataLock) Close() error {
 func (m *MetadataLock) CloseDBConnection(logger loggers.Advanced) error {
 	// Closes the database connection for the MetadataLock
 	logger.Infof("About to close MetadataLock database connection")
-	if m.dbConn != nil {
-		return m.dbConn.Close()
+	if m.db != nil {
+		return m.db.Close()
 	}
 	return nil
 }
