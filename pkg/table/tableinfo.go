@@ -292,7 +292,7 @@ func (t *TableInfo) AutoUpdateStatistics(ctx context.Context, interval time.Dura
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := t.updateTableStatistics(ctx); err != nil {
+			if err := t.updateTableStatistics(ctx, logger); err != nil {
 				logger.Errorf("error updating table statistics: %v", err)
 			}
 			logger.Infof("table statistics updated: estimated-rows=%d pk[0].max-value=%v", t.EstimatedRows, t.MaxValue())
@@ -308,17 +308,24 @@ func (t *TableInfo) statisticsNeedUpdating() bool {
 }
 
 // updateTableStatistics recalculates the min/max and row estimate.
-func (t *TableInfo) updateTableStatistics(ctx context.Context) error {
+func (t *TableInfo) updateTableStatistics(ctx context.Context, logger loggers.Advanced) error {
+	logger.Infof("About to acquire statistics lock")
 	t.statisticsLock.Lock()
 	defer t.statisticsLock.Unlock()
+	logger.Infof("Acquired statistics lock")
+
+	logger.Infof("setMinMax() started")
 	err := t.setMinMax(ctx)
 	if err != nil {
+		logger.Errorf("setMinMax() failed: %v", err)
 		return err
 	}
+	logger.Infof("setMinMax() completed")
 	err = t.setRowEstimate(ctx)
 	if err != nil {
 		return err
 	}
+	logger.Infof("setRowEstimate() completed")
 	t.statisticsLastUpdated = time.Now()
 	return nil
 }

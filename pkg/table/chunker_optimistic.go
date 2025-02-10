@@ -107,6 +107,7 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		return nil, ErrTableNotOpen
 	}
 
+	t.logger.Infof("Doing null check on chunkPtr: %v", t.chunkPtr)
 	// If there is a minimum value, we attempt to apply
 	// the minimum value optimization.
 	if t.chunkPtr.IsNil() {
@@ -117,21 +118,27 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 			UpperBound: &Boundary{[]Datum{t.chunkPtr}, false},
 		}, nil
 	}
+	t.logger.Infof("Finished null check on chunkPtr: %v", t.chunkPtr)
+
 	if t.chunkPrefetchingEnabled {
 		return t.nextChunkByPrefetching()
 	}
 
+	t.logger.Infof("About to check if chunkPtr is greater than or equal to"+
+		" max value and a statistics check, chunkPtr: %v, maxValue: %v",
+		t.chunkPtr, t.Ti.maxValue)
 	// Before we return a final open bounded chunk, we check if the statistics
 	// need updating, in which case we synchronously refresh them.
 	// This helps reduce the risk of a very large unbounded
 	// chunk from a table that is actively growing.
 	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) && t.Ti.statisticsNeedUpdating() {
 		t.logger.Info("approaching the end of the table, synchronously updating statistics")
-		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
+		if err := t.Ti.updateTableStatistics(context.TODO(), t.logger); err != nil {
 			return nil, err
 		}
 		t.logger.Info("synchronously updating statistics complete")
 	}
+
 	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
 	// the maximum value optimization which is to return an open bounded
 	// chunk.
