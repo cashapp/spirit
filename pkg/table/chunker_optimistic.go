@@ -96,8 +96,10 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 }
 
 func (t *chunkerOptimistic) Next() (*Chunk, error) {
+	t.logger.Info("Acquiring mutex lock")
 	t.Lock()
 	defer t.Unlock()
+	t.logger.Info("Mutex lock acquired")
 	if t.finalChunkSent {
 		return nil, ErrTableIsRead
 	}
@@ -128,24 +130,26 @@ func (t *chunkerOptimistic) Next() (*Chunk, error) {
 		if err := t.Ti.updateTableStatistics(context.TODO()); err != nil {
 			return nil, err
 		}
+		t.logger.Info("synchronously updating statistics complete")
 	}
-
 	// Only now if there is a maximum value and the chunkPtr exceeds it, we apply
 	// the maximum value optimization which is to return an open bounded
 	// chunk.
+	t.logger.Infof("About to perform max value check, chunkPtr: %v", t.chunkPtr)
 	if t.chunkPtr.GreaterThanOrEqual(t.Ti.maxValue) {
+		t.logger.Info("chunkPtr is greater than or equal to max value")
 		t.finalChunkSent = true
+		t.logger.Info("sending final chunk")
 		return &Chunk{
 			ChunkSize:  t.chunkSize,
 			Key:        t.Ti.KeyColumns,
 			LowerBound: &Boundary{[]Datum{t.chunkPtr}, true},
 		}, nil
 	}
-
 	// This is the typical case. We return a chunk with a lower bound
 	// of the current chunkPtr and an upper bound of the chunkPtr + chunkSize,
 	// but not exceeding math.MaxInt64.
-
+	t.logger.Infof("About to return next chunk, chunkPtr: %v", t.chunkPtr)
 	minVal := t.chunkPtr
 	maxVal := t.chunkPtr.Add(t.chunkSize)
 	t.chunkPtr = maxVal
