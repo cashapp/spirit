@@ -17,6 +17,45 @@ import (
 	"github.com/cashapp/spirit/pkg/table"
 )
 
+func TestCharsetChangeChecksum(t *testing.T) {
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS basic_checksum, _basic_checksum_new, _basic_checksum_chkpnt")
+	testutils.RunSQL(t, "CREATE TABLE basic_checksum (a INT NOT NULL, b text,"+
+		" c INT, PRIMARY KEY (a)) DEFAULT CHARSET=latin1")
+	testutils.RunSQL(t, "CREATE TABLE _basic_checksum_new (a INT NOT NULL, "+
+		"b text, c INT, PRIMARY KEY (a)) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci")
+	testutils.RunSQL(t, "CREATE TABLE _basic_checksum_chkpnt (a INT)") // for binlog advancement
+	testutils.RunSQL(t, "INSERT INTO basic_checksum VALUES (1, "+
+		"'The account successfully sent funds via three transfers totaling €3,037.97', 3)")
+	testutils.RunSQL(t, "INSERT INTO _basic_checksum_new VALUES (1, "+
+		"'The account successfully sent funds via three transfers totaling €3,037.97', 3)")
+
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+
+	t1 := table.NewTableInfo(db, "test", "basic_checksum")
+	assert.NoError(t, t1.SetInfo(context.TODO()))
+	t2 := table.NewTableInfo(db, "test", "_basic_checksum_new")
+	assert.NoError(t, t2.SetInfo(context.TODO()))
+	logger := logrus.New()
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
+	})
+	assert.NoError(t, feed.Run())
+
+	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
+	assert.NoError(t, err)
+
+	assert.Nil(t, checker.recentValue)
+	assert.Equal(t, "TBD", checker.RecentValue())
+	assert.NoError(t, checker.Run(context.Background()))
+	assert.Equal(t, "TBD", checker.RecentValue()) // still TBD because its a 1 and done chunker.
+}
+
 func TestBasicChecksum(t *testing.T) {
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS basic_checksum, _basic_checksum_new, _basic_checksum_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE basic_checksum (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
