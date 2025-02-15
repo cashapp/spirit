@@ -317,7 +317,7 @@ func TestConvertCharset(t *testing.T) {
 	err = migration.Run()
 	assert.NoError(t, err)
 
-	// Because utf8mb4 is the superset, it doesn't matter that thats
+	// Because utf8mb4 is the superset, it doesn't matter that that's
 	// what the checksum casts to. We should be able to convert back as well.
 	migration = &Migration{
 		Host:     cfg.Addr,
