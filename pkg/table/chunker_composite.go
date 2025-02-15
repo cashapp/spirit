@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/siddontang/loggers"
-	"golang.org/x/exp/slices"
 )
 
 type chunkerComposite struct {

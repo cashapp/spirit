@@ -58,7 +58,7 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 
 	assert.False(t, chunker.KeyAboveHighWatermark(100)) // we are at 1001
 
-	for i := 0; i <= 998; i++ {
+	for range 999 {
 		_, err = chunker.Next()
 		assert.NoError(t, err)
 	}
