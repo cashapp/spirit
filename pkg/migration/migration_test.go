@@ -291,3 +291,44 @@ func TestBinaryChecksum(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+// TestConvertCharset tests that we can change the character set from latin1 to utf8mb4,
+// and that the non 7-bit characters that can be represented in latin1 as 1 byte,
+// checksum correctly against their multi-byte utf8mb4 representations
+func TestConvertCharset(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1charset, _t1charset_new`)
+	table := `CREATE TABLE t1charset (
+	 id int not null primary key auto_increment,
+    b varchar(100) not null
+	) charset=latin1`
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `insert into t1charset values (null, 'à'), (null, '€')`)
+	migration := &Migration{}
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration.Host = cfg.Addr
+	migration.Username = cfg.User
+	migration.Password = cfg.Passwd
+	migration.Database = cfg.DBName
+	migration.Threads = 1
+	migration.Checksum = true
+	migration.Table = "t1charset"
+	migration.Alter = "CONVERT TO CHARACTER SET UTF8MB4"
+	err = migration.Run()
+	assert.NoError(t, err)
+
+	// Because utf8mb4 is the superset, it doesn't matter that that's
+	// what the checksum casts to. We should be able to convert back as well.
+	migration = &Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Checksum: true,
+		Table:    "t1charset",
+		Alter:    "CONVERT TO CHARACTER SET latin1",
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}

@@ -42,20 +42,20 @@ func TestCastableTp(t *testing.T) {
 		{"bigint unsigned", "unsigned"},
 		{"timestamp", "datetime"},
 		{"timestamp(6)", "datetime"},
-		{"varchar(100)", "char"},
-		{"text", "char"},
-		{"mediumtext", "char"},
-		{"longtext", "char"},
+		{"varchar(100)", "char CHARACTER SET utf8mb4"},
+		{"text", "char CHARACTER SET utf8mb4"},
+		{"mediumtext", "char CHARACTER SET utf8mb4"},
+		{"longtext", "char CHARACTER SET utf8mb4"},
 		{"tinyblob", "binary"},
 		{"blob", "binary"},
 		{"mediumblob", "binary"},
 		{"longblob", "binary"},
 		{"varbinary", "binary"},
-		{"char(100)", "char"},
+		{"char(100)", "char CHARACTER SET utf8mb4"},
 		{"binary(100)", "binary(0)"},
 		{"datetime", "datetime"},
 		{"datetime(6)", "datetime"},
-		{"year", "char"},
+		{"year", "char CHARACTER SET utf8mb4"},
 		{"float", "char"},
 		{"double", "char"},
 		{"json", "json"},
@@ -63,12 +63,12 @@ func TestCastableTp(t *testing.T) {
 		{"int(11) unsigned", "unsigned"},
 		{"int(11) zerofill", "signed"},
 		{"int(11) unsigned zerofill", "unsigned"},
-		{"enum('a', 'b', 'c')", "char"},
-		{"set('a', 'b', 'c')", "char"},
+		{"enum('a', 'b', 'c')", "char CHARACTER SET utf8mb4"},
+		{"set('a', 'b', 'c')", "char CHARACTER SET utf8mb4"},
 		{"decimal(6,2)", "decimal(6,2)"},
 	}
 	for _, tp := range tps {
-		assert.Equal(t, tp.expected, castableTp(tp.tp))
+		assert.Equal(t, tp.expected, castableTp(tp.tp), "tp failed: %s, expected: %s", tp.tp, tp.expected)
 	}
 }
 
