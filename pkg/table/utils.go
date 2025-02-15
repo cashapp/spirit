@@ -34,8 +34,6 @@ func castableTp(tp string) string {
 		return "unsigned"
 	case "timestamp", "datetime":
 		return "datetime"
-	case "varchar", "enum", "set", "text", "mediumtext", "longtext":
-		return "char"
 	case "tinyblob", "blob", "mediumblob", "longblob", "varbinary":
 		return "binary"
 	case "binary":
@@ -47,7 +45,10 @@ func castableTp(tp string) string {
 	case "decimal":
 		return tp
 	default:
-		return "char" // default to char because it ends up being a char string in the concat anyway.
+		// For cases like varchar, enum, set, text, mediumtext, longtext
+		// We return char, but because the new table could also change charset we explicitly
+		// convert to utf8mb4 which should be the superset, and can do all comparisons.
+		return "char CHARACTER SET utf8mb4"
 	}
 }
 
