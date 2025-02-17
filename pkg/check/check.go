@@ -29,7 +29,8 @@ type Resources struct {
 	DB                   *sql.DB
 	Replica              *sql.DB
 	Table                *table.TableInfo
-	Alter                string
+	Alter                string // as ALTER
+	Statement            string // as full SQL statement
 	TargetChunkTime      time.Duration
 	Threads              int
 	ReplicaMaxLag        time.Duration

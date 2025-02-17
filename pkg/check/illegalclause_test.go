@@ -4,41 +4,30 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cashapp/spirit/pkg/table"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestIllegalClauseCheck(t *testing.T) {
 	r := Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "ALGORITHM=INPLACE",
+		Statement: "ALTER TABLE t1 ADD INDEX (b), ALGORITHM=INPLACE",
 	}
 	err := illegalClauseCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "ALTER contains unsupported clause")
+	assert.ErrorContains(t, err, "contains unsupported clause")
 
-	r = Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "ALGORITHM=INPLACE, LOCK=shared",
-	}
+	r.Statement = "ALTER TABLE t1  ADD c INT, ALGORITHM=INPLACE, LOCK=shared"
 	err = illegalClauseCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "ALTER contains unsupported clause")
+	assert.ErrorContains(t, err, "contains unsupported clause")
 
-	r = Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "lock=none",
-	}
+	r.Statement = "ALTER TABLE t1  ADD c INT, lock=none"
 	err = illegalClauseCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "ALTER contains unsupported clause")
+	assert.ErrorContains(t, err, "contains unsupported clause")
 
-	r = Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "engine=innodb, algorithm=copy",
-	}
+	r.Statement = "ALTER TABLE t1 engine=innodb, algorithm=copy"
 	err = illegalClauseCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "ALTER contains unsupported clause")
+	assert.ErrorContains(t, err, "contains unsupported clause")
 }

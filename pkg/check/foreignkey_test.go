@@ -13,18 +13,17 @@ import (
 
 func TestAddForeignKey(t *testing.T) {
 	r := Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "ADD FOREIGN KEY (customer_id) REFERENCES customers (id)",
+		Statement: "ALTER TABLE t1 ADD FOREIGN KEY (customer_id) REFERENCES customers (id)",
 	}
 	err := addForeignKeyCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err) // add foreign key
 	assert.ErrorContains(t, err, "adding foreign key constraints is not supported")
 
-	r.Alter = "DROP COLUMN foo"
+	r.Statement = "ALTER TABLE t1 DROP COLUMN foo"
 	err = addForeignKeyCheck(context.Background(), r, logrus.New())
 	assert.NoError(t, err) // regular DDL
 
-	r.Alter = "bogus"
+	r.Statement = "bogus"
 	err = addForeignKeyCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err) // not a valid ddl
 }

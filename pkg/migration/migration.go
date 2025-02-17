@@ -4,9 +4,13 @@ package migration
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/check"
+	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/utils"
 )
 
 var (
@@ -31,6 +35,7 @@ type Migration struct {
 	DeferCutOver         bool          `name:"defer-cutover" help:"Defer cutover (and checksum) until sentinel table is dropped" optional:"" default:"false"`
 	Strict               bool          `name:"strict" help:"Exit on --alter mismatch when incomplete migration is detected" optional:"" default:"false"`
 	InterpolateParams    bool          `name:"interpolate-params" help:"Enable interpolate params for DSN" optional:"" default:"false" hidden:""`
+	Statement            string        `name:"statement" help:"The SQL statement to run (replaces --table and --alter)" optional:"" default:""`
 }
 
 func (m *Migration) Run() error {
@@ -44,6 +49,55 @@ func (m *Migration) Run() error {
 	}
 	if err := migration.Run(context.TODO()); err != nil {
 		return err
+	}
+	return nil
+}
+
+// normalizeOptions does some validation and sets defaults.
+// for example, it validates that only --statement or --table and --alter are specified.
+func (m *Migration) normalizeOptions() error {
+	if m.TargetChunkTime == 0 {
+		m.TargetChunkTime = table.ChunkerDefaultTarget
+	}
+	if m.Threads == 0 {
+		m.Threads = 4
+	}
+	if m.ReplicaMaxLag == 0 {
+		m.ReplicaMaxLag = 120 * time.Second
+	}
+	if m.Host == "" {
+		return errors.New("host is required")
+	}
+	if !strings.Contains(m.Host, ":") {
+		m.Host = fmt.Sprintf("%s:%d", m.Host, 3306)
+	}
+	if m.Database == "" {
+		return errors.New("schema name is required")
+	}
+	if m.Statement != "" { // statement is specified
+		if m.Table != "" || m.Alter != "" {
+			return errors.New("only --statement or --table and --alter can be specified")
+		}
+		// extract the table and alter from the statement.
+		// if it is a CREATE INDEX statement, we rewrite it to an alter statement.
+		// This also returns the StmtNode, which we do nothing with so far.
+		// TODO: if it's a CREATE INDEX statement, do we store the rewritten
+		// form in m.Statement?
+		var err error
+		m.Table, m.Alter, err = utils.ExtractFromStatement(m.Statement)
+		if err != nil {
+			return errors.New("could not parse statement")
+		}
+	} else {
+		if m.Table == "" {
+			return errors.New("table name is required")
+		}
+		if m.Alter == "" {
+			return errors.New("alter statement is required")
+		}
+		// Add the statement so that it can be used in some contexts
+		// Where the statement is preferred over the table and alter.
+		m.Statement = fmt.Sprintf("ALTER TABLE `%s`.`%s` %s", m.Database, m.Table, m.Alter)
 	}
 	return nil
 }

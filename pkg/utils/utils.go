@@ -10,6 +10,7 @@ import (
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/pingcap/tidb/pkg/parser"
 	"github.com/pingcap/tidb/pkg/parser/ast"
+	"github.com/pingcap/tidb/pkg/parser/format"
 )
 
 const (
@@ -185,4 +186,75 @@ func AlterContainsIndexVisibility(sql string) error {
 
 func TrimAlter(alter string) string {
 	return strings.TrimSuffix(strings.TrimSpace(alter), ";")
+}
+
+func ExtractFromStatement(statement string) (table string, alter string, err error) {
+	p := parser.New()
+	stmtNodes, _, err := p.Parse(statement, "", "")
+	if err != nil {
+		return "", "", err
+	}
+	if len(stmtNodes) != 1 {
+		return "", "", errors.New("only one statement may be specified at once")
+	}
+	switch stmtNodes[0].(type) {
+	case *ast.AlterTableStmt:
+		// type assert stmtNodes[0] as an AlterTableStmt and then
+		// extract the table and alter from it.
+		// TODO: handle the database name correctly, as it might differ from
+		// what was specified as --database.
+		alterStmt := stmtNodes[0].(*ast.AlterTableStmt)
+		var sb strings.Builder
+		sb.Reset()
+		rCtx := format.NewRestoreCtx(format.DefaultRestoreFlags, &sb)
+		if err = alterStmt.Restore(rCtx); err != nil {
+			return "", "", fmt.Errorf("could not restore alter table statement: %s", err)
+		}
+		normalizedStmt := sb.String()
+		trimLen := len(alterStmt.Table.Name.String()) + 15 // len ALTER TABLE + quotes
+		if len(alterStmt.Table.Schema.String()) > 0 {
+			trimLen += len(alterStmt.Table.Schema.String()) + 3 // len schema + quotes and dot.
+		}
+		return alterStmt.Table.Name.String(), normalizedStmt[trimLen:], nil
+	case *ast.CreateIndexStmt:
+		// Need to rewrite to a corresponding ALTER TABLE statement
+		table, alter, err = convertCreateIndexToAlterTable(stmtNodes[0])
+		return table, alter, err
+	// returning an empty alter means we are allowed to run it
+	// but it's not a spirit migration. But the table should be specified.
+	case *ast.CreateTableStmt:
+		createStmt := stmtNodes[0].(*ast.CreateTableStmt)
+		return createStmt.Table.Name.String(), "", nil
+	case *ast.DropTableStmt:
+		dropStmt := stmtNodes[0].(*ast.DropTableStmt)
+		return dropStmt.Tables[0].Name.String(), "", nil
+	case *ast.RenameTableStmt:
+		renameStmt := stmtNodes[0].(*ast.RenameTableStmt)
+		return renameStmt.TableToTables[0].OldTable.Name.String(), "", nil
+	}
+	// default:
+	return "", "", errors.New("not a supported statement type")
+}
+
+func convertCreateIndexToAlterTable(stmt ast.StmtNode) (table string, alter string, err error) {
+	ciStmt, isCreateIndexStmt := stmt.(*ast.CreateIndexStmt)
+	if !isCreateIndexStmt {
+		return "", "", errors.New("not a CREATE INDEX statement")
+	}
+	var columns []string
+	var keyType string
+	for _, part := range ciStmt.IndexPartSpecifications {
+		columns = append(columns, part.Column.Name.String())
+	}
+	switch ciStmt.KeyType {
+	case ast.IndexKeyTypeUnique:
+		keyType = "UNIQUE INDEX"
+	case ast.IndexKeyTypeFullText:
+		keyType = "FULLTEXT INDEX"
+	case ast.IndexKeyTypeSpatial:
+		keyType = "SPATIAL INDEX"
+	default:
+		keyType = "INDEX"
+	}
+	return ciStmt.Table.Name.String(), fmt.Sprintf("ADD %s %s (%s)", keyType, ciStmt.IndexName, strings.Join(columns, ", ")), nil
 }

@@ -332,3 +332,36 @@ func TestConvertCharset(t *testing.T) {
 	err = migration.Run()
 	assert.NoError(t, err)
 }
+
+func TestStmtWorkflow(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1s, _t1s_new`)
+	table := `CREATE TABLE t1s (
+	 id int not null primary key auto_increment,
+    b varchar(100) not null
+	)`
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: table, // CREATE TABLE.
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+	// We can also specify ALTER options in the statement.
+	migration = &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: "ALTER TABLE t1s ADD COLUMN c int", // ALTER TABLE.
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}

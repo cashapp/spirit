@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -121,37 +120,14 @@ type Progress struct {
 }
 
 func NewRunner(m *Migration) (*Runner, error) {
-	r := &Runner{
+	if err := m.normalizeOptions(); err != nil {
+		return nil, err
+	}
+	return &Runner{
 		migration:   m,
 		logger:      logrus.New(),
 		metricsSink: &metrics.NoopSink{},
-	}
-
-	if r.migration.TargetChunkTime == 0 {
-		r.migration.TargetChunkTime = table.ChunkerDefaultTarget
-	}
-	if r.migration.Threads == 0 {
-		r.migration.Threads = 4
-	}
-	if r.migration.ReplicaMaxLag == 0 {
-		r.migration.ReplicaMaxLag = 120 * time.Second
-	}
-	if r.migration.Host == "" {
-		return nil, errors.New("host is required")
-	}
-	if !strings.Contains(r.migration.Host, ":") {
-		r.migration.Host = fmt.Sprintf("%s:%d", r.migration.Host, 3306)
-	}
-	if r.migration.Database == "" {
-		return nil, errors.New("schema name is required")
-	}
-	if r.migration.Table == "" {
-		return nil, errors.New("table name is required")
-	}
-	if r.migration.Alter == "" {
-		return nil, errors.New("alter statement is required")
-	}
-	return r, nil
+	}, nil
 }
 
 func (r *Runner) SetMetricsSink(sink metrics.Sink) {
@@ -166,7 +142,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	ctx, cancel := context.WithCancel(originalCtx)
 	defer cancel()
 	r.startTime = time.Now()
-	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
+	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table='%s.%s' alter=\"%s\"",
 		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.migration.Table, r.migration.Alter,
 	)
 
@@ -193,6 +169,17 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	r.db, err = dbconn.New(r.dsn(), r.dbConfig)
 	if err != nil {
 		return err
+	}
+
+	if r.migration.Alter == "" {
+		// It's a CREATE TABLE, DROP TABLE, or RENAME table.
+		// These are always instant.
+		err := dbconn.Exec(ctx, r.db, r.migration.Statement)
+		if err != nil {
+			return err
+		}
+		r.logger.Infof("apply complete")
+		return nil
 	}
 
 	// Get Table Info
@@ -232,7 +219,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// Force enable the checksum if it's an ADD UNIQUE INDEX operation
 	// https://github.com/cashapp/spirit/issues/266
 	if !r.migration.Checksum {
-		if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+		if err := utils.AlterContainsAddUnique(r.migration.Statement); err != nil {
 			r.logger.Warnf("force enabling checksum: %v", err)
 			r.migration.Checksum = true
 		}
@@ -243,7 +230,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It likely means the user is combining this operation with other unsafe operations,
 	// which is not a good idea. We need to protect them by not allowing it.
 	// https://github.com/cashapp/spirit/issues/283
-	if err := utils.AlterContainsIndexVisibility("ALTER TABLE unused " + r.migration.Alter); err != nil {
+	if err := utils.AlterContainsIndexVisibility(r.migration.Statement); err != nil {
 		return err
 	}
 
@@ -395,6 +382,7 @@ func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 		Replica:         r.replica,
 		Table:           r.table,
 		Alter:           r.migration.Alter,
+		Statement:       r.migration.Statement,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		Threads:         r.migration.Threads,
 		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
@@ -429,8 +417,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// If the operator has specified that they want to attempt
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
-	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
-	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
+	err = utils.AlgorithmInplaceConsideredSafe(r.migration.Statement)
 	if err != nil {
 		r.logger.Infof("unable to use INPLACE: %v", err)
 	}
@@ -876,7 +863,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			// then the checksum will fail. This is entirely expected, and not considered a bug. We should
 			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
 			// customize the returned error based on it.
-			if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+			if err := utils.AlterContainsAddUnique(r.migration.Statement); err != nil {
 				return errors.New("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
 			}
 			return errors.New("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")

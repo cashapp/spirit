@@ -16,11 +16,10 @@ func init() {
 }
 
 func primaryKeyCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
-	sql := fmt.Sprintf("ALTER TABLE %s %s", r.Table.TableName, r.Alter)
 	p := parser.New()
-	stmtNodes, _, err := p.Parse(sql, "", "")
+	stmtNodes, _, err := p.Parse(r.Statement, "", "")
 	if err != nil {
-		return fmt.Errorf("could not parse alter table statement: %s", sql)
+		return fmt.Errorf("could not parse alter table statement: %s", r.Statement)
 	}
 	stmt := &stmtNodes[0]
 	alterStmt, ok := (*stmt).(*ast.AlterTableStmt)

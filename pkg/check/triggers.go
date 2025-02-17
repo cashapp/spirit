@@ -3,11 +3,8 @@ package check
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
-	"github.com/pingcap/tidb/pkg/parser"
-	"github.com/pingcap/tidb/pkg/parser/ast"
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/siddontang/loggers"
 )
@@ -21,6 +18,9 @@ func init() {
 func hasTriggersCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
 	sql := `SELECT * FROM information_schema.triggers WHERE 
 	(event_object_schema=? AND event_object_table=?)`
+	if r.DB == nil {
+		return errors.New("no database connection")
+	}
 	rows, err := r.DB.QueryContext(ctx, sql, r.Table.SchemaName, r.Table.TableName)
 	if err != nil {
 		return err
@@ -36,21 +36,11 @@ func hasTriggersCheck(ctx context.Context, r Resources, logger loggers.Advanced)
 }
 
 // addTriggersCheck checks for trigger creations, which is not supported
+// Since the TiDB parser doesn't support this, we are using strings.Contains :(
 func addTriggersCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
-	isAddingTrigger := strings.Contains(strings.ToUpper(r.Alter), "CREATE TRIGGER")
+	isAddingTrigger := strings.Contains(strings.ToUpper(strings.TrimSpace(r.Statement)), "CREATE TRIGGER")
 	if isAddingTrigger {
 		return errors.New("adding triggers is not supported")
-	}
-	sql := fmt.Sprintf("ALTER TABLE %s %s", r.Table.TableName, r.Alter)
-	p := parser.New()
-	stmtNodes, _, err := p.Parse(sql, "", "")
-	if err != nil {
-		return fmt.Errorf("could not parse alter table statement: %s", sql)
-	}
-	stmt := &stmtNodes[0]
-	_, ok := (*stmt).(*ast.AlterTableStmt)
-	if !ok {
-		return errors.New("not a valid alter table statement")
 	}
 	return nil // no problems
 }

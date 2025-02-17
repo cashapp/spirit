@@ -16,20 +16,20 @@ import (
 
 func TestAddTriggers(t *testing.T) {
 	r := Resources{
-		Table: &table.TableInfo{TableName: "account"},
-		Alter: "CREATE TRIGGER ins_sum BEFORE INSERT ON account FOR EACH ROW SET @sum = @sum + NEW.amount;",
+		Table:     &table.TableInfo{TableName: "account"},
+		Statement: "CREATE TRIGGER ins_sum BEFORE INSERT ON account FOR EACH ROW SET @sum = @sum + NEW.amount;",
 	}
 	err := addTriggersCheck(context.Background(), r, logrus.New())
 	assert.Error(t, err) // add triggers
 	assert.ErrorContains(t, err, "adding triggers is not supported")
 
-	r.Alter = "DROP COLUMN foo"
-	err = addForeignKeyCheck(context.Background(), r, logrus.New())
+	r.Statement = "ALTER TABLE t.t1 DROP COLUMN foo"
+	err = addTriggersCheck(context.Background(), r, logrus.New())
 	assert.NoError(t, err) // regular DDL
 
-	r.Alter = "bogus"
-	err = addForeignKeyCheck(context.Background(), r, logrus.New())
-	assert.Error(t, err) // not a valid ddl
+	r.Statement = "bogus"
+	err = addTriggersCheck(context.Background(), r, logrus.New())
+	assert.NoError(t, err) // not a valid ddl, but thats ok
 }
 
 func TestHasTriggers(t *testing.T) {

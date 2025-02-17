@@ -1976,7 +1976,8 @@ func TestResumeFromCheckpointStrict(t *testing.T) {
 	// by disabling --strict
 
 	migrationB.Strict = false
-	migrationB.Threads = 4 // to make the test run faster
+	migrationB.Threads = 4    // to make the test run faster
+	migrationB.Statement = "" // reset
 
 	runner, err = NewRunner(migrationB)
 	assert.NoError(t, err)
@@ -2830,20 +2831,6 @@ func TestPreRunChecksE2E(t *testing.T) {
 	defer db.Close()
 	err = m.runChecks(context.TODO(), check.ScopePreRun)
 	assert.NoError(t, err)
-
-	m, err = NewRunner(&Migration{
-		Host:     cfg.Addr,
-		Username: cfg.User,
-		Password: cfg.Passwd,
-		Database: cfg.DBName,
-		Threads:  1,
-		Table:    "test_checks_e2e",
-		Alter:    "ALGORITHM=inplace",
-	})
-	assert.NoError(t, err)
-	err = m.runChecks(context.TODO(), check.ScopePreRun)
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "unsupported clause")
 }
 
 // From https://github.com/cashapp/spirit/issues/241

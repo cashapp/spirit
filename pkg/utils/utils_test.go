@@ -111,3 +111,25 @@ func TestTrimAlter(t *testing.T) {
 	assert.Equal(t, "add column a, add column b", TrimAlter("add column a, add column b;"))
 	assert.Equal(t, "add column a, add column b", TrimAlter("add column a, add column b"))
 }
+
+func TestExtractFromStatement(t *testing.T) {
+	table, alter, err := ExtractFromStatement("ALTER TABLE t1 ADD INDEX (something)")
+	assert.NoError(t, err)
+	assert.Equal(t, "t1", table)
+	assert.Equal(t, "ADD INDEX(`something`)", alter)
+
+	table, alter, err = ExtractFromStatement("ALTER TABLE t.t1aaaa ADD COLUMN newcol int")
+	assert.NoError(t, err)
+	assert.Equal(t, "t1aaaa", table)
+	assert.Equal(t, "ADD COLUMN `newcol` INT", alter)
+
+	table, alter, err = ExtractFromStatement("ALTER TABLE t.t1 DROP COLUMN foo")
+	assert.NoError(t, err)
+	assert.Equal(t, "t1", table)
+	assert.Equal(t, "DROP COLUMN `foo`", alter)
+
+	table, alter, err = ExtractFromStatement("CREATE TABLE t1 (a int)")
+	assert.NoError(t, err)
+	assert.Equal(t, "t1", table)
+	assert.Empty(t, alter)
+}
