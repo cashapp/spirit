@@ -4,10 +4,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	_ "embed"
 	"fmt"
-	"log"
 	"net/url"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,30 +27,17 @@ const (
 var (
 	rdsAddr = regexp.MustCompile(`rds\.amazonaws\.com(:\d+)?$`)
 	once    sync.Once
+	// https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+	//go:embed rdsGlobalBundle.pem
+	rdsGlobalBundle []byte
 )
-
-// LoadCertificateBundle loads certificate bundle from a file
-func LoadCertificateBundle(filePath string) ([]byte, error) {
-	certBundle, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	return certBundle, nil
-}
 
 func IsRDSHost(host string) bool {
 	return rdsAddr.MatchString(host)
 }
 
 func NewTLSConfig() *tls.Config {
-	// cert bundle from - https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
-	rdsGlobalBundle, err := LoadCertificateBundle("../../certs/rds/rdsGlobalBundle.pem")
-	if err != nil {
-		log.Fatalf("Failed to load certificate bundle: %v", err)
-	}
-
 	caCertPool := x509.NewCertPool()
-
 	caCertPool.AppendCertsFromPEM(rdsGlobalBundle)
 	return &tls.Config{RootCAs: caCertPool}
 }
