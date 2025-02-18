@@ -365,3 +365,116 @@ func TestStmtWorkflow(t *testing.T) {
 	err = migration.Run()
 	assert.NoError(t, err)
 }
+
+// TestUnparsableStatements tests that the behavior is expected in cases
+// where we know the TiDB parser does not support the statement. We document
+// that we require the TiDB parser to parse the statement for it to execute,
+// which feels like a reasonable limitation based on its capabilities.
+// Example TiDB bug: https://github.com/pingcap/tidb/issues/54700
+func TestUnparsableStatements(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1parse, _t1parse_new`)
+	table := `CREATE TABLE t1parse (b BLOB DEFAULT ('abc'))`
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: table,
+	}
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not parse SQL statement")
+
+	// Try again as ALTER TABLE, with --statement
+	testutils.RunSQL(t, table)
+	migration = &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: "ALTER TABLE t1parse ADD COLUMN c BLOB DEFAULT ('abc')",
+	}
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not parse SQL statement")
+
+	// With ALTER TABLE as --table and --alter
+	migration = &Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Checksum: true,
+		Table:    "t1parse",
+		Alter:    "ADD COLUMN c BLOB DEFAULT ('abc')",
+	}
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not parse SQL statement")
+
+	// With CREATE TRIGGER.
+	migration = &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: "CREATE TRIGGER ins_sum BEFORE INSERT ON t1parse FOR EACH ROW SET @sum = @sum + NEW.b;",
+	}
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "could not parse SQL statement")
+}
+
+func TestCreateIndexIsRewritten(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1createindex, _t1createindex_new`)
+	tbl := `CREATE TABLE t1createindex (
+	 id int not null primary key auto_increment,
+  	b int not null
+	)`
+	testutils.RunSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: "CREATE INDEX idx ON t1createindex (b)",
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}
+
+func TestSchemaNameIncluded(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1schemaname, _t1schemaname_new`)
+	tbl := `CREATE TABLE t1schemaname (
+	 id int not null primary key auto_increment,
+  	b int not null
+	)`
+	testutils.RunSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: "ALTER TABLE test.t1schemaname ADD COLUMN c int",
+	}
+	err = migration.Run()
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "schema name included in the table name is not supported")
+}

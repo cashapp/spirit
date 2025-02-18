@@ -418,11 +418,8 @@ func TestBadAlter(t *testing.T) {
 		Table:    "bot1",
 		Alter:    "badalter",
 	})
-	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
-	assert.Error(t, err) // alter is invalid
-	assert.ErrorContains(t, err, "badalter")
-	assert.NoError(t, m.Close())
+	assert.Error(t, err) // parses and fails.
+	assert.Nil(t, m)
 
 	// Renames are not supported.
 	m, err = NewRunner(&Migration{
@@ -1976,8 +1973,7 @@ func TestResumeFromCheckpointStrict(t *testing.T) {
 	// by disabling --strict
 
 	migrationB.Strict = false
-	migrationB.Threads = 4    // to make the test run faster
-	migrationB.Statement = "" // reset
+	migrationB.Threads = 4 // to make the test run faster
 
 	runner, err = NewRunner(migrationB)
 	assert.NoError(t, err)
@@ -2990,7 +2986,7 @@ func TestIndexVisibility(t *testing.T) {
 		Database:     cfg.DBName,
 		Threads:      1,
 		Table:        "indexvisibility",
-		Alter:        "ALTER INDEX b VISIBLE, CHANGE c BIGINT NOT NULL",
+		Alter:        "ALTER INDEX b VISIBLE, CHANGE c cc BIGINT NOT NULL",
 		ForceInplace: true,
 	})
 	assert.NoError(t, err)

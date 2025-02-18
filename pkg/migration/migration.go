@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/cashapp/spirit/pkg/check"
+	"github.com/cashapp/spirit/pkg/statement"
 	"github.com/cashapp/spirit/pkg/table"
-	"github.com/cashapp/spirit/pkg/utils"
+	"github.com/pingcap/tidb/pkg/parser"
 )
 
 var (
@@ -55,7 +56,7 @@ func (m *Migration) Run() error {
 
 // normalizeOptions does some validation and sets defaults.
 // for example, it validates that only --statement or --table and --alter are specified.
-func (m *Migration) normalizeOptions() error {
+func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err error) {
 	if m.TargetChunkTime == 0 {
 		m.TargetChunkTime = table.ChunkerDefaultTarget
 	}
@@ -66,38 +67,48 @@ func (m *Migration) normalizeOptions() error {
 		m.ReplicaMaxLag = 120 * time.Second
 	}
 	if m.Host == "" {
-		return errors.New("host is required")
+		return nil, errors.New("host is required")
 	}
 	if !strings.Contains(m.Host, ":") {
 		m.Host = fmt.Sprintf("%s:%d", m.Host, 3306)
 	}
 	if m.Database == "" {
-		return errors.New("schema name is required")
+		return nil, errors.New("schema name is required")
 	}
 	if m.Statement != "" { // statement is specified
 		if m.Table != "" || m.Alter != "" {
-			return errors.New("only --statement or --table and --alter can be specified")
+			return nil, errors.New("only --statement or --table and --alter can be specified")
 		}
 		// extract the table and alter from the statement.
 		// if it is a CREATE INDEX statement, we rewrite it to an alter statement.
-		// This also returns the StmtNode, which we do nothing with so far.
-		// TODO: if it's a CREATE INDEX statement, do we store the rewritten
-		// form in m.Statement?
-		var err error
-		m.Table, m.Alter, err = utils.ExtractFromStatement(m.Statement)
+		// This also returns the StmtNode.
+		stmt, err = statement.New(m.Statement)
 		if err != nil {
-			return errors.New("could not parse statement")
+			if err == statement.ErrSchemaNameIncluded {
+				return nil, err
+			}
+			// Omit the parser error messages, just show the statement.
+			return nil, errors.New("could not parse SQL statement: " + m.Statement)
 		}
 	} else {
 		if m.Table == "" {
-			return errors.New("table name is required")
+			return nil, errors.New("table name is required")
 		}
 		if m.Alter == "" {
-			return errors.New("alter statement is required")
+			return nil, errors.New("alter statement is required")
 		}
-		// Add the statement so that it can be used in some contexts
-		// Where the statement is preferred over the table and alter.
-		m.Statement = fmt.Sprintf("ALTER TABLE `%s`.`%s` %s", m.Database, m.Table, m.Alter)
+		fullStatement := fmt.Sprintf("ALTER TABLE `%s` %s", m.Table, m.Alter)
+		p := parser.New()
+		stmtNodes, _, err := p.Parse(fullStatement, "", "")
+		if err != nil {
+			return nil, errors.New("could not parse SQL statement: " + fullStatement)
+		}
+		stmt = &statement.AbstractStatement{
+			Table:     m.Table,
+			Alter:     m.Alter,
+			Statement: fullStatement,
+			StmtNode:  &stmtNodes[0],
+		}
 	}
-	return nil
+	return stmt, err
 }

@@ -123,6 +123,8 @@ Writing a new data migration tool is scary, since bugs have real consequences (d
 
 We have also tried to balance making Spirit _as fast as possible_ while still being safe to run on production systems that are running existing workloads. Sometimes this means spirit might venture into creating slow downs in application performance. If it does, please file an issue and help us make improvements.
 
+We make extensive use of the TiDB parser. If a DDL statement can not be parsed by TiDB, it will not be possible to execute it. Usually this is not a problem, but there can be [edge-cases](https://github.com/pingcap/tidb/issues/54700).
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md).
