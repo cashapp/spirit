@@ -2,7 +2,9 @@ package dbconn
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -25,6 +27,7 @@ type MetadataLock struct {
 	closeCh         chan error
 	refreshInterval time.Duration
 	db              *sql.DB
+	lockName        string
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
@@ -60,32 +63,28 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 		// The hash is truncated to 8 characters to avoid the maximum lock length.
 		// bizarrely_long_schema_name.thisisareallylongtablenamethisisareallylongtablename60charac ==>
 		// bizarrely_long_schem.thisisareallylongtablenamethisis-66fec116
-		//
-		// The computation of the hash is done server-side to simplify the whole process,
-		// but that means we can't easily log the actual lock name used. If you want to do that
-		// in the future, just add another MySQL round-trip to compute the lock name server-side
-		// and then use the returned string in the GET_LOCK call.
-		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK( concat(left(%?,20),'.',left(%?,32),'-',left(sha1(concat(%?,%?)),8)), %?)", table.SchemaName, table.TableName, table.SchemaName, table.TableName, getLockTimeout.Seconds())
+		mdl.lockName = computeLockName(table)
+		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK(%?, %?)", mdl.lockName, getLockTimeout.Seconds())
 		if err := mdl.db.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
 			return fmt.Errorf("could not acquire metadata lock: %s", err)
 		}
 		if answer == 0 {
 			// 0 means the lock is held by another connection
 			// TODO: we could lookup the connection that holds the lock and report details about it
-			logger.Warnf("could not acquire metadata lock for %s.%s, lock is held by another connection", table.SchemaName, table.TableName)
+			logger.Warnf("could not acquire metadata lock for %s, lock is held by another connection", mdl.lockName)
 
 			// TODO: we could deal in error codes instead of string contains checks.
-			return fmt.Errorf("could not acquire metadata lock for %s.%s, lock is held by another connection", table.SchemaName, table.TableName)
+			return fmt.Errorf("could not acquire metadata lock for %s, lock is held by another connection", mdl.lockName)
 		} else if answer != 1 {
 			// probably we never get here, but just in case
-			return fmt.Errorf("could not acquire metadata lock for %s.%s, GET_LOCK returned: %d", table.SchemaName, table.TableName, answer)
+			return fmt.Errorf("could not acquire metadata lock %s, GET_LOCK returned: %d", mdl.lockName, answer)
 		}
 		return nil
 	}
 
 	// Acquire the lock or return an error immediately
 	// We only Infof the initial acquisition.
-	logger.Infof("attempting to acquire metadata lock for %s.%s", table.SchemaName, table.TableName)
+	logger.Infof("attempting to acquire metadata lock %s", mdl.lockName)
 	if err = getLock(); err != nil {
 		return nil, err
 	}
@@ -101,7 +100,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 			select {
 			case <-ctx.Done():
 				// Close the dedicated connection to release the lock
-				logger.Warnf("releasing metadata lock for %s.%s", table.SchemaName, table.TableName)
+				logger.Warnf("releasing metadata lock for %s", mdl.lockName)
 				mdl.closeCh <- mdl.db.Close()
 				return
 			case <-ticker.C:
@@ -134,7 +133,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 
 					logger.Infof("re-acquired metadata lock after re-establishing connection: %s.%s", table.SchemaName, table.TableName)
 				} else {
-					logger.Debugf("refreshed metadata lock for %s.%s", table.SchemaName, table.TableName)
+					logger.Debugf("refreshed metadata lock for %s", mdl.lockName)
 				}
 			}
 		}
@@ -158,4 +157,27 @@ func (m *MetadataLock) CloseDBConnection(logger loggers.Advanced) error {
 		return m.db.Close()
 	}
 	return nil
+}
+
+func (m *MetadataLock) GetLockName() string {
+	return m.lockName
+}
+
+func computeLockName(table *table.TableInfo) string {
+	schemaNamePart := table.SchemaName
+	if len(schemaNamePart) > 20 {
+		schemaNamePart = schemaNamePart[:20]
+	}
+
+	tableNamePart := table.TableName
+	if len(tableNamePart) > 32 {
+		tableNamePart = tableNamePart[:32]
+	}
+
+	hash := sha1.New()
+	hash.Write([]byte(table.SchemaName + table.TableName))
+	hashPart := hex.EncodeToString(hash.Sum(nil))[:8]
+
+	lockName := fmt.Sprintf("%s.%s-%s", schemaNamePart, tableNamePart, hashPart)
+	return lockName
 }

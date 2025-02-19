@@ -114,7 +114,7 @@ The replication throttler only affects the copy-rows operation, and does not app
 - Temporarily disabling durability on the replica (i.e. `SET GLOBAL sync_binlog=0` and `SET GLOBAL innodb_flush_log_at_trx_commit=0`)
 - Increasing the `replica-max-lag` or disabling replica lag checking temporarily
 
-### strict
+### statement
 
 - Type: String
 
