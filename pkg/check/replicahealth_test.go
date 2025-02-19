@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cashapp/spirit/pkg/statement"
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/sirupsen/logrus"
@@ -14,8 +15,8 @@ import (
 
 func TestReplicaHealth(t *testing.T) {
 	r := Resources{
-		Table: &table.TableInfo{TableName: "test"},
-		Alter: "RENAME TO newtablename",
+		Table:     &table.TableInfo{TableName: "test"},
+		Statement: statement.MustNew("ALTER TABLE test RENAME TO newtablename"),
 	}
 	err := replicaHealth(context.Background(), r, logrus.New())
 	assert.NoError(t, err) // if no replica, it returns no error.

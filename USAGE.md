@@ -18,6 +18,8 @@ go build
 
 The alter table command to perform. The default value is a _null alter table_, which can be useful for testing.
 
+See also: `--statement`.
+
 ### checksum
 
 - Type: Boolean
@@ -72,7 +74,7 @@ Even when force-inplace is `FALSE`, Spirit automatically detects "safe" operatio
 
 The host (and optional port) to use when connecting to MySQL.
 
-## lock-wait-timeout
+### lock-wait-timeout
 
 - Type: Duration
 - Default value: `30s`
@@ -111,6 +113,16 @@ The replication throttler only affects the copy-rows operation, and does not app
 - Adjusting the configuration of your replicas to increase the parallel replication threads
 - Temporarily disabling durability on the replica (i.e. `SET GLOBAL sync_binlog=0` and `SET GLOBAL innodb_flush_log_at_trx_commit=0`)
 - Increasing the `replica-max-lag` or disabling replica lag checking temporarily
+
+### statement
+
+- Type: String
+
+Spirit accepts either a `--table` and `--alter` argument or a `--statement` argument. When using `--statement` you can send most DDL statements to spirit, including `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, `RENAME TABLE` and `DROP TABLE`.
+
+The advantage of using `--statement` is you can send all schema changes directly to Spirit without having to parse statements in your automatation layer and decide which should be sent where.
+
+There are some restrictions to this. Spirit requires that the statements can be parsed by the TiDB parser, so (for example) it is not possible to send `CREATE PROCEDURE` or `CREATE TRIGGER` statements to Spirit this way.
 
 ### strict
 
