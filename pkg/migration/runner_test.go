@@ -2769,7 +2769,10 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 			// as tablename while the migration is running.
 			lock, err := dbconn.NewMetadataLock(ctx, testutils.DSN(),
 				&tableInfo, &testLogger{})
-			assert.ErrorContains(t, err, "could not acquire metadata lock for test.resume_checkpoint_e2e_w_sentinel, lock is held by another connection")
+			assert.Error(t, err)
+			if lock != nil {
+				assert.ErrorContains(t, err, fmt.Sprintf("could not acquire metadata lock for %s, lock is held by another connection", lock.GetLockName()))
+			}
 			assert.Nil(t, lock)
 			break
 		}

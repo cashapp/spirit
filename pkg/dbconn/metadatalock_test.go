@@ -77,6 +77,28 @@ func TestMetadataLockRefresh(t *testing.T) {
 	assert.NoError(t, mdl.Close())
 }
 
+func TestComputeLockName(t *testing.T) {
+	tests := []struct {
+		table    *table.TableInfo
+		expected string
+	}{
+		{
+			table:    &table.TableInfo{SchemaName: "shortschema", TableName: "shorttable"},
+			expected: "shortschema.shorttable-",
+		},
+		{
+			table:    &table.TableInfo{SchemaName: "averylongschemanamethatexceeds20chars", TableName: "averylongtablenamewhichexceeds32characters"},
+			expected: "averylongschemanamet.averylongtablenamewhichexceeds32-",
+		},
+	}
+
+	for _, test := range tests {
+		lockName := computeLockName(test.table)
+		assert.Contains(t, lockName, test.expected, "Lock name should contain the expected prefix")
+		assert.Len(t, lockName, len(test.expected)+8, "Lock name should have the correct length")
+	}
+}
+
 func TestMetadataLockLength(t *testing.T) {
 	lockTableInfo := table.TableInfo{SchemaName: "test", TableName: "thisisareallylongtablenamethisisareallylongtablenamethisisareallylongtablename"}
 	var empty *table.TableInfo
