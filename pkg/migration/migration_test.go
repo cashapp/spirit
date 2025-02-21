@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 
 	"github.com/cashapp/spirit/pkg/testutils"
@@ -443,6 +445,7 @@ func TestCreateIndexIsRewritten(t *testing.T) {
 	testutils.RunSQL(t, tbl)
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
+	require.NotEqual(t, "", cfg.DBName)
 	migration := &Migration{
 		Host:      cfg.Addr,
 		Username:  cfg.User,
@@ -450,7 +453,7 @@ func TestCreateIndexIsRewritten(t *testing.T) {
 		Database:  cfg.DBName,
 		Threads:   1,
 		Checksum:  true,
-		Statement: "CREATE INDEX idx ON t1createindex (b)",
+		Statement: "CREATE INDEX idx ON " + cfg.DBName + ".t1createindex (b)",
 	}
 	err = migration.Run()
 	assert.NoError(t, err)
@@ -475,6 +478,5 @@ func TestSchemaNameIncluded(t *testing.T) {
 		Statement: "ALTER TABLE test.t1schemaname ADD COLUMN c int",
 	}
 	err = migration.Run()
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "schema name included in the table name is not supported")
+	assert.NoError(t, err)
 }

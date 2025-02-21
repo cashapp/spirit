@@ -13,8 +13,8 @@ import (
 )
 
 type AbstractStatement struct {
-	Schema    string
-	Table     string
+	Schema    string // this will be empty unless the table name is fully qualified (ALTER TABLE test.t1 ...)
+	Table     string // for statements that affect multiple tables (DROP TABLE t1, t2), only the first is set here!
 	Alter     string // may be empty.
 	Statement string
 	StmtNode  *ast.StmtNode
@@ -243,6 +243,8 @@ func convertCreateIndexToAlterTable(stmt ast.StmtNode) (*AbstractStatement, erro
 	alterStmt := fmt.Sprintf("ADD %s %s (%s)", keyType, ciStmt.IndexName, strings.Join(columns, ", "))
 	// We hint in the statement that it's been rewritten
 	// and in the stmtNode we reparse from the alterStmt.
+	// TODO: include schema name if it's explicitly given in the CREATE INDEX statement?
+	// TODO: identifiers should be quoted/escaped in case a maniac includes a backtick in a table name.
 	statement := fmt.Sprintf("ALTER TABLE `%s` %s", ciStmt.Table.Name, alterStmt)
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(statement, "", "")
