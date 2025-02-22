@@ -13,14 +13,14 @@ import (
 )
 
 type AbstractStatement struct {
-	Table     string
+	Schema    string // this will be empty unless the table name is fully qualified (ALTER TABLE test.t1 ...)
+	Table     string // for statements that affect multiple tables (DROP TABLE t1, t2), only the first is set here!
 	Alter     string // may be empty.
 	Statement string
 	StmtNode  *ast.StmtNode
 }
 
 var (
-	ErrSchemaNameIncluded    = errors.New("schema name included in the table name is not supported")
 	ErrNotSupportedStatement = errors.New("not a supported statement type")
 	ErrNotAlterTable         = errors.New("not an ALTER TABLE statement")
 )
@@ -42,18 +42,16 @@ func New(statement string) (*AbstractStatement, error) {
 		// if the schema name is included it could be different from the --database
 		// specified, which causes all sorts of problems. The easiest way to handle this
 		// it just to not permit it.
-		if alterStmt.Table.Schema.String() != "" {
-			return nil, ErrSchemaNameIncluded
-		}
 		var sb strings.Builder
 		sb.Reset()
 		rCtx := format.NewRestoreCtx(format.DefaultRestoreFlags, &sb)
 		if err = alterStmt.Restore(rCtx); err != nil {
-			return nil, fmt.Errorf("could not restore alter table statement: %s", err)
+			return nil, fmt.Errorf("could not restore alter clause statement: %s", err)
 		}
 		normalizedStmt := sb.String()
 		trimLen := len(alterStmt.Table.Name.String()) + 15 // len ALTER TABLE + quotes
 		return &AbstractStatement{
+			Schema:    alterStmt.Table.Schema.String(),
 			Table:     alterStmt.Table.Name.String(),
 			Alter:     normalizedStmt[trimLen:],
 			Statement: statement,
@@ -66,34 +64,41 @@ func New(statement string) (*AbstractStatement, error) {
 	// but it's not a spirit migration. But the table should be specified.
 	case *ast.CreateTableStmt:
 		stmt := stmtNodes[0].(*ast.CreateTableStmt)
-		if stmt.Table.Schema.String() != "" {
-			return nil, ErrSchemaNameIncluded
-		}
 		return &AbstractStatement{
+			Schema:    stmt.Table.Schema.String(),
 			Table:     stmt.Table.Name.String(),
 			Statement: statement,
 			StmtNode:  &stmtNodes[0],
 		}, err
 	case *ast.DropTableStmt:
 		stmt := stmtNodes[0].(*ast.DropTableStmt)
+		distinctSchemas := make(map[string]struct{})
 		for _, table := range stmt.Tables {
-			if table.Schema.String() != "" {
-				return nil, ErrSchemaNameIncluded
-			}
+			distinctSchemas[table.Schema.String()] = struct{}{}
+		}
+		if len(distinctSchemas) > 1 {
+			return nil, errors.New("statement attempts to drop tables from multiple schemas")
 		}
 		return &AbstractStatement{
+			Schema:    stmt.Tables[0].Schema.String(),
 			Table:     stmt.Tables[0].Name.String(), // TODO: this is just used in log lines, but there could be more than one!
 			Statement: statement,
 			StmtNode:  &stmtNodes[0],
 		}, err
 	case *ast.RenameTableStmt:
 		stmt := stmtNodes[0].(*ast.RenameTableStmt)
-		for _, table := range stmt.TableToTables {
-			if table.OldTable.Schema.String() != "" || table.NewTable.Schema.String() != "" {
-				return nil, ErrSchemaNameIncluded
+		distinctSchemas := make(map[string]struct{})
+		for _, clause := range stmt.TableToTables {
+			if clause.OldTable.Schema.String() != clause.NewTable.Schema.String() {
+				return nil, errors.New("statement attempts to move table between schemas")
 			}
+			distinctSchemas[clause.OldTable.Schema.String()] = struct{}{}
+		}
+		if len(distinctSchemas) > 1 {
+			return nil, errors.New("statement attempts to rename tables in multiple schemas")
 		}
 		return &AbstractStatement{
+			Schema:    stmt.TableToTables[0].OldTable.Schema.String(),
 			Table:     stmt.TableToTables[0].OldTable.Name.String(), // TODO: this is just used in log lines, but there could be more than one!
 			Statement: statement,
 			StmtNode:  &stmtNodes[0],
@@ -238,6 +243,8 @@ func convertCreateIndexToAlterTable(stmt ast.StmtNode) (*AbstractStatement, erro
 	alterStmt := fmt.Sprintf("ADD %s %s (%s)", keyType, ciStmt.IndexName, strings.Join(columns, ", "))
 	// We hint in the statement that it's been rewritten
 	// and in the stmtNode we reparse from the alterStmt.
+	// TODO: include schema name if it's explicitly given in the CREATE INDEX statement?
+	// TODO: identifiers should be quoted/escaped in case a maniac includes a backtick in a table name.
 	statement := fmt.Sprintf("ALTER TABLE `%s` %s", ciStmt.Table.Name, alterStmt)
 	p := parser.New()
 	stmtNodes, _, err := p.Parse(statement, "", "")

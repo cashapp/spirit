@@ -84,11 +84,11 @@ func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err e
 		// This also returns the StmtNode.
 		stmt, err = statement.New(m.Statement)
 		if err != nil {
-			if err == statement.ErrSchemaNameIncluded {
-				return nil, err
-			}
 			// Omit the parser error messages, just show the statement.
 			return nil, errors.New("could not parse SQL statement: " + m.Statement)
+		}
+		if stmt.Schema != "" && stmt.Schema != m.Database {
+			return nil, errors.New("schema name in statement (`schema`.`table`) does not match --database")
 		}
 	} else {
 		if m.Table == "" {
