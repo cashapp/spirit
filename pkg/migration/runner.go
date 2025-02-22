@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/metrics"
-	"github.com/cashapp/spirit/pkg/utils"
+	"github.com/cashapp/spirit/pkg/statement"
 
 	"github.com/cashapp/spirit/pkg/check"
 	"github.com/cashapp/spirit/pkg/checksum"
@@ -83,6 +82,7 @@ type Runner struct {
 	table           *table.TableInfo
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
+	stmt            *statement.AbstractStatement
 	metadataLock    *dbconn.MetadataLock
 
 	currentState migrationState // must use atomic to get/set
@@ -121,37 +121,16 @@ type Progress struct {
 }
 
 func NewRunner(m *Migration) (*Runner, error) {
-	r := &Runner{
+	stmt, err := m.normalizeOptions()
+	if err != nil {
+		return nil, err
+	}
+	return &Runner{
 		migration:   m,
 		logger:      logrus.New(),
 		metricsSink: &metrics.NoopSink{},
-	}
-
-	if r.migration.TargetChunkTime == 0 {
-		r.migration.TargetChunkTime = table.ChunkerDefaultTarget
-	}
-	if r.migration.Threads == 0 {
-		r.migration.Threads = 4
-	}
-	if r.migration.ReplicaMaxLag == 0 {
-		r.migration.ReplicaMaxLag = 120 * time.Second
-	}
-	if r.migration.Host == "" {
-		return nil, errors.New("host is required")
-	}
-	if !strings.Contains(r.migration.Host, ":") {
-		r.migration.Host = fmt.Sprintf("%s:%d", r.migration.Host, 3306)
-	}
-	if r.migration.Database == "" {
-		return nil, errors.New("schema name is required")
-	}
-	if r.migration.Table == "" {
-		return nil, errors.New("table name is required")
-	}
-	if r.migration.Alter == "" {
-		return nil, errors.New("alter statement is required")
-	}
-	return r, nil
+		stmt:        stmt,
+	}, nil
 }
 
 func (r *Runner) SetMetricsSink(sink metrics.Sink) {
@@ -166,8 +145,8 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	ctx, cancel := context.WithCancel(originalCtx)
 	defer cancel()
 	r.startTime = time.Now()
-	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table=%s.%s alter=\"%s\"",
-		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.migration.Table, r.migration.Alter,
+	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table='%s.%s' alter=\"%s\"",
+		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.stmt.Table, r.stmt.Alter,
 	)
 
 	// Create a database connection
@@ -195,8 +174,19 @@ func (r *Runner) Run(originalCtx context.Context) error {
 		return err
 	}
 
+	// If it's not an alter table, that means it is a CREATE TABLE, DROP TABLE, or RENAME table.
+	// We should execute it immediately before acquiring TableInfo.
+	if !r.stmt.IsAlterTable() {
+		err := dbconn.Exec(ctx, r.db, r.stmt.Statement)
+		if err != nil {
+			return err
+		}
+		r.logger.Infof("apply complete")
+		return nil
+	}
+
 	// Get Table Info
-	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	r.table = table.NewTableInfo(r.db, r.migration.Database, r.stmt.Table)
 	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -232,7 +222,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// Force enable the checksum if it's an ADD UNIQUE INDEX operation
 	// https://github.com/cashapp/spirit/issues/266
 	if !r.migration.Checksum {
-		if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+		if err := r.stmt.AlterContainsAddUnique(); err != nil {
 			r.logger.Warnf("force enabling checksum: %v", err)
 			r.migration.Checksum = true
 		}
@@ -243,7 +233,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	// It likely means the user is combining this operation with other unsafe operations,
 	// which is not a good idea. We need to protect them by not allowing it.
 	// https://github.com/cashapp/spirit/issues/283
-	if err := utils.AlterContainsIndexVisibility("ALTER TABLE unused " + r.migration.Alter); err != nil {
+	if err := r.stmt.AlterContainsIndexVisibility(); err != nil {
 		return err
 	}
 
@@ -394,7 +384,7 @@ func (r *Runner) runChecks(ctx context.Context, scope check.ScopeFlag) error {
 		DB:              r.db,
 		Replica:         r.replica,
 		Table:           r.table,
-		Alter:           r.migration.Alter,
+		Statement:       r.stmt,
 		TargetChunkTime: r.migration.TargetChunkTime,
 		Threads:         r.migration.Threads,
 		ReplicaMaxLag:   r.migration.ReplicaMaxLag,
@@ -429,8 +419,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// If the operator has specified that they want to attempt
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
-	alterStmt := fmt.Sprintf("ALTER TABLE %s %s", r.migration.Table, r.migration.Alter)
-	err = utils.AlgorithmInplaceConsideredSafe(alterStmt)
+	err = r.stmt.AlgorithmInplaceConsideredSafe()
 	if err != nil {
 		r.logger.Infof("unable to use INPLACE: %v", err)
 	}
@@ -595,7 +584,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 // We first attempt to do this using ALGORITHM=COPY so we don't burn
 // an INSTANT version. But surprisingly this is not supported for all DDLs (issue #277)
 func (r *Runner) alterNewTable(ctx context.Context) error {
-	if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+utils.TrimAlter(r.migration.Alter)+", ALGORITHM=COPY",
+	if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.TrimAlter()+", ALGORITHM=COPY",
 		r.newTable.SchemaName, r.newTable.TableName); err != nil {
 		// Retry without the ALGORITHM=COPY. If there is a second error, then the DDL itself
 		// is not supported. It could be a syntax error, in which case we return the second error,
@@ -876,7 +865,7 @@ func (r *Runner) checksum(ctx context.Context) error {
 			// then the checksum will fail. This is entirely expected, and not considered a bug. We should
 			// do our best-case to differentiate that we believe this ALTER statement is lossy, and
 			// customize the returned error based on it.
-			if err := utils.AlterContainsAddUnique("ALTER TABLE unused " + r.migration.Alter); err != nil {
+			if err := r.stmt.AlterContainsAddUnique(); err != nil {
 				return errors.New("checksum failed after 3 attempts. Check that the ALTER statement is not adding a UNIQUE INDEX to non-unique data")
 			}
 			return errors.New("checksum failed after 3 attempts. This likely indicates either a bug in Spirit, or a manual modification to the _new table outside of Spirit. Please report @ github.com/cashapp/spirit")

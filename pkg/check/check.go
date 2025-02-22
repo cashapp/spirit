@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cashapp/spirit/pkg/statement"
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/siddontang/loggers"
 )
@@ -29,7 +30,7 @@ type Resources struct {
 	DB                   *sql.DB
 	Replica              *sql.DB
 	Table                *table.TableInfo
-	Alter                string
+	Statement            *statement.AbstractStatement
 	TargetChunkTime      time.Duration
 	Threads              int
 	ReplicaMaxLag        time.Duration

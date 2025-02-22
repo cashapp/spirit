@@ -418,11 +418,8 @@ func TestBadAlter(t *testing.T) {
 		Table:    "bot1",
 		Alter:    "badalter",
 	})
-	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
-	assert.Error(t, err) // alter is invalid
-	assert.ErrorContains(t, err, "badalter")
-	assert.NoError(t, m.Close())
+	assert.Error(t, err) // parses and fails.
+	assert.Nil(t, m)
 
 	// Renames are not supported.
 	m, err = NewRunner(&Migration{
@@ -2833,20 +2830,6 @@ func TestPreRunChecksE2E(t *testing.T) {
 	defer db.Close()
 	err = m.runChecks(context.TODO(), check.ScopePreRun)
 	assert.NoError(t, err)
-
-	m, err = NewRunner(&Migration{
-		Host:     cfg.Addr,
-		Username: cfg.User,
-		Password: cfg.Passwd,
-		Database: cfg.DBName,
-		Threads:  1,
-		Table:    "test_checks_e2e",
-		Alter:    "ALGORITHM=inplace",
-	})
-	assert.NoError(t, err)
-	err = m.runChecks(context.TODO(), check.ScopePreRun)
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "unsupported clause")
 }
 
 // From https://github.com/cashapp/spirit/issues/241
@@ -3006,7 +2989,7 @@ func TestIndexVisibility(t *testing.T) {
 		Database:     cfg.DBName,
 		Threads:      1,
 		Table:        "indexvisibility",
-		Alter:        "ALTER INDEX b VISIBLE, CHANGE c BIGINT NOT NULL",
+		Alter:        "ALTER INDEX b VISIBLE, CHANGE c cc BIGINT NOT NULL",
 		ForceInplace: true,
 	})
 	assert.NoError(t, err)

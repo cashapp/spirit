@@ -4,9 +4,14 @@ package migration
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/check"
+	"github.com/cashapp/spirit/pkg/statement"
+	"github.com/cashapp/spirit/pkg/table"
+	"github.com/pingcap/tidb/pkg/parser"
 )
 
 var (
@@ -31,6 +36,7 @@ type Migration struct {
 	DeferCutOver         bool          `name:"defer-cutover" help:"Defer cutover (and checksum) until sentinel table is dropped" optional:"" default:"false"`
 	Strict               bool          `name:"strict" help:"Exit on --alter mismatch when incomplete migration is detected" optional:"" default:"false"`
 	InterpolateParams    bool          `name:"interpolate-params" help:"Enable interpolate params for DSN" optional:"" default:"false" hidden:""`
+	Statement            string        `name:"statement" help:"The SQL statement to run (replaces --table and --alter)" optional:"" default:""`
 }
 
 func (m *Migration) Run() error {
@@ -46,4 +52,63 @@ func (m *Migration) Run() error {
 		return err
 	}
 	return nil
+}
+
+// normalizeOptions does some validation and sets defaults.
+// for example, it validates that only --statement or --table and --alter are specified.
+func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err error) {
+	if m.TargetChunkTime == 0 {
+		m.TargetChunkTime = table.ChunkerDefaultTarget
+	}
+	if m.Threads == 0 {
+		m.Threads = 4
+	}
+	if m.ReplicaMaxLag == 0 {
+		m.ReplicaMaxLag = 120 * time.Second
+	}
+	if m.Host == "" {
+		return nil, errors.New("host is required")
+	}
+	if !strings.Contains(m.Host, ":") {
+		m.Host = fmt.Sprintf("%s:%d", m.Host, 3306)
+	}
+	if m.Database == "" {
+		return nil, errors.New("database/schema name is required")
+	}
+	if m.Statement != "" { // statement is specified
+		if m.Table != "" || m.Alter != "" {
+			return nil, errors.New("only --statement or --table and --alter can be specified")
+		}
+		// extract the table and alter from the statement.
+		// if it is a CREATE INDEX statement, we rewrite it to an alter statement.
+		// This also returns the StmtNode.
+		stmt, err = statement.New(m.Statement)
+		if err != nil {
+			// Omit the parser error messages, just show the statement.
+			return nil, errors.New("could not parse SQL statement: " + m.Statement)
+		}
+		if stmt.Schema != "" && stmt.Schema != m.Database {
+			return nil, errors.New("schema name in statement (`schema`.`table`) does not match --database")
+		}
+	} else {
+		if m.Table == "" {
+			return nil, errors.New("table name is required")
+		}
+		if m.Alter == "" {
+			return nil, errors.New("alter statement is required")
+		}
+		fullStatement := fmt.Sprintf("ALTER TABLE `%s` %s", m.Table, m.Alter)
+		p := parser.New()
+		stmtNodes, _, err := p.Parse(fullStatement, "", "")
+		if err != nil {
+			return nil, errors.New("could not parse SQL statement: " + fullStatement)
+		}
+		stmt = &statement.AbstractStatement{
+			Table:     m.Table,
+			Alter:     m.Alter,
+			Statement: fullStatement,
+			StmtNode:  &stmtNodes[0],
+		}
+	}
+	return stmt, err
 }
