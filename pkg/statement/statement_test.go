@@ -36,7 +36,7 @@ func TestExtractFromStatement(t *testing.T) {
 	// Include the schema name.
 	abstractStmt, err = New("ALTER TABLE test.t1 ADD INDEX (something)")
 	assert.NoError(t, err)
-	assert.Equal(t, abstractStmt.Schema, "test")
+	assert.Equal(t, "test", abstractStmt.Schema)
 
 	// Try and parse an invalid statement.
 	_, err = New("ALTER TABLE t1 yes")
@@ -47,13 +47,13 @@ func TestExtractFromStatement(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "t1", abstractStmt.Table)
 	assert.Equal(t, "ADD INDEX idx (a)", abstractStmt.Alter)
-	assert.Equal(t, "ALTER TABLE `t1` ADD INDEX idx (a)", abstractStmt.Statement)
+	assert.Equal(t, "/* rewritten from CREATE INDEX */ ALTER TABLE `t1` ADD INDEX idx (a)", abstractStmt.Statement)
 
 	abstractStmt, err = New("CREATE INDEX idx ON test.`t1` (a)")
 	assert.NoError(t, err)
 	assert.Equal(t, "t1", abstractStmt.Table)
 	assert.Equal(t, "ADD INDEX idx (a)", abstractStmt.Alter)
-	assert.Equal(t, "ALTER TABLE `t1` ADD INDEX idx (a)", abstractStmt.Statement)
+	assert.Equal(t, "/* rewritten from CREATE INDEX */ ALTER TABLE `t1` ADD INDEX idx (a)", abstractStmt.Statement)
 
 	// test unsupported.
 	_, err = New("INSERT INTO t1 (a) VALUES (1)")

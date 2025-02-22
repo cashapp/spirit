@@ -73,7 +73,7 @@ func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err e
 		m.Host = fmt.Sprintf("%s:%d", m.Host, 3306)
 	}
 	if m.Database == "" {
-		return nil, errors.New("schema name is required")
+		return nil, errors.New("database/schema name is required")
 	}
 	if m.Statement != "" { // statement is specified
 		if m.Table != "" || m.Alter != "" {
