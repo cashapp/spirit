@@ -23,8 +23,8 @@ type Migration struct {
 	Username             string        `name:"username" help:"User" optional:"" default:"msandbox"`
 	Password             string        `name:"password" help:"Password" optional:"" default:"msandbox"`
 	Database             string        `name:"database" help:"Database" optional:"" default:"test"`
-	Table                string        `name:"table" help:"Table" optional:"" default:"stock"`
-	Alter                string        `name:"alter" help:"The alter statement to run on the table" optional:"" default:"engine=innodb"`
+	Table                string        `name:"table" help:"Table" optional:""`
+	Alter                string        `name:"alter" help:"The alter statement to run on the table" optional:""`
 	Threads              int           `name:"threads" help:"Number of concurrent threads for copy and checksum tasks" optional:"" default:"4"`
 	TargetChunkTime      time.Duration `name:"target-chunk-time" help:"The target copy time for each chunk" optional:"" default:"500ms"`
 	ForceInplace         bool          `name:"force-inplace" help:"Force attempt to use inplace (only safe without replicas or with Aurora Global)" optional:"" default:"false"`
