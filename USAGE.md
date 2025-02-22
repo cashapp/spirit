@@ -13,7 +13,6 @@ go build
 ### alter
 
 - Type: String
-- Default value: `engine=innodb`
 - Examples: `add column foo int`, `add index foo (bar)`
 
 The alter table command to perform. The default value is a _null alter table_, which can be useful for testing.
@@ -136,7 +135,6 @@ When set to `TRUE`, if Spirit encounters a checkpoint belonging to a previous mi
 ### table
 
 - Type: String
-- Default value: `stock`
 
 The table that the schema change will be performed on.
 
