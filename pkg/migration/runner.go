@@ -145,8 +145,8 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	ctx, cancel := context.WithCancel(originalCtx)
 	defer cancel()
 	r.startTime = time.Now()
-	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table='%s.%s' alter=\"%s\"",
-		r.migration.Threads, r.migration.TargetChunkTime, r.migration.Database, r.stmt.Table, r.stmt.Alter,
+	r.logger.Infof("Starting spirit migration: concurrency=%d target-chunk-size=%s table='%s.%s' alter=%s ",
+		r.migration.Threads, r.migration.TargetChunkTime, r.stmt.Schema, r.stmt.Table, r.stmt.Alter,
 	)
 
 	// Create a database connection
@@ -186,7 +186,7 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 
 	// Get Table Info
-	r.table = table.NewTableInfo(r.db, r.migration.Database, r.stmt.Table)
+	r.table = table.NewTableInfo(r.db, r.stmt.Schema, r.stmt.Table)
 	if err := r.table.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -438,7 +438,7 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 }
 
 func (r *Runner) dsn() string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", r.migration.Username, r.migration.Password, r.migration.Host, r.migration.Database)
+	return fmt.Sprintf("%s:%s@tcp(%s)/%s", r.migration.Username, r.migration.Password, r.migration.Host, r.stmt.Schema)
 }
 
 func (r *Runner) setup(ctx context.Context) error {
@@ -572,7 +572,7 @@ func (r *Runner) createNewTable(ctx context.Context) error {
 		r.table.SchemaName, newName, r.table.SchemaName, r.table.TableName); err != nil {
 		return err
 	}
-	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.db, r.stmt.Schema, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -589,7 +589,7 @@ func (r *Runner) alterNewTable(ctx context.Context) error {
 		// Retry without the ALGORITHM=COPY. If there is a second error, then the DDL itself
 		// is not supported. It could be a syntax error, in which case we return the second error,
 		// which will probably be easier to read because it is unaltered.
-		if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.migration.Alter, r.newTable.SchemaName, r.newTable.TableName); err != nil {
+		if err := dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter, r.newTable.SchemaName, r.newTable.TableName); err != nil {
 			return err
 		}
 	}
@@ -612,11 +612,11 @@ func (r *Runner) oldTableName() string {
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
-	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.migration.Alter+", ALGORITHM=INSTANT", r.table.SchemaName, r.table.TableName)
+	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INSTANT", r.table.SchemaName, r.table.TableName)
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
-	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.migration.Alter+", ALGORITHM=INPLACE, LOCK=NONE", r.table.SchemaName, r.table.TableName)
+	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INPLACE, LOCK=NONE", r.table.SchemaName, r.table.TableName)
 }
 
 func (r *Runner) createCheckpointTable(ctx context.Context) error {
@@ -743,7 +743,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Make sure we can read from the new table.
 	if err := dbconn.Exec(ctx, r.db, "SELECT * FROM %n.%n LIMIT 1",
-		r.migration.Database, newName); err != nil {
+		r.stmt.Schema, newName); err != nil {
 		return fmt.Errorf("could not find any checkpoints in table '%s'", newName)
 	}
 
@@ -752,7 +752,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// was created by either an earlier or later version of spirit, in which case
 	// we do not support recovery.
 	query := fmt.Sprintf("SELECT * FROM `%s`.`%s` ORDER BY id DESC LIMIT 1",
-		r.migration.Database, cpName)
+		r.stmt.Schema, cpName)
 	var copierWatermark, binlogName, alterStatement string
 	var id, binlogPos int
 	var rowsCopied, rowsCopiedLogical uint64
@@ -760,11 +760,11 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not read from table '%s', err:%v", cpName, err)
 	}
-	if r.migration.Alter != alterStatement {
+	if r.stmt.Alter != alterStatement {
 		return ErrMismatchedAlter
 	}
 	// Populate the objects that would have been set in the other funcs.
-	r.newTable = table.NewTableInfo(r.db, r.migration.Database, newName)
+	r.newTable = table.NewTableInfo(r.db, r.stmt.Schema, newName)
 	if err := r.newTable.SetInfo(ctx); err != nil {
 		return err
 	}
@@ -931,7 +931,7 @@ func (r *Runner) dumpCheckpoint(ctx context.Context) error {
 		binlog.Pos,
 		copyRows,
 		logicalCopyRows,
-		r.migration.Alter,
+		r.stmt.Alter,
 	)
 }
 

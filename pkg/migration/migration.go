@@ -90,6 +90,7 @@ func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err e
 		if stmt.Schema != "" && stmt.Schema != m.Database {
 			return nil, errors.New("schema name in statement (`schema`.`table`) does not match --database")
 		}
+		stmt.Schema = m.Database
 	} else {
 		if m.Table == "" {
 			return nil, errors.New("table name is required")
@@ -104,6 +105,7 @@ func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err e
 			return nil, errors.New("could not parse SQL statement: " + fullStatement)
 		}
 		stmt = &statement.AbstractStatement{
+			Schema:    m.Database,
 			Table:     m.Table,
 			Alter:     m.Alter,
 			Statement: fullStatement,

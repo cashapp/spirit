@@ -3057,3 +3057,32 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "could not acquire metadata lock")
 }
+
+func TestStatementWorkflowStillInstant(t *testing.T) {
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS stmtworkflow`)
+	table := `CREATE TABLE stmtworkflow (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		b INT NOT NULL,
+		c INT NOT NULL,
+		PRIMARY KEY (id),
+		INDEX (b)
+	)`
+	testutils.RunSQL(t, table)
+	m, err := NewRunner(&Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Statement: "ALTER TABLE stmtworkflow ADD newcol INT",
+	})
+	assert.NoError(t, err)
+	err = m.Run(context.Background())
+	assert.NoError(t, err)
+
+	assert.True(t, m.usedInstantDDL) // expected to count as instant.
+	assert.NoError(t, m.Close())
+}
