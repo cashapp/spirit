@@ -50,6 +50,9 @@ func New(statement string) (*AbstractStatement, error) {
 		}
 		normalizedStmt := sb.String()
 		trimLen := len(alterStmt.Table.Name.String()) + 15 // len ALTER TABLE + quotes
+		if len(alterStmt.Table.Schema.String()) > 0 {
+			trimLen += len(alterStmt.Table.Schema.String()) + 3 // len schema + quotes and dot.
+		}
 		return &AbstractStatement{
 			Schema:    alterStmt.Table.Schema.String(),
 			Table:     alterStmt.Table.Name.String(),

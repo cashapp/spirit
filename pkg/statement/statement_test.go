@@ -12,6 +12,12 @@ func TestExtractFromStatement(t *testing.T) {
 	assert.Equal(t, "t1", abstractStmt.Table)
 	assert.Equal(t, "ADD INDEX(`something`)", abstractStmt.Alter)
 
+	abstractStmt, err = New("ALTER TABLE test.t1 ADD INDEX (something)")
+	assert.NoError(t, err)
+	assert.Equal(t, "test", abstractStmt.Schema)
+	assert.Equal(t, "t1", abstractStmt.Table)
+	assert.Equal(t, "ADD INDEX(`something`)", abstractStmt.Alter)
+
 	abstractStmt, err = New("ALTER TABLE t1aaaa ADD COLUMN newcol int")
 	assert.NoError(t, err)
 	assert.Equal(t, "t1aaaa", abstractStmt.Table)
