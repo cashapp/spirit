@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
@@ -87,7 +88,7 @@ func datumValFromString(val string, tp datumTp) (interface{}, error) {
 	// If it starts with 0x then it's a binary string. If it was actually
 	// a string that contained 0x, then we have encoded it as hex anyway.
 	// see pkg/table/chunk.go:valuesString()
-	if len(val) > 2 && val[0:2] == "0x" {
+	if strings.HasPrefix(val, "0x") {
 		tmp, err := hex.DecodeString(val[2:])
 		if err != nil {
 			return nil, err
