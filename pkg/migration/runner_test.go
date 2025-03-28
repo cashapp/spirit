@@ -952,6 +952,91 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.True(t, r2.usedResumeFromCheckpoint)
 }
 
+// https://github.com/cashapp/spirit/issues/381
+func TestCheckpointRestoreBinaryPK(t *testing.T) {
+	ctx := context.TODO()
+	tbl := `CREATE TABLE binarypk (
+ main_id varbinary(16) NOT NULL,
+ sub_id varchar(36) CHARACTER SET latin1 COLLATE latin1_swedish_ci GENERATED ALWAYS AS (jsonbody->>'$._id') STORED NOT NULL,
+ jsonbody json NOT NULL,
+ PRIMARY KEY (main_id,sub_id)
+);`
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS binarypk, _binarypk_new, _binarypk_chkpnt`)
+	testutils.RunSQL(t, tbl)
+	testutils.RunSQL(t, `INSERT INTO binarypk (main_id, jsonbody) SELECT RANDOM_BYTES(16), JSON_OBJECT('_id', "0xabc", 'name', 'bbb', 'randombytes', HEX(RANDOM_BYTES(1024))) from dual`)
+	testutils.RunSQL(t, `INSERT INTO binarypk (main_id, jsonbody) SELECT RANDOM_BYTES(16), JSON_OBJECT('_id', "0xabc", 'name', 'bbb', 'randombytes', HEX(RANDOM_BYTES(1024))) from binarypk a JOIN binarypk b JOIN binarypk c LIMIT 10000;`)
+	testutils.RunSQL(t, `INSERT INTO binarypk (main_id, jsonbody) SELECT RANDOM_BYTES(16), JSON_OBJECT('_id', "0xabc", 'name', 'bbb', 'randombytes', HEX(RANDOM_BYTES(1024))) from binarypk a JOIN binarypk b JOIN binarypk c LIMIT 10000;`)
+	testutils.RunSQL(t, `INSERT INTO binarypk (main_id, jsonbody) SELECT RANDOM_BYTES(16), JSON_OBJECT('_id', "0xabc", 'name', 'bbb', 'randombytes', HEX(RANDOM_BYTES(1024))) from binarypk a JOIN binarypk b JOIN binarypk c LIMIT 10000;`)
+	testutils.RunSQL(t, `INSERT INTO binarypk (main_id, jsonbody) SELECT RANDOM_BYTES(16), JSON_OBJECT('_id', "0xabc", 'name', 'bbb', 'randombytes', HEX(RANDOM_BYTES(1024))) from binarypk a JOIN binarypk b JOIN binarypk c LIMIT 10000;`)
+
+	r, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  1,
+		Table:    "binarypk",
+		Alter:    "ENGINE=InnoDB",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, "initial", r.getCurrentState().String())
+	// Usually we would call r.Run() but we want to step through
+	// the migration process manually.
+	r.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	// Get Table Info
+	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
+	err = r.table.SetInfo(ctx)
+	assert.NoError(t, err)
+	assert.NoError(t, r.dropOldTable(ctx))
+
+	// So we proceed with the initial steps.
+	assert.NoError(t, r.createNewTable(ctx))
+	assert.NoError(t, r.alterNewTable(ctx))
+	assert.NoError(t, r.createCheckpointTable(ctx))
+
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		Logger:          logrus.New(),
+		Concurrency:     4,
+		TargetBatchTime: r.migration.TargetChunkTime,
+	})
+	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
+	assert.NoError(t, err)
+	err = r.replClient.Run()
+	assert.NoError(t, err)
+
+	// copy a few batches and then dump a checkpoint.
+	assert.NoError(t, r.copier.Open4Test())
+	for range 3 {
+		chunk, err := r.copier.Next4Test()
+		assert.NoError(t, err)
+		assert.NoError(t, r.copier.CopyChunk(ctx, chunk))
+	}
+	// Dump checkpoint
+	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.Close())
+
+	// Try and resume and then check if we used a checkpoint
+	// for resuming.
+	r2, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "binarypk",
+		Alter:    "ENGINE=InnoDB",
+		Checksum: true,
+	})
+	assert.NoError(t, err)
+	err = r2.Run(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, r2.usedResumeFromCheckpoint) // managed to resume.
+}
+
 func TestCheckpointResumeDuringChecksum(t *testing.T) {
 	tbl := `CREATE TABLE cptresume (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

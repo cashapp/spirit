@@ -103,7 +103,9 @@ func (b *Boundary) valuesString() string {
 		// We have to *also* quote numeric types to avoid JSON float behavior
 		// See Issue #125; this doesn't apply to string types
 		// because they are already quoted by datum.String()
-		if v.IsNumeric() {
+		// We also force-quote binary strings, because there is no JSON handling
+		// for a hex values, and it needs quoting in this context.
+		if v.IsNumeric() || v.IsBinaryString() {
 			vals[i] = fmt.Sprintf(`"%s"`, v)
 		} else {
 			vals[i] = v.String()

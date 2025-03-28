@@ -1,9 +1,12 @@
 package table
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
 )
@@ -81,6 +84,16 @@ func datumValFromString(val string, tp datumTp) (interface{}, error) {
 		return i, nil
 	} else if tp == unsignedType {
 		return strconv.ParseUint(val, 10, 64)
+	}
+	// If it starts with 0x then it's a binary string. If it was actually
+	// a string that contained 0x, then we have encoded it as hex anyway.
+	// see pkg/table/chunk.go:valuesString()
+	if strings.HasPrefix(val, "0x") {
+		tmp, err := hex.DecodeString(val[2:])
+		if err != nil {
+			return nil, err
+		}
+		return string(tmp), nil
 	}
 	return val, nil
 }
@@ -166,15 +179,32 @@ func (d Datum) Range(d2 Datum) uint64 {
 
 // String returns the datum as a SQL escaped string
 func (d Datum) String() string {
-	if !d.IsNumeric() {
-		return "\"" + sqlescape.EscapeString(d.Val.(string)) + "\""
+	if d.IsNil() {
+		return "NULL"
 	}
-	return fmt.Sprintf("%v", d.Val)
+	if d.IsNumeric() {
+		return fmt.Sprintf("%v", d.Val)
+	}
+	s, ok := d.Val.(string)
+	if ok && d.IsBinaryString() {
+		return fmt.Sprintf("0x%x", s)
+	} else if ok {
+		return "\"" + sqlescape.EscapeString(s) + "\""
+	}
+	panic("can not convert datum to string")
 }
 
 // IsNumeric checks if it's signed or unsigned
 func (d Datum) IsNumeric() bool {
 	return d.Tp == signedType || d.Tp == unsignedType
+}
+
+func (d Datum) IsBinaryString() bool {
+	s, ok := d.Val.(string)
+	// ok is true and it's not a valid utf8 string OR the first 2 characters of s are 0x
+	// this is because we *must* encode 0x strings like they are binary because
+	// otherwise it can cause corruption on restoring JSON.
+	return ok && (!utf8.ValidString(s) || (len(s) > 2 && s[0:2] == "0x"))
 }
 
 func (d Datum) IsNil() bool {
