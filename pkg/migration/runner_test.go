@@ -3238,5 +3238,4 @@ func TestTrailingSemicolon(t *testing.T) {
 
 	require.True(t, m.usedInplaceDDL) // must be inplace
 	require.NoError(t, m.Close())
-
 }
