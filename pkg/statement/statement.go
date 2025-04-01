@@ -145,7 +145,9 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafe() error {
 		switch spec.Tp {
 		case ast.AlterTableDropIndex,
 			ast.AlterTableRenameIndex,
-			ast.AlterTableIndexInvisible:
+			ast.AlterTableIndexInvisible,
+			ast.AlterTableDropPartition,
+			ast.AlterTableTruncatePartition:
 			continue
 		default:
 			unsafeClauses++

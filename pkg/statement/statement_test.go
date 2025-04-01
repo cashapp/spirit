@@ -96,11 +96,14 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	assert.NoError(t, test("drop index `a`, rename index `b` to c"))
 	assert.NoError(t, test("ALTER INDEX b INVISIBLE"))
 	assert.NoError(t, test("ALTER INDEX b VISIBLE"))
+	assert.NoError(t, test("drop partition `p1`, `p2`"))
+	assert.NoError(t, test("truncate partition `p1`, `p3`"))
 
 	assert.Error(t, test("ADD COLUMN `a` INT"))
 	assert.Error(t, test("ADD index (a)"))
 	assert.Error(t, test("drop index `a`, add index `b` (`b`)"))
 	assert.Error(t, test("engine=innodb"))
+	assert.Error(t, test("partition by HASH(`id`) partitions 8;"))
 	// this *should* be safe, but we don't support it yet because we can't
 	// guess which operations are INSTANT
 	assert.Error(t, test("drop index `a`, add column `b` int"))
