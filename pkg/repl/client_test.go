@@ -28,9 +28,9 @@ func TestReplClient(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE _replt1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo(db, "test", "replt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replt2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -45,11 +45,11 @@ func TestReplClient(t *testing.T) {
 
 	// Insert into t1.
 	testutils.RunSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
 	assert.Equal(t, 1, client.GetDeltaLen())
-	assert.NoError(t, client.Flush(context.TODO()))
+	assert.NoError(t, client.Flush(t.Context()))
 
 	// We should observe there is a row in t2.
 	var count int
@@ -74,9 +74,9 @@ func TestReplClientComplex(t *testing.T) {
 	testutils.RunSQL(t, "INSERT INTO replcomplext1 (a, b, c) SELECT NULL, 1, 1 FROM replcomplext1 a JOIN replcomplext1 b JOIN replcomplext1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replcomplext1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replcomplext2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -95,7 +95,7 @@ func TestReplClientComplex(t *testing.T) {
 
 	// Insert into t1, but because there is no read yet, the key is above the watermark
 	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a BETWEEN 10 and 500")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// Read from the copier so that the key is below the watermark
@@ -109,22 +109,22 @@ func TestReplClientComplex(t *testing.T) {
 
 	// Now if we delete below 1001 we should see 10 deltas accumulate
 	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 560")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
 
 	// Flush the changeset
-	assert.NoError(t, client.Flush(context.TODO()))
+	assert.NoError(t, client.Flush(t.Context()))
 
 	// Accumulate more deltas
 	testutils.RunSQL(t, "DELETE FROM replcomplext1 WHERE a >= 550 AND a < 570")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 10, client.GetDeltaLen()) // 10 keys did not exist on t1
 	testutils.RunSQL(t, "UPDATE replcomplext1 SET b = 213 WHERE a >= 550 AND a < 1001")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 441, client.GetDeltaLen()) // ??
 
 	// Final flush
-	assert.NoError(t, client.Flush(context.TODO()))
+	assert.NoError(t, client.Flush(t.Context()))
 
 	// We should observe there is a row in t2.
 	var count int
@@ -143,9 +143,9 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE _replresumet1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo(db, "test", "replresumet1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replresumet2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -172,9 +172,9 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE replresumepointt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	t1 := table.NewTableInfo(db, "test", "replresumepointt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replresumepointt2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -210,9 +210,9 @@ func TestReplClientOpts(t *testing.T) {
 	testutils.RunSQL(t, "INSERT INTO replclientoptst1 (a, b, c) SELECT NULL, 1, 1 FROM replclientoptst1 a JOIN replclientoptst1 b JOIN replclientoptst1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replclientoptst1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replclientoptst2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -233,11 +233,11 @@ func TestReplClientOpts(t *testing.T) {
 
 	// Delete more than 10000 keys so the FLUSH has to run in chunks.
 	testutils.RunSQL(t, "DELETE FROM replclientoptst1 WHERE a BETWEEN 10 and 50000")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 49961, client.GetDeltaLen())
 	// Flush. We could use client.Flush() but for testing purposes lets use
 	// PeriodicFlush()
-	go client.StartPeriodicFlush(context.TODO(), 1*time.Second)
+	go client.StartPeriodicFlush(t.Context(), 1*time.Second)
 	time.Sleep(2 * time.Second)
 	client.StopPeriodicFlush()
 	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
@@ -264,9 +264,9 @@ func TestReplClientQueue(t *testing.T) {
 	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 a JOIN replqueuet1 b JOIN replqueuet1 c LIMIT 100000")
 
 	t1 := table.NewTableInfo(db, "test", "replqueuet1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replqueuet2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -285,7 +285,7 @@ func TestReplClientQueue(t *testing.T) {
 	// Delete from the table, because there is no keyabove watermark
 	// optimization these deletes will be queued immediately.
 	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 1000")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 1000, client.GetDeltaLen())
 
 	// Read from the copier
@@ -300,20 +300,20 @@ func TestReplClientQueue(t *testing.T) {
 
 	// Accumulate more deltas
 	testutils.RunSQL(t, "INSERT INTO replqueuet1 (a, b, c) SELECT UUID(), 1, 1 FROM replqueuet1 LIMIT 501")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 1501, client.GetDeltaLen())
 
 	// Flush the changeset
-	assert.NoError(t, client.Flush(context.TODO()))
+	assert.NoError(t, client.Flush(t.Context()))
 	assert.Equal(t, 0, client.GetDeltaLen())
 
 	// Accumulate more deltas
 	testutils.RunSQL(t, "DELETE FROM replqueuet1 LIMIT 100")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	assert.Equal(t, 100, client.GetDeltaLen())
 
 	// Final flush
-	assert.NoError(t, client.Flush(context.TODO()))
+	assert.NoError(t, client.Flush(t.Context()))
 	assert.Equal(t, 0, client.GetDeltaLen())
 }
 
@@ -327,9 +327,9 @@ func TestFeedback(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE _feedbackt1_chkpnt (a int)") // just used to advance binlog
 
 	t1 := table.NewTableInfo(db, "test", "replqueuet1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replqueuet2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
@@ -379,9 +379,9 @@ func TestBlockWait(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE _blockwaitt1_chkpnt (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	t1 := table.NewTableInfo(db, "test", "blockwaitt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "blockwaitt2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -394,7 +394,7 @@ func TestBlockWait(t *testing.T) {
 	assert.NoError(t, client.Run())
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2) // if it takes any longer block wait is failing.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second*2) // if it takes any longer block wait is failing.
 	defer cancel()
 
 	assert.NoError(t, client.BlockWait(ctx))

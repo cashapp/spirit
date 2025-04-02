@@ -75,7 +75,7 @@ func removeEnumSetOpts(s string) string {
 }
 
 func removeZerofill(s string) string {
-	return strings.Replace(s, " zerofill", "", -1)
+	return strings.ReplaceAll(s, " zerofill", "")
 }
 
 func QuoteColumns(cols []string) string {

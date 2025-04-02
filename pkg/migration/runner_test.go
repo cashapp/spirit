@@ -45,8 +45,8 @@ func TestVarcharNonBinaryComparable(t *testing.T) {
 		Table:    "nonbinarycompatt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                         // everything is specified.
-	assert.NoError(t, m.Run(context.Background())) // it's a non-binary comparable type (varchar)
+	assert.NoError(t, err)                // everything is specified.
+	assert.NoError(t, m.Run(t.Context())) // it's a non-binary comparable type (varchar)
 	assert.NoError(t, m.Close())
 }
 
@@ -71,7 +71,7 @@ func TestPartitioningSyntax(t *testing.T) {
 		Alter:    "PARTITION BY KEY() PARTITIONS 8",
 	})
 	assert.NoError(t, err)
-	assert.NoError(t, m.Run(context.Background()))
+	assert.NoError(t, m.Run(t.Context()))
 	assert.NoError(t, m.Close())
 }
 
@@ -95,9 +95,9 @@ func TestVarbinary(t *testing.T) {
 		Table:    "varbinaryt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                         // everything is specified correctly.
-	assert.NoError(t, m.Run(context.Background())) // varbinary is compatible.
-	assert.False(t, m.usedInstantDDL)              // not possible
+	assert.NoError(t, err)                // everything is specified correctly.
+	assert.NoError(t, m.Run(t.Context())) // varbinary is compatible.
+	assert.False(t, m.usedInstantDDL)     // not possible
 	assert.NoError(t, m.Close())
 }
 
@@ -122,9 +122,9 @@ func TestDataFromBadSqlMode(t *testing.T) {
 		Table:    "badsqlt1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                         // everything is specified correctly.
-	assert.NoError(t, m.Run(context.Background())) // pk is compatible.
-	assert.False(t, m.usedInstantDDL)              // not possible
+	assert.NoError(t, err)                // everything is specified correctly.
+	assert.NoError(t, m.Run(t.Context())) // pk is compatible.
+	assert.False(t, m.usedInstantDDL)     // not possible
 	assert.NoError(t, m.Close())
 }
 
@@ -148,8 +148,8 @@ func TestChangeDatatypeNoData(t *testing.T) {
 		Table:    "cdatatypemytable",
 		Alter:    "CHANGE b b INT", //nolint: dupword
 	})
-	assert.NoError(t, err)                         // everything is specified correctly.
-	assert.NoError(t, m.Run(context.Background())) // no data so no truncation is possible.
+	assert.NoError(t, err)                // everything is specified correctly.
+	assert.NoError(t, m.Run(t.Context())) // no data so no truncation is possible.
 	assert.False(t, m.usedInstantDDL)
 	assert.NoError(t, m.Close())
 }
@@ -175,8 +175,8 @@ func TestChangeDatatypeDataLoss(t *testing.T) {
 		Table:    "cdatalossmytable",
 		Alter:    "CHANGE b b INT", //nolint: dupword
 	})
-	assert.NoError(t, err)                       // everything is specified correctly.
-	assert.Error(t, m.Run(context.Background())) // value 'b' can no convert cleanly to int.
+	assert.NoError(t, err)              // everything is specified correctly.
+	assert.Error(t, m.Run(t.Context())) // value 'b' can no convert cleanly to int.
 	assert.NoError(t, m.Close())
 }
 
@@ -201,7 +201,7 @@ func TestOnline(t *testing.T) {
 		Alter:    "CHANGE COLUMN b b int(11) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
-	assert.NoError(t, m.Run(context.TODO()))
+	assert.NoError(t, m.Run(t.Context()))
 	assert.False(t, m.usedInplaceDDL) // not possible
 	assert.NoError(t, m.Close())
 
@@ -224,7 +224,7 @@ func TestOnline(t *testing.T) {
 		Alter:    "ADD c int(11) NOT NULL",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInplaceDDL) // uses instant DDL first
 
@@ -252,7 +252,7 @@ func TestOnline(t *testing.T) {
 		ForceInplace: true,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInstantDDL) // not possible
 	assert.True(t, m.usedInplaceDDL)  // as
@@ -279,7 +279,7 @@ func TestOnline(t *testing.T) {
 		ForceInplace: false,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0, see https://bugs.mysql.com/bug.php?id=113355
 	assert.True(t, m.usedInplaceDDL)
@@ -306,7 +306,7 @@ func TestOnline(t *testing.T) {
 		ForceInplace: false,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0, see https://bugs.mysql.com/bug.php?id=113355
 	assert.False(t, m.usedInplaceDDL) // unfortunately false, since it combines INSTANT and INPLACE operations
@@ -333,7 +333,7 @@ func TestTableLength(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "table name must be less than 54 characters")
 	assert.NoError(t, m.Close())
@@ -350,7 +350,7 @@ func TestTableLength(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "table name must be less than 54 characters")
 	assert.NoError(t, m.Close())
@@ -434,7 +434,7 @@ func TestBadAlter(t *testing.T) {
 		Alter:    "RENAME COLUMN name TO name2, ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "renames are not supported")
 	assert.NoError(t, m.Close())
@@ -451,7 +451,7 @@ func TestBadAlter(t *testing.T) {
 		Alter:    "CHANGE name name2 VARCHAR(255), ADD INDEX(name)", // need both, otherwise INSTANT algorithm will do the rename
 	})
 	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err) // alter is invalid
 	assert.ErrorContains(t, err, "renames are not supported")
 	assert.NoError(t, m.Close())
@@ -467,7 +467,7 @@ func TestBadAlter(t *testing.T) {
 		Alter:    "CHANGE name name VARCHAR(200), ADD INDEX(name)", //nolint: dupword
 	})
 	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err) // its valid, no rename
 	assert.NoError(t, m.Close())
 
@@ -484,7 +484,7 @@ func TestBadAlter(t *testing.T) {
 		Alter:    "DROP PRIMARY KEY",
 	})
 	assert.NoError(t, err) // does not parse alter yet.
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "dropping primary key")
 	assert.NoError(t, m.Close())
@@ -523,7 +523,7 @@ func TestChangeDatatypeLossyNoAutoInc(t *testing.T) {
 		Alter:    "CHANGE COLUMN id id INT NOT NULL auto_increment", //nolint: dupword
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "Out of range value")    // Error 1264: Out of range value for column 'id' at row 1
 	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // should be very low
@@ -557,7 +557,7 @@ func TestChangeDatatypeLossless(t *testing.T) {
 		Checksum: false,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)                                // works because there are no violations.
 	assert.Less(t, m.copier.CopyChunksCount, uint64(500)) // prefetch makes it copy fast.
 	assert.NoError(t, m.Close())
@@ -592,7 +592,7 @@ func TestChangeDatatypeLossyFailEarly(t *testing.T) {
 		Alter:    "CHANGE COLUMN b b varchar(255) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err) // there is a violation where row 1 is NULL
 	assert.NoError(t, m.Close())
 }
@@ -631,7 +631,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.False(t, m.migration.Checksum)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)                 // not unique
 	assert.NoError(t, m.Close())         // need to close now otherwise we'll get an error on re-opening it.
 	assert.True(t, m.migration.Checksum) // it force enables a checksum
@@ -647,7 +647,7 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 		Alter:    "ADD UNIQUE INDEX b (b)",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err) // works fine.
 	assert.NoError(t, m.Close())
 }
@@ -675,7 +675,7 @@ func TestChangeNonIntPK(t *testing.T) {
 		Alter:    "CHANGE COLUMN b b VARCHAR(255) NOT NULL", //nolint: dupword
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
@@ -693,11 +693,13 @@ func (l *testLogger) Infof(format string, args ...interface{}) {
 	defer l.Unlock()
 	l.lastInfof = fmt.Sprintf(format, args...)
 }
+
 func (l *testLogger) Warnf(format string, args ...interface{}) {
 	l.Lock()
 	defer l.Unlock()
 	l.lastWarnf = fmt.Sprintf(format, args...)
 }
+
 func (l *testLogger) Debugf(format string, args ...interface{}) {
 	l.Lock()
 	defer l.Unlock()
@@ -743,10 +745,10 @@ func TestCheckpoint(t *testing.T) {
 
 		// Get Table Info
 		r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
-		err = r.table.SetInfo(context.TODO())
+		err = r.table.SetInfo(t.Context())
 		assert.NoError(t, err)
-		assert.NoError(t, r.dropOldTable(context.TODO()))
-		go r.dumpStatus(context.TODO()) // start periodically writing status
+		assert.NoError(t, r.dropOldTable(t.Context()))
+		go r.dumpStatus(t.Context()) // start periodically writing status
 		return r
 	}
 
@@ -755,12 +757,12 @@ func TestCheckpoint(t *testing.T) {
 	// Which first checks if the table can be restored from checkpoint.
 	// Because this is the first run, it can't.
 
-	assert.Error(t, r.resumeFromCheckpoint(context.TODO()))
+	assert.Error(t, r.resumeFromCheckpoint(t.Context()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, r.createNewTable(context.TODO()))
-	assert.NoError(t, r.alterNewTable(context.TODO()))
-	assert.NoError(t, r.createCheckpointTable(context.TODO()))
+	assert.NoError(t, r.createNewTable(t.Context()))
+	assert.NoError(t, r.alterNewTable(t.Context()))
+	assert.NoError(t, r.createCheckpointTable(t.Context()))
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          logrus.New(), // don't use the logger for migration since we feed status to it.
 		Concurrency:     4,
@@ -775,7 +777,7 @@ func TestCheckpoint(t *testing.T) {
 	// Instead of calling r.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//r.copier.StartTime = time.Now()
+	// r.copier.StartTime = time.Now()
 	r.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
@@ -802,14 +804,14 @@ func TestCheckpoint(t *testing.T) {
 	_, err = r.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
-	assert.Error(t, r.dumpCheckpoint(context.TODO()))
+	assert.Error(t, r.dumpCheckpoint(t.Context()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
 	// Let's complete them in the order of 2, 1, 3. When 2 phones home first
 	// it should be queued. Then when 1 phones home it should apply and de-queue 2.
-	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk2))
-	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk1))
-	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk3))
+	assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk2))
+	assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk1))
+	assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk3))
 
 	time.Sleep(time.Second) // wait for status to be updated.
 	testLogger.Lock()
@@ -822,7 +824,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 
 	// Close everything, we can't use r.Close() because it will delete
 	// the checkpoint table.
@@ -834,7 +836,7 @@ func TestCheckpoint(t *testing.T) {
 	// from checkpoint again.
 
 	r = preSetup()
-	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
+	assert.NoError(t, r.resumeFromCheckpoint(t.Context()))
 
 	// Start the binary log feed just before copy rows starts.
 	err = r.replClient.Run()
@@ -848,7 +850,7 @@ func TestCheckpoint(t *testing.T) {
 	chunk, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, "1001", chunk.LowerBound.Value[0].String())
-	assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from
 	// a restored checkpoint state. We won't have advanced anywhere from
@@ -857,13 +859,13 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 
 	// Let's confirm we do advance the watermark.
 	for range 10 {
 		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, r.copier.CopyChunk(context.TODO(), chunk))
+		assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk))
 	}
 
 	watermark, err = r.copier.GetLowWatermark()
@@ -900,14 +902,14 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.NoError(t, err)
 	// Get Table Info
 	r.table = table.NewTableInfo(r.db, r.migration.Database, r.migration.Table)
-	err = r.table.SetInfo(context.TODO())
+	err = r.table.SetInfo(t.Context())
 	assert.NoError(t, err)
-	assert.NoError(t, r.dropOldTable(context.TODO()))
+	assert.NoError(t, r.dropOldTable(t.Context()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, r.createNewTable(context.TODO()))
-	assert.NoError(t, r.alterNewTable(context.TODO()))
-	assert.NoError(t, r.createCheckpointTable(context.TODO()))
+	assert.NoError(t, r.createNewTable(t.Context()))
+	assert.NoError(t, r.alterNewTable(t.Context()))
+	assert.NoError(t, r.createCheckpointTable(t.Context()))
 
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          logrus.New(),
@@ -923,7 +925,7 @@ func TestCheckpointRestore(t *testing.T) {
 	// from issue #125
 	watermark := "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\":[\"53926425\"],\"Inclusive\":true},\"UpperBound\":{\"Value\":[\"53926425\"],\"Inclusive\":false}}"
 	binlog := r.replClient.GetBinlogApplyPosition()
-	err = dbconn.Exec(context.TODO(), r.db, `INSERT INTO %n.%n
+	err = dbconn.Exec(t.Context(), r.db, `INSERT INTO %n.%n
 	(copier_watermark, checksum_watermark, binlog_name, binlog_pos, rows_copied, rows_copied_logical, alter_statement)
 	VALUES
 	(%?, %?, %?, %?, %?, %?, %?)`,
@@ -949,14 +951,14 @@ func TestCheckpointRestore(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
-	err = r2.Run(context.TODO())
+	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint)
 }
 
 // https://github.com/cashapp/spirit/issues/381
 func TestCheckpointRestoreBinaryPK(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	tbl := `CREATE TABLE binarypk (
  main_id varbinary(16) NOT NULL,
  sub_id varchar(36) CHARACTER SET latin1 COLLATE latin1_swedish_ci GENERATED ALWAYS AS (jsonbody->>'$._id') STORED NOT NULL,
@@ -1018,7 +1020,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 		assert.NoError(t, r.copier.CopyChunk(ctx, chunk))
 	}
 	// Dump checkpoint
-	assert.NoError(t, r.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 	assert.NoError(t, r.Close())
 
 	// Try and resume and then check if we used a checkpoint
@@ -1034,7 +1036,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 		Checksum: true,
 	})
 	assert.NoError(t, err)
-	err = r2.Run(context.TODO())
+	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint) // managed to resume.
 }
@@ -1070,23 +1072,21 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 	// When we see that we are waiting on the sentinel table,
 	// we then manually start the first bits of checksum, and then close()
 	// We should be able to resume from the checkpoint into the checksum state.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		err := r.Run(ctx)
 		assert.Error(t, err) // context cancelled
 	}()
-	for {
+	for r.getCurrentState() < stateWaitingOnSentinelTable {
 		// Wait for the sentinel table.
-		if r.getCurrentState() >= stateWaitingOnSentinelTable {
-			break
-		}
+
 		time.Sleep(time.Millisecond)
 	}
 
-	assert.NoError(t, r.checksum(context.TODO()))       // run the checksum, the original Run is blocked on sentinel.
-	assert.NoError(t, r.dumpCheckpoint(context.TODO())) // dump a checkpoint with the watermark.
-	cancel()                                            // unblock the original waiting on sentinel.
-	assert.NoError(t, r.Close())                        // close the run.
+	assert.NoError(t, r.checksum(t.Context()))       // run the checksum, the original Run is blocked on sentinel.
+	assert.NoError(t, r.dumpCheckpoint(t.Context())) // dump a checkpoint with the watermark.
+	cancel()                                         // unblock the original waiting on sentinel.
+	assert.NoError(t, r.Close())                     // close the run.
 
 	// drop the sentinel table.
 	testutils.RunSQL(t, `DROP TABLE _cptresume_sentinel`)
@@ -1108,7 +1108,7 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 		Checksum:        true,
 	})
 	assert.NoError(t, err)
-	err = r2.Run(context.Background())
+	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint)
 	assert.NotEmpty(t, r2.checksumWatermark) // it had a checksum watermark
@@ -1148,9 +1148,9 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		assert.NoError(t, err)
 		// Get Table Info
 		m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-		err = m.table.SetInfo(context.TODO())
+		err = m.table.SetInfo(t.Context())
 		assert.NoError(t, err)
-		assert.NoError(t, m.dropOldTable(context.TODO()))
+		assert.NoError(t, m.dropOldTable(t.Context()))
 		return m
 	}
 
@@ -1159,12 +1159,12 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Which first checks if the table can be restored from checkpoint.
 	// Because this is the first run, it can't.
 
-	assert.Error(t, m.resumeFromCheckpoint(context.TODO()))
+	assert.Error(t, m.resumeFromCheckpoint(t.Context()))
 
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createNewTable(context.TODO()))
-	assert.NoError(t, m.alterNewTable(context.TODO()))
-	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(t.Context()))
+	assert.NoError(t, m.alterNewTable(t.Context()))
+	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
@@ -1180,7 +1180,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1200,12 +1200,12 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	_, err = m.copier.GetLowWatermark()
 	assert.Error(t, err)
 	// Dump checkpoint also returns an error for the same reason.
-	assert.Error(t, m.dumpCheckpoint(context.TODO()))
+	assert.Error(t, m.dumpCheckpoint(t.Context()))
 
 	// Because it's multi-threaded, we can't guarantee the order of the chunks.
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk2))
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk1))
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk3))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk2))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk1))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk3))
 
 	// The watermark should exist now, because migrateChunk()
 	// gives feedback back to table.
@@ -1214,7 +1214,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, m.dumpCheckpoint(context.TODO()))
+	assert.NoError(t, m.dumpCheckpoint(t.Context()))
 
 	// Close the db connection since m is to be destroyed.
 	assert.NoError(t, m.db.Close())
@@ -1223,7 +1223,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
-	assert.Error(t, m.resumeFromCheckpoint(context.TODO())) // it should error because the ALTER does not match.
+	assert.Error(t, m.resumeFromCheckpoint(t.Context())) // it should error because the ALTER does not match.
 }
 
 // TestE2EBinlogSubscribingCompositeKey and TestE2EBinlogSubscribingNonCompositeKey tests
@@ -1351,16 +1351,16 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	defer m.db.Close()
 	// Get Table Info
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-	err = m.table.SetInfo(context.TODO())
+	err = m.table.SetInfo(t.Context())
 	assert.NoError(t, err)
-	assert.NoError(t, m.dropOldTable(context.TODO()))
+	assert.NoError(t, m.dropOldTable(t.Context()))
 
 	// migration.Run usually calls m.Migrate() here.
 	// Which does the following before calling copyRows:
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createNewTable(context.TODO()))
-	assert.NoError(t, m.alterNewTable(context.TODO()))
-	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(t.Context()))
+	assert.NoError(t, m.alterNewTable(t.Context()))
+	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
@@ -1385,7 +1385,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1397,7 +1397,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, chunk)
 	assert.Equal(t, "((`id1` < 1001)\n OR (`id1` = 1001 AND `id2` < 1))", chunk.String())
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 	assert.Equal(t, Progress{CurrentState: stateCopyRows.String(), Summary: "1000/1200 83.33% copyRows ETA TBD"}, m.GetProgress())
 
 	// Now insert some data.
@@ -1405,26 +1405,26 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// The composite chunker does not support keyAboveHighWatermark
 	// so it will show up as a delta.
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	// Second chunk
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, "((`id1` > 1001)\n OR (`id1` = 1001 AND `id2` >= 1))", chunk.String())
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 	assert.Equal(t, Progress{CurrentState: stateCopyRows.String(), Summary: "1201/1200 100.08% copyRows ETA DUE"}, m.GetProgress())
 
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
 	// because it is within chunk size range of the second chunk.
 	testutils.RunSQL(t, `insert into e2et1 (id1, id2) values (5, 2)`)
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	testutils.RunSQL(t, `delete from e2et1 where id1 = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Some data is inserted later, even though the last chunk is done.
@@ -1434,11 +1434,11 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 
 	// Now that copy rows is done, we flush the changeset until trivial.
 	// and perform the optional checksum.
-	assert.NoError(t, m.replClient.Flush(context.TODO()))
+	assert.NoError(t, m.replClient.Flush(t.Context()))
 	m.setCurrentState(stateApplyChangeset)
 	assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 	m.setCurrentState(stateChecksum)
-	assert.NoError(t, m.checksum(context.TODO()))
+	assert.NoError(t, m.checksum(t.Context()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	assert.Equal(t, Progress{CurrentState: statePostChecksum.String(), Summary: "Applying Changeset Deltas=0"}, m.GetProgress())
 
@@ -1480,16 +1480,16 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	defer m.db.Close()
 	// Get Table Info
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-	err = m.table.SetInfo(context.TODO())
+	err = m.table.SetInfo(t.Context())
 	assert.NoError(t, err)
-	assert.NoError(t, m.dropOldTable(context.TODO()))
+	assert.NoError(t, m.dropOldTable(t.Context()))
 
 	// migration.Run usually calls m.Migrate() here.
 	// Which does the following before calling copyRows:
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createNewTable(context.TODO()))
-	assert.NoError(t, m.alterNewTable(context.TODO()))
-	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(t.Context()))
+	assert.NoError(t, m.alterNewTable(t.Context()))
+	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
@@ -1515,7 +1515,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1527,7 +1527,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	chunk, err := m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.NotNil(t, chunk)
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 	assert.Equal(t, "`id` < 1", chunk.String())
 
 	// Now insert some data.
@@ -1538,13 +1538,13 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Give it a chance, since we need to read from the binary log to populate this
 	// Even though we expect nothing.
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 0, m.replClient.GetDeltaLen())
 
 	// second chunk is between min and max value.
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 	assert.Equal(t, "`id` >= 1 AND `id` < 1001", chunk.String())
 
 	// Now insert some data.
@@ -1552,19 +1552,19 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// because it is within chunk size range of the second chunk.
 	testutils.RunSQL(t, `insert into e2et2 (id) values (5)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 1, m.replClient.GetDeltaLen())
 
 	testutils.RunSQL(t, `delete from e2et2 where id = 1`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(1))
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	// third (and last) chunk is open ended,
 	// so anything after it will be picked up by the binlog.
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 	assert.Equal(t, "`id` >= 1001", chunk.String())
 
 	// Some data is inserted later, even though the last chunk is done.
@@ -1576,11 +1576,11 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 
 	// Now that copy rows is done, we flush the changeset until trivial.
 	// and perform the optional checksum.
-	assert.NoError(t, m.replClient.Flush(context.TODO()))
+	assert.NoError(t, m.replClient.Flush(t.Context()))
 	m.setCurrentState(stateApplyChangeset)
 	assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 	m.setCurrentState(stateChecksum)
-	assert.NoError(t, m.checksum(context.TODO()))
+	assert.NoError(t, m.checksum(t.Context()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	// All done!
 }
@@ -1606,8 +1606,8 @@ func TestForRemainingTableArtifacts(t *testing.T) {
 		Table:    "remainingtbl",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                         // everything is specified.
-	assert.NoError(t, m.Run(context.Background())) // it's an accepted type.
+	assert.NoError(t, err)                // everything is specified.
+	assert.NoError(t, m.Run(t.Context())) // it's an accepted type.
 	assert.NoError(t, m.Close())
 
 	// Now we should have a _remainingtbl_old table and a remainingtbl table
@@ -1646,7 +1646,7 @@ func TestDropColumn(t *testing.T) {
 		Alter:    "DROP COLUMN b, ENGINE=InnoDB", // need both to ensure it is not instant!
 	})
 	assert.NoError(t, err)
-	assert.NoError(t, m.Run(context.Background()))
+	assert.NoError(t, m.Run(t.Context()))
 
 	assert.False(t, m.usedInstantDDL) // need to ensure it uses full process.
 	assert.NoError(t, m.Close())
@@ -1689,7 +1689,7 @@ func TestNullToNotNull(t *testing.T) {
 		Alter:    "modify column created_at datetime(3) not null default current_timestamp(3)",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "Column 'created_at' cannot be null")
 	assert.NoError(t, m.Close())
@@ -1736,7 +1736,7 @@ func TestChunkerPrefetching(t *testing.T) {
 		Alter:    "engine=innodb",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
@@ -1786,7 +1786,7 @@ func TestTpConversion(t *testing.T) {
 		`,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
@@ -1825,7 +1825,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	go func() {
 		err := runner.Run(ctx)
@@ -1869,7 +1869,7 @@ func TestResumeFromCheckpointE2E(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, m)
 
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, m.usedResumeFromCheckpoint)
 	assert.NoError(t, m.Close())
@@ -1919,7 +1919,7 @@ FROM compositevarcharpk a WHERE version='1'`)
 	}
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		err := runner.Run(ctx)
 		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
@@ -1958,7 +1958,7 @@ FROM compositevarcharpk a WHERE version='1'`)
 	assert.NoError(t, err)
 	assert.NotNil(t, m2)
 
-	err = m2.Run(context.Background())
+	err = m2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, m2.usedResumeFromCheckpoint)
 	assert.NoError(t, m2.Close())
@@ -2000,7 +2000,7 @@ func TestResumeFromCheckpointStrict(t *testing.T) {
 
 	// Kick off a migration with --strict enabled and let it run until the first checkpoint is available
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
@@ -2050,7 +2050,7 @@ func TestResumeFromCheckpointStrict(t *testing.T) {
 	runner, err = NewRunner(migrationB)
 	assert.NoError(t, err)
 
-	err = runner.Run(context.Background())
+	err = runner.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrMismatchedAlter)
 
@@ -2065,7 +2065,7 @@ func TestResumeFromCheckpointStrict(t *testing.T) {
 	runner, err = NewRunner(migrationB)
 	assert.NoError(t, err)
 
-	err = runner.Run(context.Background())
+	err = runner.Run(t.Context())
 	assert.NoError(t, err)
 	assert.False(t, runner.usedResumeFromCheckpoint)
 
@@ -2191,15 +2191,15 @@ func TestE2ERogueValues(t *testing.T) {
 	defer m.db.Close()
 	// Get Table Info
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
-	err = m.table.SetInfo(context.TODO())
+	err = m.table.SetInfo(t.Context())
 	assert.NoError(t, err)
-	assert.NoError(t, m.dropOldTable(context.TODO()))
+	assert.NoError(t, m.dropOldTable(t.Context()))
 
 	// runner.Run usually does the following before calling copyRows:
 	// So we proceed with the initial steps.
-	assert.NoError(t, m.createNewTable(context.TODO()))
-	assert.NoError(t, m.alterNewTable(context.TODO()))
-	assert.NoError(t, m.createCheckpointTable(context.TODO()))
+	assert.NoError(t, m.createNewTable(t.Context()))
+	assert.NoError(t, m.alterNewTable(t.Context()))
+	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
 	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
@@ -2224,7 +2224,7 @@ func TestE2ERogueValues(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2236,7 +2236,7 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, chunk)
 	assert.Contains(t, chunk.String(), ` < "819 \". "`)
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 
 	// Now insert some data, for binary type it will always say its
 	// below the watermark.
@@ -2247,26 +2247,26 @@ func TestE2ERogueValues(t *testing.T) {
 	chunk, err = m.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, "((`datetime` > \"819 \\\". \")\n OR (`datetime` = \"819 \\\". \" AND `col2` >= 1))", chunk.String())
-	assert.NoError(t, m.copier.CopyChunk(context.TODO(), chunk))
+	assert.NoError(t, m.copier.CopyChunk(t.Context(), chunk))
 
 	// Now insert some data.
 	// This should be picked up by the binlog subscription
 	testutils.RunSQL(t, `insert into e2erogue values (5, 2)`)
 	assert.False(t, m.copier.KeyAboveHighWatermark(5))
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 2, m.replClient.GetDeltaLen())
 
 	testutils.RunSQL(t, "delete from e2erogue where `datetime` like '819%'")
-	assert.NoError(t, m.replClient.BlockWait(context.Background()))
+	assert.NoError(t, m.replClient.BlockWait(t.Context()))
 	assert.Equal(t, 3, m.replClient.GetDeltaLen())
 
 	// Now that copy rows is done, we flush the changeset until trivial.
 	// and perform the optional checksum.
-	assert.NoError(t, m.replClient.Flush(context.TODO()))
+	assert.NoError(t, m.replClient.Flush(t.Context()))
 	m.setCurrentState(stateApplyChangeset)
 	assert.Equal(t, "applyChangeset", m.getCurrentState().String())
 	m.setCurrentState(stateChecksum)
-	assert.NoError(t, m.checksum(context.TODO()))
+	assert.NoError(t, m.checksum(t.Context()))
 	assert.Equal(t, "postChecksum", m.getCurrentState().String())
 	// All done!
 }
@@ -2309,8 +2309,8 @@ func TestPartitionedTable(t *testing.T) {
 		Table:    "part1",
 		Alter:    "ENGINE=InnoDB",
 	})
-	assert.NoError(t, err)                         // everything is specified.
-	assert.NoError(t, m.Run(context.Background())) // should work.
+	assert.NoError(t, err)                // everything is specified.
+	assert.NoError(t, m.Run(t.Context())) // should work.
 	assert.NoError(t, m.Close())
 }
 
@@ -2353,7 +2353,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		TargetChunkTime: 100 * time.Millisecond,
 	})
 	assert.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	// Do the initial setup.
 	m.db, err = dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
@@ -2388,7 +2388,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2433,7 +2433,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 
 	// Resume the migration using and apply all of the replication
 	// changes before starting the copier.
-	ctx = context.Background()
+	ctx = t.Context()
 	m, err = NewRunner(&Migration{
 		Host:            cfg.Addr,
 		Username:        cfg.User,
@@ -2499,7 +2499,7 @@ func TestVarcharE2E(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 }
@@ -2528,7 +2528,7 @@ func TestSkipDropAfterCutover(t *testing.T) {
 		SkipDropAfterCutover: true,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
 	sql := fmt.Sprintf(
@@ -2567,7 +2567,7 @@ func TestDropAfterCutover(t *testing.T) {
 		SkipDropAfterCutover: false,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
 	sql := fmt.Sprintf(
@@ -2617,7 +2617,7 @@ func TestDeferCutOver(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = m.Run(context.Background())
+		err = m.Run(t.Context())
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
 	}()
@@ -2670,7 +2670,7 @@ func TestDeferCutOverE2E(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	go func() {
-		err := m.Run(context.Background())
+		err := m.Run(t.Context())
 		assert.NoError(t, err)
 		c <- err
 	}()
@@ -2744,7 +2744,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	go func() {
-		err := m.Run(context.Background())
+		err := m.Run(t.Context())
 		assert.NoError(t, err)
 		c <- err
 	}()
@@ -2753,10 +2753,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	for {
-		if m.getCurrentState() == stateWaitingOnSentinelTable {
-			break
-		}
+	for m.getCurrentState() != stateWaitingOnSentinelTable {
 	}
 	assert.NoError(t, err)
 
@@ -2764,7 +2761,7 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	for range 4 {
 		testutils.RunSQL(t, fmt.Sprintf("insert into %s (id) select null from %s a, %s b, %s c limit 1000", tableName, tableName, tableName, tableName))
 		time.Sleep(1 * time.Second)
-		m.replClient.Flush(context.Background())
+		m.replClient.Flush(t.Context())
 		newBinlogPos := m.replClient.GetBinlogApplyPosition()
 		assert.Equal(t, 1, newBinlogPos.Compare(binlogPos))
 		binlogPos = newBinlogPos
@@ -2831,7 +2828,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 	runner, err := NewRunner(migration)
 	assert.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 
 	go func() {
 		err := runner.Run(ctx)
@@ -2888,7 +2885,7 @@ func TestResumeFromCheckpointE2EWithManualSentinel(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, m)
 
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
 	assert.True(t, m.usedResumeFromCheckpoint)
@@ -2915,7 +2912,7 @@ func TestPreRunChecksE2E(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	err = m.runChecks(context.TODO(), check.ScopePreRun)
+	err = m.runChecks(t.Context(), check.ScopePreRun)
 	assert.NoError(t, err)
 }
 
@@ -2971,7 +2968,7 @@ func TestForNonInstantBurn(t *testing.T) {
 		Alter:    "add newcol2 int",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
 	assert.False(t, m.usedInstantDDL) // it would have had to apply a copy.
@@ -3012,7 +3009,7 @@ func TestIndexVisibility(t *testing.T) {
 		Alter:    "ALTER INDEX b INVISIBLE",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
@@ -3029,7 +3026,7 @@ func TestIndexVisibility(t *testing.T) {
 		Alter:    "ALTER INDEX b VISIBLE",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, m.usedInplaceDDL) // expected to count as safe.
 	assert.NoError(t, m.Close())
@@ -3046,7 +3043,7 @@ func TestIndexVisibility(t *testing.T) {
 		Alter:    "ALTER INDEX b VISIBLE, ADD INDEX (c)",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
 
@@ -3062,7 +3059,7 @@ func TestIndexVisibility(t *testing.T) {
 		ForceInplace: true,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 	assert.NoError(t, m.Close())
 
@@ -3080,7 +3077,7 @@ func TestIndexVisibility(t *testing.T) {
 		ForceInplace: true,
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.Error(t, err)
 	assert.NoError(t, m.Close()) // it's errored, we don't need to try again. We can close.
 }
@@ -3121,7 +3118,8 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = m.Run(context.Background())
+		// Shadow err to avoid a data race
+		err := m.Run(t.Context())
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
 	}()
@@ -3140,9 +3138,10 @@ func TestPreventConcurrentRuns(t *testing.T) {
 		DeferCutOver:         false,
 	})
 	assert.NoError(t, err)
-	err = m2.Run(context.Background())
+	err = m2.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "could not acquire metadata lock")
+	wg.Wait()
 }
 
 func TestStatementWorkflowStillInstant(t *testing.T) {
@@ -3167,7 +3166,7 @@ func TestStatementWorkflowStillInstant(t *testing.T) {
 		Statement: "ALTER TABLE stmtworkflow ADD newcol INT",
 	})
 	assert.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
 	assert.True(t, m.usedInstantDDL) // expected to count as instant.
@@ -3200,7 +3199,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Threads:  1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // must be inplace
@@ -3216,7 +3215,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Threads:      1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	require.True(t, m.usedInplaceDDL) // must be inplace
@@ -3228,12 +3227,12 @@ func TestTrailingSemicolon(t *testing.T) {
 		Password: cfg.Passwd,
 		Database: cfg.DBName,
 		Table:    "multiSecondary",
-		//https://github.com/cashapp/spirit/issues/384
+		// https://github.com/cashapp/spirit/issues/384
 		Alter:   dropIndexesAlter + "; ",
 		Threads: 1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	require.True(t, m.usedInplaceDDL) // must be inplace

@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -40,7 +39,7 @@ func TestCutOver(t *testing.T) {
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
-	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
+	assert.NoError(t, t1.SetInfo(t.Context())) // required to extract PK.
 	t1new := table.NewTableInfo(db, "test", "_cutovert1_new")
 	t1old := "_cutovert1_old"
 	logger := logrus.New()
@@ -57,7 +56,7 @@ func TestCutOver(t *testing.T) {
 	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
 
-	err = cutover.Run(context.Background())
+	err = cutover.Run(t.Context())
 	assert.NoError(t, err)
 
 	assert.Equal(t, 0, db.Stats().InUse) // all connections are returned
@@ -101,7 +100,7 @@ func TestMDLLockFails(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
-	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
+	assert.NoError(t, t1.SetInfo(t.Context())) // required to extract PK.
 	t1new := table.NewTableInfo(db, "test", "_mdllocks_new")
 	t1old := "test_old"
 	logger := logrus.New()
@@ -120,7 +119,7 @@ func TestMDLLockFails(t *testing.T) {
 
 	// Before we cutover, we READ LOCK the table.
 	// This will not fail the table lock but it will fail the rename.
-	trx, err := db.BeginTx(context.TODO(), &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
+	trx, err := db.BeginTx(t.Context(), &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	assert.NoError(t, err)
 	_, err = trx.Exec("LOCK TABLES mdllocks READ")
 	assert.NoError(t, err)
@@ -128,7 +127,7 @@ func TestMDLLockFails(t *testing.T) {
 	// Start the cutover. It will retry in a loop and fail
 	// after about 15 seconds (3 sec timeout * 5 retries)
 	// or in 5.7 it might fail because it can't find the RENAME in the processlist.
-	err = cutover.Run(context.Background())
+	err = cutover.Run(t.Context())
 	assert.Error(t, err)
 	assert.NoError(t, trx.Rollback())
 }
@@ -155,7 +154,7 @@ func TestInvalidOptions(t *testing.T) {
 	_, err = NewCutOver(db, nil, nil, "", nil, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	t1 := table.NewTableInfo(db, "test", "invalid_t1")
-	assert.NoError(t, t1.SetInfo(context.Background())) // required to extract PK.
+	assert.NoError(t, t1.SetInfo(t.Context())) // required to extract PK.
 	t1new := table.NewTableInfo(db, "test", "_invalid_t1_new")
 	t1old := "test_old"
 	cfg, err := mysql.ParseDSN(testutils.DSN())

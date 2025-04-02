@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -27,27 +26,27 @@ func TestSettings(t *testing.T) {
 		r.ReplicaMaxLag = time.Second * 120
 	}
 
-	err := settingsCheck(context.Background(), r, logrus.New())
+	err := settingsCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // all looks good
 
 	r.Threads = 0
-	err = settingsCheck(context.Background(), r, logrus.New())
+	err = settingsCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 
 	r.Threads = 65
-	err = settingsCheck(context.Background(), r, logrus.New())
+	err = settingsCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 
 	r.Threads = 2
-	err = settingsCheck(context.Background(), r, logrus.New())
+	err = settingsCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // all looks good
 
 	r.TargetChunkTime = time.Second * 6
-	err = settingsCheck(context.Background(), r, logrus.New())
+	err = settingsCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 
 	r.TargetChunkTime = time.Second * 4
 	r.ReplicaMaxLag = time.Second * 5
-	err = settingsCheck(context.Background(), r, logrus.New())
+	err = settingsCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 }

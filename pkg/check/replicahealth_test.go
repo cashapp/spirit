@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -18,13 +17,13 @@ func TestReplicaHealth(t *testing.T) {
 		Table:     &table.TableInfo{TableName: "test"},
 		Statement: statement.MustNew("ALTER TABLE test RENAME TO newtablename"),
 	}
-	err := replicaHealth(context.Background(), r, logrus.New())
+	err := replicaHealth(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // if no replica, it returns no error.
 
 	// use a non-replica. this will return an error.
 	r.Replica, err = sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
-	err = replicaHealth(context.Background(), r, logrus.New())
+	err = replicaHealth(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "replica is not healthy")
 
@@ -35,13 +34,13 @@ func TestReplicaHealth(t *testing.T) {
 	}
 	r.Replica, err = sql.Open("mysql", replicaDSN)
 	assert.NoError(t, err)
-	err = replicaHealth(context.Background(), r, logrus.New())
+	err = replicaHealth(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // all looks good of course.
 
 	// use a completely invalid DSN.
 	// golang sql.Open lazy loads, so this is possible.
 	r.Replica, err = sql.Open("mysql", "msandbox:msandbox@tcp(127.0.0.1:22)/test")
 	assert.NoError(t, err)
-	err = replicaHealth(context.Background(), r, logrus.New())
+	err = replicaHealth(t.Context(), r, logrus.New())
 	assert.Error(t, err) // invalid
 }
