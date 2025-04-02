@@ -98,6 +98,9 @@ func (m *Migration) normalizeOptions() (stmt *statement.AbstractStatement, err e
 		if m.Alter == "" {
 			return nil, errors.New("alter statement is required")
 		}
+		// Trim whitespace and remove trailing semicolon. Without this, the attemptInstantDDL and attemptInplaceDDL functions will fail.
+		m.Alter = strings.TrimSpace(m.Alter)
+		m.Alter = strings.TrimSuffix(m.Alter, ";")
 		fullStatement := fmt.Sprintf("ALTER TABLE `%s` %s", m.Table, m.Alter)
 		p := parser.New()
 		stmtNodes, _, err := p.Parse(fullStatement, "", "")

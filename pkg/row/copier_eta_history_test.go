@@ -14,7 +14,7 @@ func TestCopierETAHistory(t *testing.T) {
 	// Add an ETA
 	history.addCurrentEstimateAndCompare(1 * time.Hour)
 	assert.Len(t, history.etaHistory, 1)
-	assert.Equal(t, "", history.getComparison())
+	assert.Empty(t, history.getComparison())
 
 	// Add another ETA and confirm it is NOT stored because it is too recent
 	history.addCurrentEstimateAndCompare(55 * time.Minute)

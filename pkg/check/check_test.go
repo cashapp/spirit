@@ -28,7 +28,7 @@ func TestCheckAPI(t *testing.T) {
 	assert.Len(t, checks, checkLen+1)
 
 	assert.Equal(t, "test", testVal)
-	err := RunChecks(context.Background(), Resources{}, logrus.New(), ScopeTesting)
+	err := RunChecks(t.Context(), Resources{}, logrus.New(), ScopeTesting)
 	assert.NoError(t, err)
 	assert.Equal(t, "newval", testVal)
 }

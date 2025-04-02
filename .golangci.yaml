@@ -1,79 +1,90 @@
+version: "2"
 run:
   tests: true
-
-output:
-  print-issued-lines: false
-
 linters:
-  enable-all: true
+  default: all
   disable:
-    - gomoddirectives
-    - tagalign
+    - cyclop
     - depguard
-    - mnd
-    - musttag
-    - nonamedreturns
-    - exhaustruct
-    - varnamelen
     - dupl
+    - err113
+    - errorlint
+    - exhaustruct
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    - gochecknoglobals
     - gochecknoinits
+    - gocognit
+    - goconst
     - gocritic
     - gocyclo
-    - ireturn
-    - prealloc
+    - godot
+    - godox
+    - gomoddirectives
+    - goprintffuncname
     - gosec
+    - ireturn
+    - lll
+    - maintidx
+    - mnd
+    - musttag
+    - nestif
+    - nilnil
+    - nlreturn
+    - nonamedreturns
+    - paralleltest
+    - prealloc
     - promlinter
     - revive
-    - forcetypeassert
-    - ireturn
-    - maintidx
-    - nilnil
-    - lll
-    - gochecknoglobals
-    - wsl
-    - funlen
-    - gocognit
-    - goprintffuncname
-    - paralleltest
-    - nlreturn
-    - err113
-    - testpackage
-    - wrapcheck
-    - forbidigo
-    - gci
-    - godot
-    - gofumpt
-    - cyclop
-    - errorlint
-    - nestif
+    - tagalign
     - tagliatelle
+    - testpackage
     - thelper
-    - godox
-    - goconst
-    - exportloopref
-
-linters-settings:
-  dupl:
-    threshold: 100
-  gocyclo:
-    min-complexity: 20
-  exhaustive:
-    default-signifies-exhaustive: true
-  testifylint:
-    enable-all: true
-    disable:
-      - suite-thelper # this is disabled by default
-      - float-compare
-      - require-error
-
-issues:
-  exclude-use-default: false
-  exclude:
-    - '^(G104|G204):'
-    # Very commonly not checked.
-    - 'Error return value of .(.*\.Help|.*\.MarkFlagRequired|(os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*printf?|os\.(Un)?Setenv). is not checked'
-    - 'exported method (.*\.MarshalJSON|.*\.UnmarshalJSON) should have comment or be unexported'
-    - 'composite literal uses unkeyed fields'
-    - 'bad syntax for struct tag key'
-    - 'bad syntax for struct tag pair'
-    - 'result .* \(error\) is always nil'
+    - varnamelen
+    - wrapcheck
+    - wsl
+  settings:
+    dupl:
+      threshold: 100
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocyclo:
+      min-complexity: 20
+    testifylint:
+      enable-all: true
+      disable:
+        - suite-thelper
+        - float-compare
+        - require-error
+  exclusions:
+    generated: lax
+    rules:
+      - path: (.+)\.go$
+        text: '^(G104|G204):'
+      - path: (.+)\.go$
+        text: Error return value of .(.*\.Help|.*\.MarkFlagRequired|(os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*printf?|os\.(Un)?Setenv). is not checked
+      - path: (.+)\.go$
+        text: exported method (.*\.MarshalJSON|.*\.UnmarshalJSON) should have comment or be unexported
+      - path: (.+)\.go$
+        text: composite literal uses unkeyed fields
+      - path: (.+)\.go$
+        text: bad syntax for struct tag key
+      - path: (.+)\.go$
+        text: bad syntax for struct tag pair
+      - path: (.+)\.go$
+        text: result .* \(error\) is always nil
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

@@ -46,7 +46,7 @@ func TestNewDSN(t *testing.T) {
 	dsn = "invalid"
 	resp, err = newDSN(dsn, NewDBConfig())
 	assert.Error(t, err)
-	assert.Equal(t, "", resp)
+	assert.Empty(t, resp)
 }
 
 func TestNewConn(t *testing.T) {

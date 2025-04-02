@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -22,11 +21,11 @@ func TestReplicaPrivileges(t *testing.T) {
 		Table:     &table.TableInfo{TableName: "test"},
 		Statement: statement.MustNew("ALTER TABLE test RENAME TO newtablename"),
 	}
-	err := replicaPrivilegeCheck(context.Background(), r, logrus.New())
+	err := replicaPrivilegeCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // if no replica, it returns no error.
 
 	r.Replica, err = sql.Open("mysql", replicaDSN)
 	assert.NoError(t, err) // no error
-	err = replicaPrivilegeCheck(context.Background(), r, logrus.New())
+	err = replicaPrivilegeCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // user has privileges
 }

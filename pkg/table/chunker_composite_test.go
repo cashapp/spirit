@@ -1,7 +1,6 @@
 package table
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -33,7 +32,7 @@ func TestCompositeChunkerCompositeBinary(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "composite_binary_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	// Assert that the types are correct.
 	assert.Equal(t, []string{"varbinary", "varbinary"}, t1.keyColumnsMySQLTp)
@@ -134,7 +133,7 @@ func TestCompositeChunkerBinary(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "composite_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	// Assert that the types are correct.
 	assert.Equal(t, []string{"varbinary"}, t1.keyColumnsMySQLTp)
@@ -210,7 +209,7 @@ func TestCompositeChunkerInt(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "compositeint_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	// Assert that the types are correct.
 	assert.Equal(t, []string{"int"}, t1.keyColumnsMySQLTp)
@@ -269,7 +268,7 @@ func TestCompositeLowWatermark(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "compositewatermark_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	chunker := &chunkerComposite{
 		Ti:                     t1,
@@ -388,7 +387,7 @@ func TestCompositeSmallTable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "compositesmall_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	chunker, err := NewChunker(t1, ChunkerDefaultTarget, logrus.New())
 	assert.NoError(t, err)
@@ -429,7 +428,7 @@ func TestSetKey(t *testing.T) {
 
 	// Test SetKey with PrimaryKey
 	t1 := NewTableInfo(db, "test", "setkey_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	chunkerPK := &chunkerComposite{
 		Ti:            t1,
 		ChunkerTarget: 100 * time.Millisecond,
@@ -560,7 +559,7 @@ func TestSetKeyCompositeKeyMerge(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "setkeycomposite_t1")
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	chunker := &chunkerComposite{
 		Ti:            t1,
 		ChunkerTarget: 100 * time.Millisecond,

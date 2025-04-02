@@ -445,7 +445,7 @@ func TestCreateIndexIsRewritten(t *testing.T) {
 	testutils.RunSQL(t, tbl)
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	require.NotEqual(t, "", cfg.DBName)
+	require.NotEmpty(t, cfg.DBName)
 	migration := &Migration{
 		Host:      cfg.Addr,
 		Username:  cfg.User,
