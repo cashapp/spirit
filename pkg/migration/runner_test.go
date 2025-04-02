@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cashapp/spirit/pkg/check"
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
@@ -3166,4 +3168,70 @@ func TestStatementWorkflowStillInstant(t *testing.T) {
 
 	assert.True(t, m.usedInstantDDL) // expected to count as instant.
 	assert.NoError(t, m.Close())
+}
+
+func TestTrailingSemicolon(t *testing.T) {
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS multiSecondary`)
+	testutils.RunSQL(t, `CREATE TABLE multiSecondary (
+			  id int unsigned NOT NULL AUTO_INCREMENT,
+			  v varchar(32) DEFAULT NULL,
+			  PRIMARY KEY (id),
+			  KEY idx5 (v),
+			  KEY idx1 (v),
+			  KEY idx2 (v),
+			  KEY idx3 (v),
+			  KEY idx4 (v)
+			)`)
+	dropIndexesAlter := "drop index idx1, drop index idx2, drop index idx3, drop index idx4"
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Table:    "multiSecondary",
+		Alter:    dropIndexesAlter,
+		Threads:  1,
+	})
+	require.NoError(t, err)
+	err = m.Run(context.Background())
+	require.NoError(t, err)
+
+	assert.True(t, m.usedInplaceDDL) // must be inplace
+	assert.NoError(t, m.Close())
+
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Statement:    "alter table multiSecondary add index idx1(v), add index idx2(v), add index idx3(v), add index idx4(v);",
+		ForceInplace: true,
+		Threads:      1,
+	})
+	require.NoError(t, err)
+	err = m.Run(context.Background())
+	require.NoError(t, err)
+
+	require.True(t, m.usedInplaceDDL) // must be inplace
+	require.NoError(t, m.Close())
+
+	m, err = NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Table:    "multiSecondary",
+		//https://github.com/cashapp/spirit/issues/384
+		Alter:   dropIndexesAlter + "; ",
+		Threads: 1,
+	})
+	require.NoError(t, err)
+	err = m.Run(context.Background())
+	require.NoError(t, err)
+
+	require.True(t, m.usedInplaceDDL) // must be inplace
+	require.NoError(t, m.Close())
 }
