@@ -1073,11 +1073,9 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 		err := r.Run(ctx)
 		assert.Error(t, err) // context cancelled
 	}()
-	for {
+	for r.getCurrentState() < stateWaitingOnSentinelTable {
 		// Wait for the sentinel table.
-		if r.getCurrentState() >= stateWaitingOnSentinelTable {
-			break
-		}
+
 		time.Sleep(time.Millisecond)
 	}
 
@@ -2751,10 +2749,8 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	for {
-		if m.getCurrentState() == stateWaitingOnSentinelTable {
-			break
-		}
+	for m.getCurrentState() != stateWaitingOnSentinelTable {
+
 	}
 	assert.NoError(t, err)
 

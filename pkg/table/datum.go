@@ -40,7 +40,8 @@ func mySQLTypeToDatumTp(mysqlTp string) datumTp {
 
 func newDatum(val interface{}, tp datumTp) Datum {
 	var err error
-	if tp == signedType {
+	switch tp { //nolint:exhaustive
+	case signedType:
 		// We expect the value to be an int64, but it could be an int.
 		// Anything else we attempt to convert it
 		switch v := val.(type) {
@@ -54,7 +55,7 @@ func newDatum(val interface{}, tp datumTp) Datum {
 				panic("could not convert datum to int64")
 			}
 		}
-	} else if tp == unsignedType {
+	case unsignedType:
 		// We expect uint64, but it could be uint.
 		// We convert anything else.
 		switch v := val.(type) {
@@ -76,13 +77,14 @@ func newDatum(val interface{}, tp datumTp) Datum {
 }
 
 func datumValFromString(val string, tp datumTp) (interface{}, error) {
-	if tp == signedType {
+	switch tp { //nolint:exhaustive
+	case signedType:
 		i, err := strconv.ParseInt(val, 10, 64)
 		if err != nil {
 			return nil, err
 		}
 		return i, nil
-	} else if tp == unsignedType {
+	case unsignedType:
 		return strconv.ParseUint(val, 10, 64)
 	}
 	// If it starts with 0x then it's a binary string. If it was actually

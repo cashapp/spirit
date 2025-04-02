@@ -34,14 +34,14 @@ func init() {
 
 	// Calculate the number of extra characters needed table names with all possible formats
 	for _, format := range []string{NameFormatSentinel, NameFormatCheckpoint, NameFormatNew, NameFormatOld} {
-		extraChars := len(strings.Replace(format, "%s", "", -1))
+		extraChars := len(strings.ReplaceAll(format, "%s", ""))
 		if extraChars > NameFormatNormalExtraChars {
 			NameFormatNormalExtraChars = extraChars
 		}
 	}
 
 	// Calculate the number of extra characters needed for table names with the old timestamp format
-	NameFormatTimestampExtraChars = len(strings.Replace(NameFormatOldTimeStamp, "%s", "", -1)) + len(NameFormatTimestamp)
+	NameFormatTimestampExtraChars = len(strings.ReplaceAll(NameFormatOldTimeStamp, "%s", "")) + len(NameFormatTimestamp)
 }
 
 func tableNameCheck(ctx context.Context, r Resources, logger loggers.Advanced) error {
