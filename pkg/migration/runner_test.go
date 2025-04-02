@@ -3118,7 +3118,8 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = m.Run(t.Context())
+		// Shadow err to avoid a data race
+		err := m.Run(t.Context())
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "timed out waiting for sentinel table to be dropped")
 	}()
