@@ -3196,7 +3196,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Threads:  1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	assert.True(t, m.usedInplaceDDL) // must be inplace
@@ -3212,7 +3212,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Threads:      1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	require.True(t, m.usedInplaceDDL) // must be inplace
@@ -3229,7 +3229,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Threads: 1,
 	})
 	require.NoError(t, err)
-	err = m.Run(context.Background())
+	err = m.Run(t.Context())
 	require.NoError(t, err)
 
 	require.True(t, m.usedInplaceDDL) // must be inplace
