@@ -1,7 +1,6 @@
 package table
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestCompositeChunker(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "composite")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	chunker, err := NewChunker(t1, 0, logrus.New())
 	assert.NoError(t, err)
@@ -45,7 +44,7 @@ func TestOptimisticChunker(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "optimistic")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	chunker, err := NewChunker(t1, 0, logrus.New())
 	assert.NoError(t, err)
@@ -67,7 +66,7 @@ func TestNewCompositeChunker(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "composite")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	chunker, err := NewCompositeChunker(t1, 0, logrus.New(), "age_idx", "age > 50")
 	assert.NoError(t, err)

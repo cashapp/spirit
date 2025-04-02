@@ -1,7 +1,6 @@
 package dbconn
 
 import (
-	"context"
 	"database/sql"
 	"strconv"
 	"testing"
@@ -45,9 +44,9 @@ func TestRetryableTrx(t *testing.T) {
 	db, err := New(testutils.DSN(), config)
 	assert.NoError(t, err)
 	defer db.Close()
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.dbexec")
+	err = Exec(t.Context(), db, "DROP TABLE IF EXISTS test.dbexec")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE test.dbexec (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{
@@ -55,18 +54,18 @@ func TestRetryableTrx(t *testing.T) {
 		"", // test empty
 		"INSERT INTO test.dbexec (id, colb) VALUES (2, 2)",
 	}
-	_, err = RetryableTransaction(context.Background(), db, true, NewDBConfig(), stmts...)
+	_, err = RetryableTransaction(t.Context(), db, true, NewDBConfig(), stmts...)
 	assert.NoError(t, err)
 
-	_, err = RetryableTransaction(context.Background(), db, true, NewDBConfig(), "INSERT INTO test.dbexec (id, colb) VALUES (2, 2)") // duplicate
+	_, err = RetryableTransaction(t.Context(), db, true, NewDBConfig(), "INSERT INTO test.dbexec (id, colb) VALUES (2, 2)") // duplicate
 	assert.Error(t, err)
 
 	// duplicate, but creates a warning. Ignore duplicate warnings set to true.
-	_, err = RetryableTransaction(context.Background(), db, true, NewDBConfig(), "INSERT IGNORE INTO test.dbexec (id, colb) VALUES (2, 2)")
+	_, err = RetryableTransaction(t.Context(), db, true, NewDBConfig(), "INSERT IGNORE INTO test.dbexec (id, colb) VALUES (2, 2)")
 	assert.NoError(t, err)
 
 	// duplicate, but warning not ignored
-	_, err = RetryableTransaction(context.Background(), db, false, NewDBConfig(), "INSERT IGNORE INTO test.dbexec (id, colb) VALUES (2, 2)")
+	_, err = RetryableTransaction(t.Context(), db, false, NewDBConfig(), "INSERT IGNORE INTO test.dbexec (id, colb) VALUES (2, 2)")
 	assert.Error(t, err)
 
 	// start a transaction, acquire a lock for long enough that the first attempt times out
@@ -84,7 +83,7 @@ func TestRetryableTrx(t *testing.T) {
 		err2 := trx.Rollback()
 		assert.NoError(t, err2)
 	}()
-	_, err = RetryableTransaction(context.Background(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 1")
+	_, err = RetryableTransaction(t.Context(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 1")
 	assert.NoError(t, err)
 
 	// Same again, but make the retry unsuccessful
@@ -97,7 +96,7 @@ func TestRetryableTrx(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = trx.Exec("SELECT * FROM test.dbexec WHERE id = 2 FOR UPDATE")
 	assert.NoError(t, err)
-	_, err = RetryableTransaction(context.Background(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 2") // this will fail, since it times out and exhausts retries.
+	_, err = RetryableTransaction(t.Context(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 2") // this will fail, since it times out and exhausts retries.
 	assert.Error(t, err)
 	err = trx.Rollback() // now we can rollback.
 	assert.NoError(t, err)
@@ -109,7 +108,7 @@ func TestStandardTrx(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	trx, connID, err := BeginStandardTrx(context.Background(), db, nil)
+	trx, connID, err := BeginStandardTrx(t.Context(), db, nil)
 	assert.NoError(t, err)
 	var observedConnID int
 	err = trx.QueryRow("SELECT connection_id()").Scan(&observedConnID)

@@ -1,7 +1,6 @@
 package dbconn
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -16,25 +15,25 @@ func TestTrxPool(t *testing.T) {
 	defer db.Close()
 	config := NewDBConfig()
 	config.LockWaitTimeout = 10
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.trxpool")
+	err = Exec(t.Context(), db, "DROP TABLE IF EXISTS test.trxpool")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE test.trxpool (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE test.trxpool (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	stmts := []string{
 		"INSERT INTO test.trxpool (id, colb) VALUES (1, 1)",
 		"INSERT INTO test.trxpool (id, colb) VALUES (2, 2)",
 	}
-	_, err = RetryableTransaction(context.Background(), db, true, config, stmts...)
+	_, err = RetryableTransaction(t.Context(), db, true, config, stmts...)
 	assert.NoError(t, err)
 
 	// Test that the transaction pool is working.
-	pool, err := NewTrxPool(context.Background(), db, 2, config)
+	pool, err := NewTrxPool(t.Context(), db, 2, config)
 	assert.NoError(t, err)
 
 	// The pool is all repeatable-read transactions, so if I insert new rows
 	// They can't be visible.
-	_, err = RetryableTransaction(context.Background(), db, true, config, "INSERT INTO test.trxpool (id, colb) VALUES (3, 3)")
+	_, err = RetryableTransaction(t.Context(), db, true, config, "INSERT INTO test.trxpool (id, colb) VALUES (3, 3)")
 	assert.NoError(t, err)
 
 	trx1, err := pool.Get()

@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/statement"
@@ -14,11 +13,11 @@ func TestDropAdd(t *testing.T) {
 	r := Resources{
 		Statement: statement.MustNew("ALTER TABLE t1 DROP COLUMN b, ADD COLUMN b INT"),
 	}
-	err = dropAddCheck(context.Background(), r, logrus.New())
+	err = dropAddCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "column b is mentioned 2 times in the same statement")
 
 	r.Statement = statement.MustNew("ALTER TABLE t1 DROP b1, ADD b2 INT")
-	err = dropAddCheck(context.Background(), r, logrus.New())
+	err = dropAddCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err)
 }

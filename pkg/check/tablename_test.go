@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
@@ -27,7 +26,7 @@ func TestCheckTableName(t *testing.T) {
 			},
 			SkipDropAfterCutover: skipDropAfterCutover,
 		}
-		return tableNameCheck(context.Background(), r, logrus.New())
+		return tableNameCheck(t.Context(), r, logrus.New())
 	}
 
 	assert.NoError(t, testTableName("a", false))

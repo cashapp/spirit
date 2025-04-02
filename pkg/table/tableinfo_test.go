@@ -1,7 +1,6 @@
 package table
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -78,7 +77,7 @@ func TestDiscovery(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "discoveryt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	assert.Equal(t, "discoveryt1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -113,7 +112,7 @@ func TestDiscoveryUInt(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "discoveryuintt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	assert.Equal(t, "discoveryuintt1", t1.TableName)
 	assert.Equal(t, "test", t1.SchemaName)
@@ -142,10 +141,10 @@ func TestDiscoveryNoKeyColumnsOrNoTable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "discoverynokeyst1")
-	assert.ErrorContains(t, t1.SetInfo(context.TODO()), "no primary key found")
+	assert.ErrorContains(t, t1.SetInfo(t.Context()), "no primary key found")
 
 	t2 := NewTableInfo(db, "test", "t2fdsfds")
-	assert.ErrorContains(t, t2.SetInfo(context.TODO()), "table test.t2fdsfds does not exist")
+	assert.ErrorContains(t, t2.SetInfo(t.Context()), "table test.t2fdsfds does not exist")
 }
 
 func TestDiscoveryBalancesTable(t *testing.T) {
@@ -176,7 +175,7 @@ func TestDiscoveryBalancesTable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "balances")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	assert.True(t, t1.KeyIsAutoInc)
 	assert.Equal(t, []string{"bigint"}, t1.keyColumnsMySQLTp)
@@ -207,7 +206,7 @@ func TestDiscoveryCompositeNonComparable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "compnoncomparable")
-	assert.NoError(t, t1.SetInfo(context.TODO()))      // still discovers the primary key
+	assert.NoError(t, t1.SetInfo(t.Context()))         // still discovers the primary key
 	assert.Error(t, t1.PrimaryKeyIsMemoryComparable()) // but its non comparable
 }
 
@@ -226,7 +225,7 @@ func TestDiscoveryCompositeComparable(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "compcomparable")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	assert.True(t, t1.KeyIsAutoInc)
 	assert.Equal(t, []string{"int unsigned", "int"}, t1.keyColumnsMySQLTp)
@@ -262,7 +261,7 @@ func TestStatisticsUpdate(t *testing.T) {
 	}
 	t1.statisticsLastUpdated = time.Now()
 
-	go t1.AutoUpdateStatistics(context.Background(), time.Millisecond*10, logrus.New())
+	go t1.AutoUpdateStatistics(t.Context(), time.Millisecond*10, logrus.New())
 	time.Sleep(time.Millisecond * 100)
 
 	t1.Close()
@@ -284,7 +283,7 @@ func TestKeyColumnsValuesExtraction(t *testing.T) {
 	testutils.RunSQL(t, `insert into colvaluest1 values (1, 'a', 15), (2, 'b', 20), (3, 'c', 25)`)
 
 	t1 := NewTableInfo(db, "test", "colvaluest1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	var id, age int
 	var name string
@@ -318,7 +317,7 @@ func TestDiscoveryGeneratedCols(t *testing.T) {
 	defer db.Close()
 
 	t1 := NewTableInfo(db, "test", "generatedcolst1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"id", "name", "b", "c1", "c2", "c3", "d"}, t1.Columns)

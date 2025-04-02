@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -21,7 +20,7 @@ func TestVersion(t *testing.T) {
 		Username: cfg.User,
 		Password: cfg.Passwd,
 	}
-	err = versionCheck(context.Background(), r, logrus.New())
+	err = versionCheck(t.Context(), r, logrus.New())
 	if isMySQL8(db) {
 		assert.NoError(t, err) // all looks good of course.
 	} else {
