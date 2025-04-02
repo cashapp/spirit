@@ -693,11 +693,13 @@ func (l *testLogger) Infof(format string, args ...interface{}) {
 	defer l.Unlock()
 	l.lastInfof = fmt.Sprintf(format, args...)
 }
+
 func (l *testLogger) Warnf(format string, args ...interface{}) {
 	l.Lock()
 	defer l.Unlock()
 	l.lastWarnf = fmt.Sprintf(format, args...)
 }
+
 func (l *testLogger) Debugf(format string, args ...interface{}) {
 	l.Lock()
 	defer l.Unlock()
@@ -775,7 +777,7 @@ func TestCheckpoint(t *testing.T) {
 	// Instead of calling r.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//r.copier.StartTime = time.Now()
+	// r.copier.StartTime = time.Now()
 	r.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
@@ -1178,7 +1180,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1383,7 +1385,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -1513,7 +1515,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2222,7 +2224,7 @@ func TestE2ERogueValues(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2386,7 +2388,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// Instead of calling m.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
-	//m.copier.StartTime = time.Now()
+	// m.copier.StartTime = time.Now()
 	m.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", m.getCurrentState().String())
 
@@ -2752,7 +2754,6 @@ func TestDeferCutOverE2EBinlogAdvance(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 	for m.getCurrentState() != stateWaitingOnSentinelTable {
-
 	}
 	assert.NoError(t, err)
 
@@ -3139,6 +3140,7 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	err = m2.Run(t.Context())
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "could not acquire metadata lock")
+	wg.Wait()
 }
 
 func TestStatementWorkflowStillInstant(t *testing.T) {
@@ -3224,7 +3226,7 @@ func TestTrailingSemicolon(t *testing.T) {
 		Password: cfg.Passwd,
 		Database: cfg.DBName,
 		Table:    "multiSecondary",
-		//https://github.com/cashapp/spirit/issues/384
+		// https://github.com/cashapp/spirit/issues/384
 		Alter:   dropIndexesAlter + "; ",
 		Threads: 1,
 	})
