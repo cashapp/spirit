@@ -766,7 +766,7 @@ func TestCheckpoint(t *testing.T) {
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -835,7 +835,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.resumeFromCheckpoint(context.TODO()))
 
 	// Start the binary log feed just before copy rows starts.
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// This opens the table at the checkpoint (table.OpenAtWatermark())
@@ -914,7 +914,7 @@ func TestCheckpointRestore(t *testing.T) {
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now insert a fake checkpoint, this uses a known bad value
@@ -1005,7 +1005,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// copy a few batches and then dump a checkpoint.
@@ -1171,7 +1171,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = m.replClient.Run()
+	err = m.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1375,8 +1375,8 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	m.replClient.SetKeyAboveCopierCallback(m.copier.KeyAboveHighWatermark)
+	err = m.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1504,8 +1504,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	m.replClient.SetKeyAboveCopierCallback(m.copier.KeyAboveHighWatermark)
+	err = m.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 	m.replClient.SetKeyAboveWatermarkOptimization(true)
 
@@ -2214,8 +2214,8 @@ func TestE2ERogueValues(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	m.replClient.SetKeyAboveCopierCallback(m.copier.KeyAboveHighWatermark)
+	err = m.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -2378,8 +2378,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	m.replClient.SetKeyAboveCopierCallback(m.copier.KeyAboveHighWatermark)
+	err = m.replClient.Run(context.TODO())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -2452,8 +2452,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// check we can resume from checkpoint.
 	assert.NoError(t, m.resumeFromCheckpoint(ctx))
 	// setup callbacks.
-	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
+	//m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
+	m.replClient.SetKeyAboveCopierCallback(m.copier.KeyAboveHighWatermark)
 
 	// doublecheck that the highPtr is 1002 in the _new table and not in the original table.
 	assert.Equal(t, "10", m.table.MaxValue().String())

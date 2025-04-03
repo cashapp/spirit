@@ -52,7 +52,7 @@ func TestCutOver(t *testing.T) {
 		TargetBatchTime: time.Second,
 	})
 	// the feed must be started.
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.TODO()))
 
 	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
@@ -113,7 +113,7 @@ func TestMDLLockFails(t *testing.T) {
 		TargetBatchTime: time.Second,
 	})
 	// the feed must be started.
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(context.TODO()))
 
 	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, config, logger)
 	assert.NoError(t, err)

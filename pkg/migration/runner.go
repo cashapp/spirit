@@ -24,21 +24,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type migrationState int32
-
-const (
-	stateInitial migrationState = iota
-	stateCopyRows
-	stateWaitingOnSentinelTable
-	stateApplyChangeset // first mass apply
-	stateAnalyzeTable
-	stateChecksum
-	statePostChecksum // second mass apply
-	stateCutOver
-	stateClose
-	stateErrCleanup
-)
-
 // These are really consts, but set to var for testing.
 var (
 	checkpointDumpInterval  = 50 * time.Second
@@ -47,32 +32,6 @@ var (
 	sentinelCheckInterval   = 1 * time.Second
 	sentinelWaitLimit       = 48 * time.Hour
 )
-
-func (s migrationState) String() string {
-	switch s {
-	case stateInitial:
-		return "initial"
-	case stateCopyRows:
-		return "copyRows"
-	case stateWaitingOnSentinelTable:
-		return "waitingOnSentinelTable"
-	case stateApplyChangeset:
-		return "applyChangeset"
-	case stateAnalyzeTable:
-		return "analyzeTable"
-	case stateChecksum:
-		return "checksum"
-	case statePostChecksum:
-		return "postChecksum"
-	case stateCutOver:
-		return "cutOver"
-	case stateClose:
-		return "close"
-	case stateErrCleanup:
-		return "errCleanup"
-	}
-	return "unknown"
-}
 
 type Runner struct {
 	migration       *Migration
@@ -491,7 +450,7 @@ func (r *Runner) setup(ctx context.Context) error {
 			TargetBatchTime: r.migration.TargetChunkTime,
 		})
 		// Start the binary log feed now
-		if err := r.replClient.Run(); err != nil {
+		if err := r.replClient.Run(ctx); err != nil {
 			return err
 		}
 	}
@@ -520,11 +479,11 @@ func (r *Runner) setup(ctx context.Context) error {
 
 	// Make sure the definition of the table never changes.
 	// If it does, we could be in trouble.
-	r.replClient.TableChangeNotificationCallback = r.tableChangeNotification
+	//r.replClient.SetTableChangeNotification() r.tableChangeNotification
 	// Make sure the replClient has a way to know where the copier is at.
 	// If this is NOT nil then it will use this optimization when determining
 	// if it can ignore a KEY.
-	r.replClient.KeyAboveCopierCallback = r.copier.KeyAboveHighWatermark
+	r.replClient.SetKeyAboveCopierCallback(r.copier.KeyAboveHighWatermark)
 	r.replClient.SetKeyAboveWatermarkOptimization(true)
 
 	// Start routines in table and replication packages to
@@ -797,7 +756,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		Concurrency:     r.migration.Threads,
 		TargetBatchTime: r.migration.TargetChunkTime,
 	})
-	r.replClient.SetPos(mysql.Position{
+	r.replClient.SetFlushedPos(mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),
 	})
@@ -808,7 +767,7 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 	// are no longer binary log files, we want to abandon resume-from-checkpoint
 	// and still be able to start from scratch.
 	// Start the binary log feed just before copy rows starts.
-	if err := r.replClient.Run(); err != nil {
+	if err := r.replClient.Run(ctx); err != nil {
 		r.logger.Warnf("resuming from checkpoint failed because resuming from the previous binlog position failed. log-file: %s log-pos: %d", binlogName, binlogPos)
 		return err
 	}
