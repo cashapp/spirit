@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -37,19 +36,19 @@ func TestPrivileges(t *testing.T) {
 		DB:    lowPrivDB,
 		Table: &table.TableInfo{TableName: "test", SchemaName: "test"},
 	}
-	err = privilegesCheck(context.Background(), r, logrus.New())
+	err = privilegesCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err) // privileges fail, since user has nothing granted.
 
 	_, err = db.Exec("GRANT ALL ON test.* TO testprivsuser")
 	assert.NoError(t, err)
 
-	err = privilegesCheck(context.Background(), r, logrus.New())
+	err = privilegesCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err) // still not enough, needs replication client
 
 	_, err = db.Exec("GRANT REPLICATION CLIENT, REPLICATION SLAVE, RELOAD ON *.* TO testprivsuser")
 	assert.NoError(t, err)
 
-	err = privilegesCheck(context.Background(), r, logrus.New())
+	err = privilegesCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // still not enough, needs replication client and replication slave
 
 	// Test the root user
@@ -57,6 +56,6 @@ func TestPrivileges(t *testing.T) {
 		DB:    db,
 		Table: &table.TableInfo{TableName: "test", SchemaName: "test"},
 	}
-	err = privilegesCheck(context.Background(), r, logrus.New())
+	err = privilegesCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // privileges work fine
 }

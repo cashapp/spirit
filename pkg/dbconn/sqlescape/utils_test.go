@@ -91,8 +91,8 @@ func TestEscapeBackslash(t *testing.T) {
 		},
 		{
 			name:   "chinese",
-			input:  []byte("中文?"),
-			output: []byte("中文?"),
+			input:  []byte("中文?"), //nolint:gosmopolitan
+			output: []byte("中文?"), //nolint:gosmopolitan
 		},
 	}
 	for _, v := range tests {

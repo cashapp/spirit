@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,8 @@ type queuedChange struct {
 }
 
 type subscription struct {
+	sync.Mutex // protects the subscription from changes.
+
 	c *Client // reference back to the client.
 
 	table    *table.TableInfo
@@ -35,6 +38,9 @@ type subscription struct {
 }
 
 func (s *subscription) getDeltaLen() int {
+	s.Lock()
+	defer s.Unlock()
+
 	if s.disableDeltaMap {
 		return len(s.deltaQueue)
 	}
@@ -42,8 +48,8 @@ func (s *subscription) getDeltaLen() int {
 }
 
 func (s *subscription) keyHasChanged(key []interface{}, deleted bool) {
-	s.c.Lock()
-	defer s.c.Unlock()
+	s.Lock()
+	defer s.Unlock()
 
 	// The KeyAboveWatermark optimization has to be enabled
 	// We enable it once all the setup has been done (since we create a repl client
@@ -109,16 +115,25 @@ func (s *subscription) flush(ctx context.Context, underLock bool, lock *dbconn.T
 // that if there are operations: REPLACE<1>, REPLACE<2>, DELETE<3>, REPLACE<4>
 // we merge it to REPLACE<1,2>, DELETE<3>, REPLACE<4>.
 func (s *subscription) flushDeltaQueue(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
+	// Pop the changes into changesToFlush
+	// and then reset the delta queue. This allows concurrent
+	// inserts back into the queue to increase parallelism.
+	s.Lock()
+	changesToFlush := s.deltaQueue
+	s.deltaQueue = nil
+	s.Unlock()
+
+	s.c.logger.Infof("flushing delta queue: %d", len(changesToFlush))
 	// Early return if there is nothing to flush.
-	if len(s.deltaQueue) == 0 {
+	if len(changesToFlush) == 0 {
 		return nil
 	}
 	// Otherwise, flush the changes.
 	var stmts []statement
 	var buffer []string
-	prevKey := s.deltaQueue[0] // for initialization
+	prevKey := changesToFlush[0] // for initialization
 	target := int(atomic.LoadInt64(&s.c.targetBatchSize))
-	for _, change := range s.deltaQueue {
+	for _, change := range changesToFlush {
 		// We are changing from DELETE to REPLACE
 		// or vice versa, *or* the buffer is getting very large.
 		if change.isDelete != prevKey.isDelete || len(buffer) > target {
@@ -158,13 +173,22 @@ func (s *subscription) flushDeltaQueue(ctx context.Context, underLock bool, lock
 // flushMap is the internal version of Flush() for the delta map.
 // it is used by default unless the PRIMARY KEY is non memory comparable.
 func (s *subscription) flushDeltaMap(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
+	// Pop the changes into changesToFlush
+	// and then reset the delta map. This allows concurrent
+	// inserts back into the map to increase parallelism.
+	s.Lock()
+	changesToFlush := s.deltaMap
+	s.deltaMap = make(map[string]bool)
+	s.Unlock()
+
+	s.c.logger.Infof("flushing delta map: %d underLock: %v", len(changesToFlush), underLock)
 	// We must now apply the changeset setToFlush to the new table.
 	var deleteKeys []string
 	var replaceKeys []string
 	var stmts []statement
 	var i int64
 	target := atomic.LoadInt64(&s.c.targetBatchSize)
-	for key, isDelete := range s.deltaMap {
+	for key, isDelete := range changesToFlush {
 		i++
 		if isDelete {
 			deleteKeys = append(deleteKeys, key)

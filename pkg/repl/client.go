@@ -101,12 +101,7 @@ func NewClient(db *sql.DB, host string, currentTable, newTable *table.TableInfo,
 		subscriptions:   make(map[string]*subscription),
 	}
 	// Add a single subscription to the client.
-	c.subscriptions[encodeSchemaTable(currentTable.SchemaName, currentTable.TableName)] = &subscription{
-		table:    currentTable,
-		newTable: newTable,
-		deltaMap: make(map[string]bool),
-		c:        c,
-	}
+	c.AddSubscription(currentTable, newTable)
 	return c
 }
 
@@ -125,6 +120,20 @@ func NewClientDefaultConfig() *ClientConfig {
 	}
 }
 
+// AddSubscription adds a new subscription
+// Subscriptions are never removed
+func (c *Client) AddSubscription(currentTable, newTable *table.TableInfo) {
+	c.Lock()
+	defer c.Unlock()
+
+	c.subscriptions[encodeSchemaTable(currentTable.SchemaName, currentTable.TableName)] = &subscription{
+		table:    currentTable,
+		newTable: newTable,
+		deltaMap: make(map[string]bool),
+		c:        c,
+	}
+}
+
 // SetFlushedPos updates the known safe position that all changes have been flushed.
 // It is used for resuming from a checkpoint.
 func (c *Client) SetFlushedPos(pos mysql.Position) {
@@ -137,7 +146,6 @@ func (c *Client) AllChangesFlushed() bool {
 	deltaLen := c.GetDeltaLen() // under client lock
 	c.Lock()
 	defer c.Unlock()
-
 	// We check if the buffered position is ahead of the flushed position.
 	if c.bufferedPos.Compare(c.flushedPos) > 0 {
 		c.logger.Warnf("Binlog reader info flushed-pos=%v buffered-pos=%v. Discrepancies could be due to modifications on other tables.", c.flushedPos, c.bufferedPos)
@@ -226,17 +234,16 @@ func (c *Client) readStream(ctx context.Context) {
 	currentLogName := c.flushedPos.Name
 	for {
 		if c.isClosed {
-			c.logger.Info("stopping binlog reader")
+			return // stopping reader
 		}
 		// Read the next event from the stream.
 		ev, err := c.streamer.GetEvent(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				c.logger.Info("stopping binlog reader")
-				return
+				return // stopping reader
 			}
 			c.logger.Errorf("error reading binlog stream: %v", err)
-			return
+			continue // we will try again
 		}
 		if ev == nil {
 			continue
@@ -248,7 +255,6 @@ func (c *Client) readStream(ctx context.Context) {
 			// Rotate event, update the flushed position.
 			rotateEvent := ev.Event.(*replication.RotateEvent)
 			currentLogName = string(rotateEvent.NextLogName)
-
 		case *replication.RowsEvent:
 			// Rows event, check if there are any active subscriptions
 			// for it, and pass it to the subscription.
@@ -257,7 +263,6 @@ func (c *Client) readStream(ctx context.Context) {
 			}
 		default:
 			// Unsure how to handle this event.
-			c.logger.Warnf("unknown binlog event: %T", ev.Event)
 		}
 		// Update the buffered position.
 		c.bufferedPos = mysql.Position{
@@ -273,11 +278,17 @@ func (c *Client) readStream(ctx context.Context) {
 //   - If there is no subscription, the event will be ignored.
 //   - If there is, it will call the subscription's keyHasChanged method
 //     with the PK that has been changed.
+//
+// We acquire a mutex when processing row events because we don't want a new subscription
+// to be added (uses mutex) and we miss processing for rows on it.
 func (c *Client) processRowsEvent(ev *replication.BinlogEvent, e *replication.RowsEvent) error {
+	c.Lock()
+	defer c.Unlock()
+
 	subName := encodeSchemaTable(string(e.Table.Schema), string(e.Table.Table))
 	sub, ok := c.subscriptions[subName]
 	if !ok {
-		c.logger.Debugf("ignoring event for table: %s", subName)
+		c.logger.Infof("ignoring event for table: %s", subName)
 		return nil
 	}
 	eventType := parseEventType(ev.Header.EventType)
@@ -361,18 +372,15 @@ func (c *Client) FlushUnderTableLock(ctx context.Context, lock *dbconn.TableLock
 // Flush is a low level flush, that asks all of the subscriptions to flush
 // Some of these will flush a delta map, others will flush a queue.
 func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
-	//	c.Lock()
-	//	defer c.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
-	newFLushedPos := c.bufferedPos
-	c.logger.Warn("looping through subscriptions to flush")
 	for _, subscription := range c.subscriptions {
 		if err := subscription.flush(ctx, underLock, lock); err != nil {
 		}
 	}
 	// Update the position that has been flushed.
-	c.logger.Warn("updating flushed positions.")
-	c.SetFlushedPos(newFLushedPos)
+	c.flushedPos = c.bufferedPos
 	return nil
 }
 

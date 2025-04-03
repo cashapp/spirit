@@ -1,7 +1,6 @@
 package table
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -294,7 +293,7 @@ func TestOptimisticPrefetchChunking(t *testing.T) {
 
 	t1 := newTableInfo4Test("test", "tprefetch")
 	t1.db = db
-	assert.NoError(t, t1.SetInfo(context.Background()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	chunker := &chunkerOptimistic{
 		Ti:            t1,
 		ChunkerTarget: time.Second,

@@ -1,7 +1,6 @@
 package check
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 
@@ -20,7 +19,7 @@ func TestConfiguration(t *testing.T) {
 		Table: &table.TableInfo{TableName: "test", SchemaName: "test"},
 	}
 
-	err = configurationCheck(context.Background(), r, logrus.New())
+	err = configurationCheck(t.Context(), r, logrus.New())
 	assert.NoError(t, err) // all looks good of course.
 
 	// Current binlog row image format.
@@ -33,7 +32,7 @@ func TestConfiguration(t *testing.T) {
 	_, err = db.Exec("SET GLOBAL binlog_row_image = 'NOBLOB'")
 	assert.NoError(t, err)
 
-	err = configurationCheck(context.Background(), r, logrus.New())
+	err = configurationCheck(t.Context(), r, logrus.New())
 	assert.Error(t, err)
 
 	// restore the binlog row image format.

@@ -1,7 +1,6 @@
 package checksum
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -29,9 +28,9 @@ func TestBasicChecksum(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "basic_checksum")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_basic_checksum_new")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -41,14 +40,14 @@ func TestBasicChecksum(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
 
 	assert.Nil(t, checker.recentValue)
 	assert.Equal(t, "TBD", checker.RecentValue())
-	assert.NoError(t, checker.Run(context.Background()))
+	assert.NoError(t, checker.Run(t.Context()))
 	assert.Equal(t, "TBD", checker.RecentValue()) // still TBD because its a 1 and done chunker.
 }
 
@@ -64,9 +63,9 @@ func TestBasicValidation(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "basic_validation")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "basic_validation2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -76,7 +75,7 @@ func TestBasicValidation(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and newTable must be non-nil")
@@ -101,9 +100,9 @@ func TestFixCorrupt(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "fixcorruption_t1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_fixcorruption_t1_new")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -113,20 +112,20 @@ func TestFixCorrupt(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
 	config.FixDifferences = true
 	checker, err := NewChecker(db, t1, t2, feed, config)
 	assert.NoError(t, err)
-	err = checker.Run(context.Background())
+	err = checker.Run(t.Context())
 	assert.NoError(t, err) // yes there is corruption, but it was fixed.
 	assert.Equal(t, uint64(1), checker.DifferencesFound())
 
 	// If we run the checker again, it will report zero differences.
 	checker2, err := NewChecker(db, t1, t2, feed, config)
 	assert.NoError(t, err)
-	err = checker2.Run(context.Background())
+	err = checker2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(0), checker2.DifferencesFound())
 }
@@ -144,9 +143,9 @@ func TestCorruptChecksum(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "chkpcorruptt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_chkpcorruptt1_new")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -156,11 +155,11 @@ func TestCorruptChecksum(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	err = checker.Run(context.Background())
+	err = checker.Run(t.Context())
 	assert.ErrorContains(t, err, "checksum mismatch")
 }
 
@@ -176,9 +175,9 @@ func TestBoundaryCases(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "checkert1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_checkert1_new")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -188,17 +187,17 @@ func TestBoundaryCases(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	assert.Error(t, checker.Run(context.Background()))
+	assert.Error(t, checker.Run(t.Context()))
 
 	// UPDATE t1 to also be NULL
 	testutils.RunSQL(t, "UPDATE checkert1 SET c = NULL")
 	checker, err = NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	assert.NoError(t, checker.Run(context.Background()))
+	assert.NoError(t, checker.Run(t.Context()))
 }
 
 func TestChangeDataTypeDatetime(t *testing.T) {
@@ -240,9 +239,9 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_tdatetime_new")
-	assert.NoError(t, t2.SetInfo(context.TODO())) // fails
+	assert.NoError(t, t2.SetInfo(t.Context())) // fails
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -252,11 +251,11 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
-	assert.NoError(t, checker.Run(context.Background())) // fails
+	assert.NoError(t, checker.Run(t.Context())) // fails
 }
 
 func TestFromWatermark(t *testing.T) {
@@ -271,9 +270,9 @@ func TestFromWatermark(t *testing.T) {
 	assert.NoError(t, err)
 
 	t1 := table.NewTableInfo(db, "test", "tfromwatermark")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "_tfromwatermark_new")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 	logger := logrus.New()
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
@@ -283,11 +282,11 @@ func TestFromWatermark(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
-	assert.NoError(t, feed.Run())
+	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
 	config.Watermark = "{\"Key\":[\"a\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"2\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"3\"],\"Inclusive\":false}}"
 	checker, err := NewChecker(db, t1, t2, feed, config)
 	assert.NoError(t, err)
-	assert.NoError(t, checker.Run(context.Background()))
+	assert.NoError(t, checker.Run(t.Context()))
 }

@@ -22,9 +22,9 @@ func TestReplClient(t *testing.T) {
 	testutils.RunSQL(t, "CREATE TABLE replt2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
 
 	t1 := table.NewTableInfo(db, "test", "replt1")
-	assert.NoError(t, t1.SetInfo(context.TODO()))
+	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "replt2")
-	assert.NoError(t, t2.SetInfo(context.TODO()))
+	assert.NoError(t, t2.SetInfo(t.Context()))
 
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
@@ -39,11 +39,11 @@ func TestReplClient(t *testing.T) {
 
 	// Insert into t1.
 	testutils.RunSQL(t, "INSERT INTO replt1 (a, b, c) VALUES (1, 2, 3)")
-	assert.NoError(t, client.BlockWait(context.TODO()))
+	assert.NoError(t, client.BlockWait(t.Context()))
 	// There is no chunker attached, so the key above watermark can't apply.
 	// We should observe there are now rows in the changeset.
 	assert.Equal(t, 1, client.GetDeltaLen())
-	assert.NoError(t, client.Flush(context.TODO())) // fails here.
+	assert.NoError(t, client.Flush(t.Context()))
 
 	// We should observe there is a row in t2.
 	var count int

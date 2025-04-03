@@ -1,7 +1,6 @@
 package dbconn
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -23,21 +22,21 @@ func TestTableLock(t *testing.T) {
 	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS testlock, _testlock_new")
+	err = Exec(t.Context(), db, "DROP TABLE IF EXISTS testlock, _testlock_new")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE testlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE testlock (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE _testlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE _testlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlock", QuotedName: "`test`.`testlock`"}
 
-	lock1, err := NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
+	lock1, err := NewTableLock(t.Context(), db, tbl, testConfig(), logrus.New())
 	assert.NoError(t, err)
 
 	// Try to acquire a table that is already locked, should fail because we use WRITE locks now.
 	// But should also fail very quickly because we've set the lock_wait_timeout to 1s.
-	_, err = NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
+	_, err = NewTableLock(t.Context(), db, tbl, testConfig(), logrus.New())
 	assert.Error(t, err)
 
 	assert.NoError(t, lock1.Close())
@@ -47,22 +46,22 @@ func TestExecUnderLock(t *testing.T) {
 	db, err := New(testutils.DSN(), testConfig())
 	assert.NoError(t, err)
 	defer db.Close()
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS testunderlock, _testunderlock_new")
+	err = Exec(t.Context(), db, "DROP TABLE IF EXISTS testunderlock, _testunderlock_new")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE testunderlock (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE testunderlock (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE _testunderlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE _testunderlock_new (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testunderlock", QuotedName: "`test`.`testunderlock`"}
-	lock, err := NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
+	lock, err := NewTableLock(t.Context(), db, tbl, testConfig(), logrus.New())
 	assert.NoError(t, err)
-	err = lock.ExecUnderLock(context.Background(), "INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)")
+	err = lock.ExecUnderLock(t.Context(), "INSERT INTO testunderlock VALUES (1, 1)", "", "INSERT INTO testunderlock VALUES (2, 2)")
 	assert.NoError(t, err) // pass, under write lock.
 
 	// Try to execute a statement that is not in the lock transaction though
 	// It is expected to fail.
-	err = Exec(context.Background(), db, "INSERT INTO testunderlock VALUES (3, 3)")
+	err = Exec(t.Context(), db, "INSERT INTO testunderlock VALUES (3, 3)")
 	assert.Error(t, err)
 }
 
@@ -71,9 +70,9 @@ func TestTableLockFail(t *testing.T) {
 	assert.NoError(t, err)
 	defer db.Close()
 
-	err = Exec(context.Background(), db, "DROP TABLE IF EXISTS test.testlockfail")
+	err = Exec(t.Context(), db, "DROP TABLE IF EXISTS test.testlockfail")
 	assert.NoError(t, err)
-	err = Exec(context.Background(), db, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
+	err = Exec(t.Context(), db, "CREATE TABLE test.testlockfail (id INT NOT NULL PRIMARY KEY, colb int)")
 	assert.NoError(t, err)
 
 	// We acquire an exclusive lock first, so the tablelock should fail.
@@ -92,6 +91,6 @@ func TestTableLockFail(t *testing.T) {
 	wg.Wait()
 
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
-	_, err = NewTableLock(context.Background(), db, tbl, testConfig(), logrus.New())
+	_, err = NewTableLock(t.Context(), db, tbl, testConfig(), logrus.New())
 	assert.Error(t, err)
 }

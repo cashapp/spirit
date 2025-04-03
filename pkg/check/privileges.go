@@ -48,7 +48,7 @@ func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) 
 		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", r.Table.SchemaName)) {
 			foundDBAll = true
 		}
-		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", strings.Replace(r.Table.SchemaName, "_", "\\_", -1))) {
+		if strings.Contains(grant, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.*", strings.ReplaceAll(r.Table.SchemaName, "_", "\\_"))) {
 			foundDBAll = true
 		}
 		if stringContainsAll(grant, `ALTER`, `CREATE`, `DELETE`, `DROP`, `INDEX`, `INSERT`, `LOCK TABLES`, `SELECT`, `TRIGGER`, `UPDATE`, ` ON *.*`) {
