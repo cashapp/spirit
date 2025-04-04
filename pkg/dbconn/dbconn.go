@@ -104,7 +104,7 @@ func RetryableTransaction(ctx context.Context, db *sql.DB, ignoreDupKeyWarnings 
 				// Even though there was no ERROR we still need to inspect SHOW WARNINGS
 				// This is because many of the statements use INSERT IGNORE.
 				var warningRes *sql.Rows
-				warningRes, err = trx.QueryContext(ctx, "SHOW WARNINGS") //nolint: execinquery
+				warningRes, err = trx.QueryContext(ctx, "SHOW WARNINGS")
 				if err != nil {
 					return
 				}

@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -46,13 +45,15 @@ func TestCutOver(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
+	feed.AddSubscription(t1, t1new, nil)
 	// the feed must be started.
-	assert.NoError(t, feed.Run(context.TODO()))
+	assert.NoError(t, feed.Run(t.Context()))
 
 	cutover, err := NewCutOver(db, t1, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.NoError(t, err)
@@ -107,11 +108,13 @@ func TestMDLLockFails(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
+	feed.AddSubscription(t1, t1new, nil)
 	// the feed must be started.
 	assert.NoError(t, feed.Run(t.Context()))
 
@@ -160,11 +163,13 @@ func TestInvalidOptions(t *testing.T) {
 	t1old := "test_old"
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t1new, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
+	feed.AddSubscription(t1, t1new, nil)
 	_, err = NewCutOver(db, nil, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	_, err = NewCutOver(db, nil, t1new, "", feed, dbconn.NewDBConfig(), logger)
