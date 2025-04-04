@@ -20,7 +20,7 @@ func privilegesCheck(ctx context.Context, r Resources, logger loggers.Advanced) 
 	// This is a re-implementation of the gh-ost check
 	// validateGrants() in gh-ost/go/logic/inspect.go
 	var foundAll, foundSuper, foundReplicationClient, foundReplicationSlave, foundDBAll, foundReload bool
-	rows, err := r.DB.QueryContext(ctx, `SHOW GRANTS`) //nolint: execinquery
+	rows, err := r.DB.QueryContext(ctx, `SHOW GRANTS`)
 	if err != nil {
 		return err
 	}

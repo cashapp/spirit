@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
 	sentinelCheckInterval = 100 * time.Millisecond
 	sentinelWaitLimit = 10 * time.Second
+	//goleak.VerifyTestMain(m)
 	os.Exit(m.Run())
 }
 

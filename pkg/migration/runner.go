@@ -54,6 +54,8 @@ type Runner struct {
 	// used to recover direct to checksum.
 	checksumWatermark string
 
+	ddlNotification chan string
+
 	// Track some key statistics.
 	startTime             time.Time
 	sentinelWaitStartTime time.Time
@@ -405,6 +407,8 @@ func (r *Runner) setup(ctx context.Context) error {
 	if err := r.dropOldTable(ctx); err != nil {
 		return err
 	}
+	// Start subscribing to changes immediately.
+	r.ddlNotification = make(chan string, 1)
 
 	// First attempt to resume from a checkpoint.
 	// It's OK if it fails, it just means it's a fresh migration.
@@ -444,11 +448,14 @@ func (r *Runner) setup(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+		r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 			Logger:          r.logger,
 			Concurrency:     r.migration.Threads,
 			TargetBatchTime: r.migration.TargetChunkTime,
+			OnDDL:           r.ddlNotification,
+			ServerID:        repl.NewServerID(),
 		})
+		r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark)
 		// Start the binary log feed now
 		if err := r.replClient.Run(ctx); err != nil {
 			return err
@@ -477,13 +484,7 @@ func (r *Runner) setup(ctx context.Context) error {
 		}
 	}
 
-	// Make sure the definition of the table never changes.
-	// If it does, we could be in trouble.
-	//r.replClient.SetTableChangeNotification() r.tableChangeNotification
-	// Make sure the replClient has a way to know where the copier is at.
-	// If this is NOT nil then it will use this optimization when determining
-	// if it can ignore a KEY.
-	r.replClient.SetKeyAboveCopierCallback(r.copier.KeyAboveHighWatermark)
+	// We can enable the key above watermark optimization
 	r.replClient.SetKeyAboveWatermarkOptimization(true)
 
 	// Start routines in table and replication packages to
@@ -494,27 +495,45 @@ func (r *Runner) setup(ctx context.Context) error {
 	// will be restarted again after.
 	go r.table.AutoUpdateStatistics(ctx, tableStatUpdateInterval, r.logger)
 	go r.replClient.StartPeriodicFlush(ctx, repl.DefaultFlushInterval)
+	go r.tableChangeNotification(ctx)
 	return nil
 }
 
-func (r *Runner) tableChangeNotification() {
-	// It's an async message, so we don't know the current state
-	// from which this "notification" was generated, but typically if our
-	// current state is now in cutover, we can ignore it.
-	if r.getCurrentState() >= stateCutOver {
-		return
+// tableChangeNotification is called as a goroutine.
+// any schema changes will be sent here, and we need to determine
+// if they are acceptable or not.
+func (r *Runner) tableChangeNotification(ctx context.Context) {
+	defer r.replClient.SetDDLNotificationChannel(nil)
+
+	newTableEncoded := repl.EncodeSchemaTable(r.newTable.SchemaName, r.newTable.TableName)
+	tableEncoded := repl.EncodeSchemaTable(r.table.SchemaName, r.table.TableName)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case tbl, ok := <-r.ddlNotification:
+			if !ok {
+				return // channel was closed
+			}
+			if r.getCurrentState() >= stateCutOver {
+				return
+			}
+			if tbl == newTableEncoded || tbl == tableEncoded {
+				r.setCurrentState(stateErrCleanup)
+				// Write this to the logger, so it can be captured by the initiator.
+				r.logger.Errorf("table definition of %s changed during migration", tbl)
+				// Invalidate the checkpoint, so we don't try to resume.
+				// If we don't do this, the migration will permanently be blocked from proceeding.
+				// Letting it start again is the better choice.
+				if err := r.dropCheckpoint(ctx); err != nil {
+					r.logger.Errorf("could not remove checkpoint. err: %v", err)
+				}
+				// We can't do anything about it, just panic
+				panic(fmt.Sprintf("table definition of %s changed during migration", tbl))
+			}
+		}
 	}
-	r.setCurrentState(stateErrCleanup)
-	// Write this to the logger, so it can be captured by the initiator.
-	r.logger.Errorf("table definition of %s changed during migration", r.table.QuotedName)
-	// Invalidate the checkpoint, so we don't try to resume.
-	// If we don't do this, the migration will permanently be blocked from proceeding.
-	// Letting it start again is the better choice.
-	if err := r.dropCheckpoint(context.Background()); err != nil {
-		r.logger.Errorf("could not remove checkpoint. err: %v", err)
-	}
-	// We can't do anything about it, just panic
-	panic(fmt.Sprintf("table definition of %s changed during migration", r.table.QuotedName))
 }
 
 func (r *Runner) dropCheckpoint(ctx context.Context) error {
@@ -688,6 +707,9 @@ func (r *Runner) Close() error {
 			return err
 		}
 	}
+	if r.ddlNotification != nil {
+		close(r.ddlNotification)
+	}
 	return nil
 }
 
@@ -751,11 +773,14 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 
 	// Set the binlog position.
 	// Create a binlog subscriber
-	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          r.logger,
 		Concurrency:     r.migration.Threads,
 		TargetBatchTime: r.migration.TargetChunkTime,
+		OnDDL:           r.ddlNotification,
+		ServerID:        repl.NewServerID(),
 	})
+	r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark)
 	r.replClient.SetFlushedPos(mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),

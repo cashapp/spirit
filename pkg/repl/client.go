@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,7 +53,10 @@ type Client struct {
 	syncer   *replication.BinlogSyncer
 	streamer *replication.BinlogStreamer
 
-	db *sql.DB // connection to run queries like SHOW MASTER STATUS
+	// The DB connection is used for queries like SHOW MASTER STATUS
+	// or flushing changes in subscriptions.
+	db       *sql.DB
+	dbConfig *dbconn.DBConfig
 
 	// subscriptions is a map of tables that are actively
 	// watching for changes on. The key is schemaName.tableName.
@@ -64,9 +68,9 @@ type Client struct {
 	// and the caller is expected to filter it.
 	onDDL chan string
 
+	serverID    uint32         // server ID for the binlog reader
 	bufferedPos mysql.Position // buffered position
 	flushedPos  mysql.Position // safely written to new table
-	isClosed    bool
 
 	statisticsLock  sync.Mutex
 	targetBatchTime time.Duration
@@ -82,15 +86,15 @@ type Client struct {
 	periodicFlushLock    sync.Mutex
 	periodicFlushEnabled bool
 
-	logger loggers.Advanced
+	cancelFunc func()
+	logger     loggers.Advanced
 }
 
 // NewClient creates a new Client instance.
-// Currently we accept table and NewTable, but in future we will have
-// an API to add a subscription to a client.
-func NewClient(db *sql.DB, host string, currentTable, newTable *table.TableInfo, username, password string, config *ClientConfig) *Client {
-	c := &Client{
+func NewClient(db *sql.DB, host string, username, password string, config *ClientConfig) *Client {
+	return &Client{
 		db:              db,
+		dbConfig:        dbconn.NewDBConfig(),
 		host:            host,
 		username:        username,
 		password:        password,
@@ -99,16 +103,23 @@ func NewClient(db *sql.DB, host string, currentTable, newTable *table.TableInfo,
 		targetBatchSize: DefaultBatchSize, // initial starting value.
 		concurrency:     config.Concurrency,
 		subscriptions:   make(map[string]*subscription),
+		onDDL:           config.OnDDL,
+		serverID:        config.ServerID,
 	}
-	// Add a single subscription to the client.
-	c.AddSubscription(currentTable, newTable)
-	return c
 }
 
 type ClientConfig struct {
 	TargetBatchTime time.Duration
 	Concurrency     int
 	Logger          loggers.Advanced
+	OnDDL           chan string
+	ServerID        uint32
+}
+
+// NewServerID randomizes the server ID to avoid conflicts with other binlog readers.
+// This uses the same logic as canal:
+func NewServerID() uint32 {
+	return uint32(rand.New(rand.NewSource(time.Now().Unix())).Intn(1000)) + 1001
 }
 
 // NewClientDefaultConfig returns a default config for the copier.
@@ -117,21 +128,39 @@ func NewClientDefaultConfig() *ClientConfig {
 		Concurrency:     4,
 		TargetBatchTime: DefaultTargetBatchTime,
 		Logger:          logrus.New(),
+		OnDDL:           nil,
+		ServerID:        NewServerID(),
 	}
 }
 
 // AddSubscription adds a new subscription
 // Subscriptions are never removed
-func (c *Client) AddSubscription(currentTable, newTable *table.TableInfo) {
+func (c *Client) AddSubscription(currentTable, newTable *table.TableInfo, keyAboveCopierCallback func(interface{}) bool) {
 	c.Lock()
 	defer c.Unlock()
 
-	c.subscriptions[encodeSchemaTable(currentTable.SchemaName, currentTable.TableName)] = &subscription{
-		table:    currentTable,
-		newTable: newTable,
-		deltaMap: make(map[string]bool),
-		c:        c,
+	c.subscriptions[EncodeSchemaTable(currentTable.SchemaName, currentTable.TableName)] = &subscription{
+		table:                  currentTable,
+		newTable:               newTable,
+		deltaMap:               make(map[string]bool),
+		c:                      c,
+		keyAboveCopierCallback: keyAboveCopierCallback,
 	}
+}
+
+// setBufferedPos updates the in-memory position that all changes have been read
+// but not necessarily flushed.
+func (c *Client) setBufferedPos(pos mysql.Position) {
+	c.Lock()
+	defer c.Unlock()
+	c.bufferedPos = pos
+}
+
+// getBufferedPos returns the buffered position under a mutex.
+func (c *Client) getBufferedPos() mysql.Position {
+	c.Lock()
+	defer c.Unlock()
+	return c.bufferedPos
 }
 
 // SetFlushedPos updates the known safe position that all changes have been flushed.
@@ -143,14 +172,20 @@ func (c *Client) SetFlushedPos(pos mysql.Position) {
 }
 
 func (c *Client) AllChangesFlushed() bool {
-	deltaLen := c.GetDeltaLen() // under client lock
 	c.Lock()
 	defer c.Unlock()
 	// We check if the buffered position is ahead of the flushed position.
+	// We have a mutex, so we can read safely.
 	if c.bufferedPos.Compare(c.flushedPos) > 0 {
 		c.logger.Warnf("Binlog reader info flushed-pos=%v buffered-pos=%v. Discrepancies could be due to modifications on other tables.", c.flushedPos, c.bufferedPos)
 	}
-	return deltaLen == 0
+	// We check if all subscriptions have flushed their changes.
+	for _, subscription := range c.subscriptions {
+		if subscription.getDeltaLen() > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Client) GetBinlogApplyPosition() mysql.Position {
@@ -165,11 +200,11 @@ func (c *Client) GetBinlogApplyPosition() mysql.Position {
 func (c *Client) GetDeltaLen() int {
 	c.Lock()
 	defer c.Unlock()
-	len := 0
+	deltaLen := 0
 	for _, subscription := range c.subscriptions {
-		len += subscription.getDeltaLen()
+		deltaLen += subscription.getDeltaLen()
 	}
-	return len
+	return deltaLen
 }
 
 func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
@@ -179,7 +214,7 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 	if c.isMySQL84 {
 		binlogPosStmt = "SHOW BINARY LOG STATUS"
 	}
-	err := c.db.QueryRow(binlogPosStmt).Scan(&binlogFile, &binlogPos, &fake, &fake, &fake) //nolint: execinquery
+	err := c.db.QueryRow(binlogPosStmt).Scan(&binlogFile, &binlogPos, &fake, &fake, &fake)
 	if err != nil {
 		return mysql.Position{}, err
 	}
@@ -190,9 +225,12 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 }
 
 func (c *Client) Run(ctx context.Context) (err error) {
+	c.Lock()
+	defer c.Unlock()
+
 	host, port := utils.SplitHostAndPort(c.host)
 	cfg := replication.BinlogSyncerConfig{
-		ServerID: 100, // TODO
+		ServerID: c.serverID,
 		Flavor:   "mysql",
 		Host:     host,
 		Port:     uint16(port),
@@ -208,7 +246,7 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	}
 	// Determine where to start the sync from.
 	// We default from what the current position is right
-	// now, but for resume cases we just need to check that that
+	// now, but for resume cases we just need to check that the
 	// position is resumable.
 	if c.flushedPos.Name == "" {
 		c.flushedPos, err = c.getCurrentBinlogPosition()
@@ -223,6 +261,9 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to start binlog streamer: %w", err)
 	}
+	// Start the binlog reader in a go routine, using a context with cancel.
+	// Write the cancel function to c.cancelFunc
+	ctx, c.cancelFunc = context.WithCancel(ctx)
 	go c.readStream(ctx)
 	return nil
 }
@@ -230,25 +271,19 @@ func (c *Client) Run(ctx context.Context) (err error) {
 // readStream continuously reads the binlog stream. It is usually called in a go routine.
 // It will read the stream until the context is closed, or an error occurs.
 func (c *Client) readStream(ctx context.Context) {
-	c.logger.Debugf("starting binary log read. log-file: %s log-pos: %d", c.flushedPos.Name, c.flushedPos.Pos)
+	c.Lock()
 	currentLogName := c.flushedPos.Name
+	c.Unlock()
 	for {
-		if c.isClosed {
-			return // stopping reader
-		}
 		// Read the next event from the stream.
+		// if we get an error, return. it is probably a context cancel.
 		ev, err := c.streamer.GetEvent(ctx)
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return // stopping reader
-			}
-			c.logger.Errorf("error reading binlog stream: %v", err)
-			continue // we will try again
+			return // stopping reader
 		}
 		if ev == nil {
 			continue
 		}
-		c.logger.Debugf("binlog event: %v", ev)
 		// Handle the event.
 		switch ev.Event.(type) {
 		case *replication.RotateEvent:
@@ -261,15 +296,36 @@ func (c *Client) readStream(ctx context.Context) {
 			if err = c.processRowsEvent(ev, ev.Event.(*replication.RowsEvent)); err != nil {
 				panic("could not process events")
 			}
+		case *replication.QueryEvent:
+			// Query event, check if it is a DDL statement,
+			// in which case we need to notify the caller.
+			queryEvent := ev.Event.(*replication.QueryEvent)
+			tables, err := extractTablesFromDDLStmts(string(queryEvent.Schema), string(queryEvent.Query))
+			if err != nil {
+				panic("could not process statement") // could not parse DDL stmts, need to error
+			}
+			for _, table := range tables {
+				c.processDDLNotification(table)
+			}
 		default:
 			// Unsure how to handle this event.
 		}
-		// Update the buffered position.
-		c.bufferedPos = mysql.Position{
+		// Update the buffered position
+		// under a mutex.
+		c.setBufferedPos(mysql.Position{
 			Name: currentLogName,
 			Pos:  ev.Header.LogPos,
-		}
+		})
 	}
+}
+
+func (c *Client) processDDLNotification(table string) {
+	c.Lock()
+	defer c.Unlock()
+	if c.onDDL == nil {
+		return // no one is listening for DDL events
+	}
+	c.onDDL <- table
 }
 
 // processRowsEvent processes a RowsEvent. It will search all active
@@ -285,11 +341,10 @@ func (c *Client) processRowsEvent(ev *replication.BinlogEvent, e *replication.Ro
 	c.Lock()
 	defer c.Unlock()
 
-	subName := encodeSchemaTable(string(e.Table.Schema), string(e.Table.Table))
+	subName := EncodeSchemaTable(string(e.Table.Schema), string(e.Table.Table))
 	sub, ok := c.subscriptions[subName]
 	if !ok {
-		c.logger.Infof("ignoring event for table: %s", subName)
-		return nil
+		return nil // ignore event, it could be to a _new table.
 	}
 	eventType := parseEventType(ev.Header.EventType)
 	var i = 0
@@ -323,7 +378,7 @@ func (c *Client) processRowsEvent(ev *replication.BinlogEvent, e *replication.Ro
 }
 
 func (c *Client) binlogPositionIsImpossible() bool {
-	rows, err := c.db.Query("SHOW BINARY LOGS") //nolint: execinquery
+	rows, err := c.db.Query("SHOW BINARY LOGS")
 	if err != nil {
 		return true // if we can't get the logs, its already impossible
 	}
@@ -344,9 +399,12 @@ func (c *Client) binlogPositionIsImpossible() bool {
 }
 
 func (c *Client) Close() {
-	c.Lock()
-	defer c.Unlock()
-	c.isClosed = true
+	if c.syncer != nil {
+		c.syncer.Close()
+	}
+	if c.cancelFunc != nil {
+		c.cancelFunc()
+	}
 }
 
 // FlushUnderTableLock is a final flush under an exclusive table lock using the connection
@@ -371,23 +429,30 @@ func (c *Client) FlushUnderTableLock(ctx context.Context, lock *dbconn.TableLock
 
 // Flush is a low level flush, that asks all of the subscriptions to flush
 // Some of these will flush a delta map, others will flush a queue.
+//
+// Note: we yield the lock early because otherwise no new events can be sent
+// to the subscriptions while we are flushing.
+// This means that the actual buffered position might be slightly ahead by
+// the end of the flush. That's OK, we only set the flushed position to the known
+// safe buffered position taken at the start.
 func (c *Client) flush(ctx context.Context, underLock bool, lock *dbconn.TableLock) error {
 	c.Lock()
-	defer c.Unlock()
+	newFlushedPos := c.bufferedPos
+	c.Unlock()
 
 	for _, subscription := range c.subscriptions {
 		if err := subscription.flush(ctx, underLock, lock); err != nil {
+			return err
 		}
 	}
 	// Update the position that has been flushed.
-	c.flushedPos = c.bufferedPos
+	c.SetFlushedPos(newFlushedPos)
 	return nil
 }
 
 // Flush empties the changeset in a loop until the amount of changes is considered "trivial".
 // The loop is required, because changes continue to be added while the flush is occurring.
 func (c *Client) Flush(ctx context.Context) error {
-	c.logger.Info("starting to flush changeset")
 	for {
 		// Repeat in a loop until the changeset length is trivial
 		if err := c.flush(ctx, false, nil); err != nil {
@@ -397,7 +462,7 @@ func (c *Client) Flush(ctx context.Context) error {
 		// into our buffer. This can timeout, in which case we start
 		// a new loop.
 		if err := c.BlockWait(ctx); err != nil {
-			c.logger.Warnf("error waiting for canal to catch up: %v", err)
+			c.logger.Warnf("error waiting for binlog reader to catch up: %v", err)
 			continue
 		}
 		//  If it doesn't timeout, we ensure the deltas
@@ -470,19 +535,18 @@ func (c *Client) BlockWait(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
 	defer cancel()
-	for {
-		if ctx.Err() != nil {
-			break // Break if the timeout has been reached.
-		}
+	for ctx.Err() == nil { // end when the timeout is reached.
 		// Inject some noise into the binlog stream
 		// This is to ensure that we are past the current position
 		// without an off-by-one error
 		if err := dbconn.Exec(ctx, c.db, "FLUSH BINARY LOGs"); err != nil {
 			break // error flushing binary logs
 		}
-		if c.bufferedPos.Compare(targetPos) >= 0 {
+		// fetch the bufferPos under a mutex.
+		if c.getBufferedPos().Compare(targetPos) >= 0 {
 			return nil // we are up to date!
 		}
+		// We are not caught up yet, so we need to wait.
 		time.Sleep(100 * time.Millisecond)
 	}
 	return errors.New("timed out waiting for buffered position to catch up to target position")
@@ -529,4 +593,21 @@ func (c *Client) feedback(numberOfKeys int, d time.Duration) {
 		atomic.StoreInt64(&c.targetBatchSize, newBatchSize)
 		c.timingHistory = nil // reset
 	}
+}
+
+// SetKeyAboveWatermarkOptimization sets the key above watermark optimization
+// for all subscriptions. In future this should become obsolete!
+func (c *Client) SetKeyAboveWatermarkOptimization(newVal bool) {
+	c.Lock()
+	defer c.Unlock()
+
+	for _, sub := range c.subscriptions {
+		sub.setKeyAboveWatermarkOptimization(newVal)
+	}
+}
+
+func (c *Client) SetDDLNotificationChannel(ch chan string) {
+	c.Lock()
+	defer c.Unlock()
+	c.onDDL = ch
 }

@@ -123,7 +123,6 @@ func (s *subscription) flushDeltaQueue(ctx context.Context, underLock bool, lock
 	s.deltaQueue = nil
 	s.Unlock()
 
-	s.c.logger.Infof("flushing delta queue: %d", len(changesToFlush))
 	// Early return if there is nothing to flush.
 	if len(changesToFlush) == 0 {
 		return nil
@@ -163,7 +162,7 @@ func (s *subscription) flushDeltaQueue(ctx context.Context, underLock bool, lock
 	} else {
 		// Execute the statements in a transaction.
 		// They still need to be single threaded.
-		if _, err := dbconn.RetryableTransaction(ctx, s.c.db, true, dbconn.NewDBConfig(), extractStmt(stmts)...); err != nil {
+		if _, err := dbconn.RetryableTransaction(ctx, s.c.db, true, s.c.dbConfig, extractStmt(stmts)...); err != nil {
 			return err
 		}
 	}
@@ -181,7 +180,6 @@ func (s *subscription) flushDeltaMap(ctx context.Context, underLock bool, lock *
 	s.deltaMap = make(map[string]bool)
 	s.Unlock()
 
-	s.c.logger.Infof("flushing delta map: %d underLock: %v", len(changesToFlush), underLock)
 	// We must now apply the changeset setToFlush to the new table.
 	var deleteKeys []string
 	var replaceKeys []string
@@ -236,6 +234,14 @@ func (s *subscription) flushDeltaMap(ctx context.Context, underLock bool, lock *
 	return nil
 }
 
+// keyAboveWatermarkEnabled returns true if the KeyAboveWatermark optimization
+// is enabled. This is already called under a mutex.
 func (s *subscription) keyAboveWatermarkEnabled() bool {
-	return s.enableKeyAboveWatermark
+	return s.enableKeyAboveWatermark && s.keyAboveCopierCallback != nil
+}
+
+func (s *subscription) setKeyAboveWatermarkOptimization(enabled bool) {
+	s.Lock()
+	defer s.Unlock()
+	s.enableKeyAboveWatermark = enabled
 }

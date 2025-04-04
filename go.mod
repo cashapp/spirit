@@ -12,11 +12,11 @@ require (
 	github.com/siddontang/loggers v1.0.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.8.4
+	go.uber.org/goleak v1.2.1
 	golang.org/x/sync v0.4.0
 )
 
 require (
-	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/cznic/mathutil v0.0.0-20181122101859-297441e03548 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
