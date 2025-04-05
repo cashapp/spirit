@@ -71,7 +71,7 @@ func (l *MySQL80Replica) Close() error {
 // It requires performance_schema to be enabled.
 func (l *MySQL80Replica) UpdateLag() error {
 	var newLagValue int64
-	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil { //nolint: execinquery
+	if err := l.replica.QueryRow(MySQL8LagQuery).Scan(&newLagValue); err != nil {
 		return errors.New("could not check replication lag, check that this is a MySQL 8.0 replica, and that performance_schema is enabled")
 	}
 	atomic.StoreInt64(&l.currentLagInMs, newLagValue)

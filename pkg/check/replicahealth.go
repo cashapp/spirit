@@ -18,7 +18,7 @@ func replicaHealth(ctx context.Context, r Resources, logger loggers.Advanced) er
 	if r.Replica == nil {
 		return nil // The user is not using the replica DSN feature.
 	}
-	rows, err := r.Replica.Query("SHOW REPLICA STATUS") //nolint: execinquery
+	rows, err := r.Replica.Query("SHOW REPLICA STATUS")
 	if err != nil {
 		return err
 	}

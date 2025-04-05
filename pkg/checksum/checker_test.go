@@ -4,16 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cashapp/spirit/pkg/testutils"
-
-	mysql "github.com/go-sql-driver/mysql"
-	"github.com/sirupsen/logrus"
-
-	"github.com/stretchr/testify/assert"
-
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
+	mysql "github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestBasicChecksum(t *testing.T) {
@@ -35,12 +32,14 @@ func TestBasicChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -70,12 +69,14 @@ func TestBasicValidation(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
 	assert.EqualError(t, err, "table and newTable must be non-nil")
@@ -107,12 +108,14 @@ func TestFixCorrupt(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
 	config.FixDifferences = true
@@ -150,12 +153,14 @@ func TestCorruptChecksum(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -182,12 +187,14 @@ func TestBoundaryCases(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -246,12 +253,14 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -277,12 +286,14 @@ func TestFromWatermark(t *testing.T) {
 
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	feed := repl.NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &repl.ClientConfig{
+	feed := repl.NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        repl.NewServerID(),
 	})
-	assert.NoError(t, feed.Run())
+	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
 	config.Watermark = "{\"Key\":[\"a\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"2\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"3\"],\"Inclusive\":false}}"
