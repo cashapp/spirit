@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 
@@ -22,7 +23,7 @@ func TestMain(m *testing.M) {
 	statusInterval = 10 * time.Millisecond // the status will be accurate to 1ms
 	sentinelCheckInterval = 100 * time.Millisecond
 	sentinelWaitLimit = 10 * time.Second
-	//goleak.VerifyTestMain(m)
+	goleak.VerifyTestMain(m)
 	os.Exit(m.Run())
 }
 

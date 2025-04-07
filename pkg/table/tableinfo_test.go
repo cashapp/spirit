@@ -2,15 +2,22 @@ package table
 
 import (
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/testutils"
+	"go.uber.org/goleak"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 func TestOpenOnBinaryType(t *testing.T) {
 	t1 := NewTableInfo(nil, "test", "t1")
@@ -235,6 +242,7 @@ func TestDiscoveryCompositeComparable(t *testing.T) {
 func TestStatisticsUpdate(t *testing.T) {
 	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS statsupdate`)
 	table := `CREATE TABLE statsupdate (

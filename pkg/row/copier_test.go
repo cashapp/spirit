@@ -2,6 +2,7 @@ package row
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/metrics"
 	"github.com/cashapp/spirit/pkg/testutils"
+	"go.uber.org/goleak"
 
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/throttler"
@@ -16,6 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 type TestMetricsSink struct {
 	sync.Mutex
@@ -37,6 +44,7 @@ func TestCopier(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "copiert1")
@@ -71,6 +79,7 @@ func TestThrottler(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "throttlert1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -97,6 +106,7 @@ func TestCopierUniqueDestination(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "copieruniqt1")
@@ -132,6 +142,7 @@ func TestCopierLossyDataTypeConversion(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "datatpt1")
@@ -155,6 +166,7 @@ func TestCopierNullToNotNullConversion(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	require.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "null2notnullt1")
@@ -178,6 +190,7 @@ func TestSQLModeAllowZeroInvalidDates(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "invaliddt1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -204,12 +217,15 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "lockt1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
 	t2 := table.NewTableInfo(db, "test", "lockt2")
 	assert.NoError(t, t2.SetInfo(t.Context()))
-
+	wg1, wg2 := sync.WaitGroup{}, sync.WaitGroup{}
+	wg1.Add(1)
+	wg2.Add(1)
 	// Lock table t2 for 2 seconds.
 	// This should be enough to retry, but it will eventually be successful.
 	go func() {
@@ -217,14 +233,18 @@ func TestLockWaitTimeoutIsRetyable(t *testing.T) {
 		assert.NoError(t, err)
 		_, err = tx.Exec("SELECT * FROM lockt2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
+		wg1.Done()
 		time.Sleep(2 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
+		wg2.Done()
 	}()
+	wg1.Wait()
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(t.Context())
 	assert.NoError(t, err) // succeeded within retry.
+	wg2.Wait()
 }
 
 func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
@@ -240,7 +260,7 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), config)
 	assert.NoError(t, err)
-
+	defer db.Close()
 	require.Equal(t, config.MaxOpenConnections, db.Stats().MaxOpenConnections)
 	require.Equal(t, 0, db.Stats().InUse)
 
@@ -249,31 +269,36 @@ func TestLockWaitTimeoutRetryExceeded(t *testing.T) {
 	t2 := table.NewTableInfo(db, "test", "lock2t2")
 	assert.NoError(t, t2.SetInfo(t.Context()))
 
-	// Lock again but for 60 seconds.
+	// Lock again but for 10 seconds.
 	// This will cause a failure because the retry is less than this (2 retries * 1 sec + backoff)
-	var wg sync.WaitGroup
-	wg.Add(1) // wait for the goroutine to acquire the lock
+	// TODO: can we use a channel instead here to notify cleanup can be done?
+	wg1, wg2 := sync.WaitGroup{}, sync.WaitGroup{}
+	wg1.Add(1)
+	wg2.Add(1)
 	go func() {
 		tx, err := db.Begin()
 		assert.NoError(t, err)
 		_, err = tx.Exec("SELECT * FROM lock2t2 WHERE a = 1 FOR UPDATE")
 		assert.NoError(t, err)
-		wg.Done()
-		time.Sleep(60 * time.Second)
+		wg1.Done()
+		time.Sleep(10 * time.Second)
 		err = tx.Rollback()
 		assert.NoError(t, err)
+		wg2.Done()
 	}()
 
-	wg.Wait() // Wait only for the lock to be acquired.
+	wg1.Wait() // Wait only for the lock to be acquired.
 	copier, err := NewCopier(db, t1, t2, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(t.Context())
 	assert.Error(t, err) // exceeded retry.
+	wg2.Wait()
 }
 
 func TestCopierValidation(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "t1")
 
@@ -293,6 +318,7 @@ func TestETA(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "testeta1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -355,6 +381,7 @@ func TestCopierFromCheckpoint(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "copierchkpt1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -389,6 +416,7 @@ func TestRangeOptimizationMustApply(t *testing.T) {
 	config.RangeOptimizerMaxMemSize = 1024 // 1KB
 	db, err := dbconn.New(testutils.DSN(), config)
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "rangeoptimizertest")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -401,11 +429,11 @@ func TestRangeOptimizationMustApply(t *testing.T) {
 	assert.ErrorContains(t, err, "range_optimizer_max_mem_size") // verify that spirit refuses to run if it encounters range optimizer memory limits.
 
 	// Now create a new DB config, which should default to be unlimited.
-	config = dbconn.NewDBConfig()
-	db, err = dbconn.New(testutils.DSN(), config)
+	db2, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db2.Close()
 	testutils.RunSQL(t, "TRUNCATE _rangeoptimizertest_new")
-	copier, err = NewCopier(db, t1, t1new, NewCopierDefaultConfig())
+	copier, err = NewCopier(db2, t1, t1new, NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = copier.Run(t.Context())
 	assert.NoError(t, err) // works now.

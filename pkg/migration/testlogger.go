@@ -32,3 +32,9 @@ func (l *testLogger) Debugf(format string, args ...interface{}) {
 	defer l.Unlock()
 	l.lastDebugf = fmt.Sprintf(format, args...)
 }
+
+func newTestLogger() *testLogger {
+	return &testLogger{
+		FieldLogger: logrus.New(),
+	}
+}

@@ -61,13 +61,13 @@ func TestMetadataLockRefresh(t *testing.T) {
 
 	mdl, err := NewMetadataLock(t.Context(), testutils.DSN(), &lockTableInfo, logger, func(mdl *MetadataLock) {
 		// override the refresh interval for faster testing
-		mdl.refreshInterval = 2 * time.Second
+		mdl.refreshInterval = 1 * time.Second
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, mdl)
 
 	// wait for the refresh to happen
-	time.Sleep(5 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Confirm the lock is still held
 	_, err = NewMetadataLock(t.Context(), testutils.DSN(), &lockTableInfo, logger)
@@ -105,9 +105,10 @@ func TestMetadataLockLength(t *testing.T) {
 
 	logger := logrus.New()
 
-	_, err := NewMetadataLock(t.Context(), testutils.DSN(), &lockTableInfo, logger)
+	mdl, err := NewMetadataLock(t.Context(), testutils.DSN(), &lockTableInfo, logger)
 	// No error anymore after using a hash of the table name
 	assert.NoError(t, err)
+	defer mdl.Close()
 
 	_, err = NewMetadataLock(t.Context(), testutils.DSN(), empty, logger)
 	assert.ErrorContains(t, err, "metadata lock table info is nil")

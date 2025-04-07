@@ -684,7 +684,7 @@ func TestCheckpoint(t *testing.T) {
 	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
 	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
-	testLogger := &testLogger{FieldLogger: logrus.New()}
+	testLogger := newTestLogger()
 
 	preSetup := func() *Runner {
 		r, err := NewRunner(&Migration{
@@ -713,7 +713,6 @@ func TestCheckpoint(t *testing.T) {
 		go r.dumpStatus(t.Context()) // start periodically writing status
 		return r
 	}
-
 	r := preSetup()
 	// migrationRunner.Run usually calls r.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -726,7 +725,7 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.alterNewTable(t.Context()))
 	assert.NoError(t, r.createCheckpointTable(t.Context()))
 	r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
-		Logger:          logrus.New(), // don't use the logger from migration since we feed status to it.
+		Logger:          logrus.New(), // don't use the logger for migration since we feed status to it.
 		Concurrency:     4,
 		TargetBatchTime: r.migration.TargetChunkTime,
 		ServerID:        repl.NewServerID(),
@@ -734,13 +733,13 @@ func TestCheckpoint(t *testing.T) {
 	r.replClient.AddSubscription(r.table, r.newTable, nil)
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run(t.Context())
-	assert.NoError(t, err)
+	assert.NoError(t, r.replClient.Run(t.Context()))
 
 	// Now we are ready to start copying rows.
 	// Instead of calling r.copyRows() we will step through it manually.
 	// Since we want to checkpoint after a few chunks.
 
+	// r.copier.StartTime = time.Now()
 	r.setCurrentState(stateCopyRows)
 	assert.Equal(t, "copyRows", r.getCurrentState().String())
 
@@ -794,43 +793,39 @@ func TestCheckpoint(t *testing.T) {
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
-	r2 := preSetup()
-	defer r2.Close()
 
-	assert.NoError(t, r2.resumeFromCheckpoint(t.Context()))
-
+	r = preSetup()
+	defer r.Close()
 	// Start the binary log feed just before copy rows starts.
-	err = r2.replClient.Run(t.Context())
-	assert.NoError(t, err)
-
-	r2.replClient.Close()
+	// replClient.Run() is already called in resumeFromCheckpoint.
+	assert.NoError(t, r.resumeFromCheckpoint(t.Context()))
 	// This opens the table at the checkpoint (table.OpenAtWatermark())
 	// which sets the chunkPtr at the LowerBound. It also has to position
 	// the watermark to this point so new watermarks "align" correctly.
 	// So lets now call NextChunk to verify.
 
-	chunk, err := r2.copier.Next4Test()
+	chunk, err := r.copier.Next4Test()
 	assert.NoError(t, err)
 	assert.Equal(t, "1001", chunk.LowerBound.Value[0].String())
-	assert.NoError(t, r2.copier.CopyChunk(t.Context(), chunk))
+	assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk))
 
 	// It's ideally not typical but you can still dump checkpoint from
 	// a restored checkpoint state. We won't have advanced anywhere from
 	// the last checkpoint because on restore, the LowerBound is taken.
-	watermark, err = r2.copier.GetLowWatermark()
+	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"1001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"2001\"],\"Inclusive\":false}}", watermark)
 	// Dump a checkpoint
-	assert.NoError(t, r2.dumpCheckpoint(t.Context()))
+	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 
 	// Let's confirm we do advance the watermark.
 	for range 10 {
-		chunk, err = r2.copier.Next4Test()
+		chunk, err = r.copier.Next4Test()
 		assert.NoError(t, err)
-		assert.NoError(t, r2.copier.CopyChunk(t.Context(), chunk))
+		assert.NoError(t, r.copier.CopyChunk(t.Context(), chunk))
 	}
 
-	watermark, err = r2.copier.GetLowWatermark()
+	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
 }
@@ -904,6 +899,7 @@ func TestCheckpointRestore(t *testing.T) {
 		r.migration.Alter,
 	)
 	assert.NoError(t, err)
+	assert.NoError(t, r.Close())
 
 	r2, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -918,6 +914,7 @@ func TestCheckpointRestore(t *testing.T) {
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint)
+	assert.NoError(t, r2.Close())
 }
 
 // https://github.com/cashapp/spirit/issues/381
@@ -986,10 +983,9 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NoError(t, r.copier.CopyChunk(ctx, chunk))
 	}
-	// Dump checkpoint
+	// Dump checkpoint and close runner.
 	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 	assert.NoError(t, r.Close())
-
 	// Try and resume and then check if we used a checkpoint
 	// for resuming.
 	r2, err := NewRunner(&Migration{
@@ -1006,6 +1002,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint) // managed to resume.
+	assert.NoError(t, r2.Close())
 }
 
 func TestCheckpointResumeDuringChecksum(t *testing.T) {
@@ -1078,6 +1075,7 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 	assert.NoError(t, err)
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
+	defer r2.Close()
 	assert.True(t, r2.usedResumeFromCheckpoint)
 	assert.NotEmpty(t, r2.checksumWatermark) // it had a checksum watermark
 }
@@ -1187,14 +1185,15 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Dump a checkpoint
 	assert.NoError(t, m.dumpCheckpoint(t.Context()))
 
-	// Close the db connection since m is to be destroyed.
-	assert.NoError(t, m.db.Close())
+	// Close m
+	assert.NoError(t, m.Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
 	assert.Error(t, m.resumeFromCheckpoint(t.Context())) // it should error because the ALTER does not match.
+	assert.NoError(t, m.Close())
 }
 
 // TestE2EBinlogSubscribingCompositeKey and TestE2EBinlogSubscribingNonCompositeKey tests
@@ -2449,6 +2448,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// correctly finds the high watermark.
 	err = m.checksum(ctx)
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }
 
 func TestVarcharE2E(t *testing.T) {

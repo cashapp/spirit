@@ -26,23 +26,8 @@ type MetadataLock struct {
 	cancel          context.CancelFunc
 	closeCh         chan error
 	refreshInterval time.Duration
-	closeTimeout    time.Duration
 	db              *sql.DB
 	lockName        string
-}
-
-// WithCloseTimeout sets the timeout for close operations
-func WithCloseTimeout(timeout time.Duration) func(*MetadataLock) {
-	return func(m *MetadataLock) {
-		m.closeTimeout = timeout
-	}
-}
-
-// WithRefreshInterval sets the interval for lock refresh operations
-func WithRefreshInterval(interval time.Duration) func(*MetadataLock) {
-	return func(m *MetadataLock) {
-		m.refreshInterval = interval
-	}
 }
 
 func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, logger loggers.Advanced, optionFns ...func(*MetadataLock)) (*MetadataLock, error) {
@@ -52,8 +37,6 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 
 	mdl := &MetadataLock{
 		refreshInterval: refreshInterval,
-		closeTimeout:    30 * time.Second,
-		closeCh:         make(chan error, 1), // Buffered channel to prevent goroutine leaks
 	}
 
 	// Apply option functions
@@ -67,87 +50,83 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 	var err error
 	mdl.db, err = New(dsn, dbConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create database connection: %w", err)
+		return nil, err
 	}
 
 	// Function to acquire the lock
 	getLock := func() error {
-		if mdl.db == nil {
-			return errors.New("database connection is nil")
-		}
-
+		// https://dev.mysql.com/doc/refman/8.0/en/locking-functions.html#function_get-lock
 		var answer int
+		// Using the table name alone entails a maximum lock length and leads to conflicts
+		// between different tables with the same name in different schemas.
+		// We use the schema name and table name to create a unique lock name with a hash.
+		// The hash is truncated to 8 characters to avoid the maximum lock length.
+		// bizarrely_long_schema_name.thisisareallylongtablenamethisisareallylongtablename60charac ==>
+		// bizarrely_long_schem.thisisareallylongtablenamethisis-66fec116
 		mdl.lockName = computeLockName(table)
 		stmt := sqlescape.MustEscapeSQL("SELECT GET_LOCK(%?, %?)", mdl.lockName, getLockTimeout.Seconds())
-
-		// Use context with timeout for the query
-		queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-
-		if err := mdl.db.QueryRowContext(queryCtx, stmt).Scan(&answer); err != nil {
-			return fmt.Errorf("could not acquire metadata lock: %w", err)
+		if err := mdl.db.QueryRowContext(ctx, stmt).Scan(&answer); err != nil {
+			return fmt.Errorf("could not acquire metadata lock: %s", err)
 		}
-
 		if answer == 0 {
+			// 0 means the lock is held by another connection
+			// TODO: we could lookup the connection that holds the lock and report details about it
+			logger.Warnf("could not acquire metadata lock for %s, lock is held by another connection", mdl.lockName)
+
+			// TODO: we could deal in error codes instead of string contains checks.
 			return fmt.Errorf("could not acquire metadata lock for %s, lock is held by another connection", mdl.lockName)
 		} else if answer != 1 {
+			// probably we never get here, but just in case
 			return fmt.Errorf("could not acquire metadata lock %s, GET_LOCK returned: %d", mdl.lockName, answer)
 		}
 		return nil
 	}
 
 	// Acquire the lock or return an error immediately
-	logger.Infof("attempting to acquire metadata lock %s", computeLockName(table))
+	// We only Infof the initial acquisition.
+	logger.Infof("attempting to acquire metadata lock %s", mdl.lockName)
 	if err = getLock(); err != nil {
-		mdl.db.Close() // Clean up the connection if we fail to get the lock
+		mdl.db.Close() // close if we are not returning an MDL.
 		return nil, err
 	}
 	logger.Infof("acquired metadata lock: %s", mdl.lockName)
 
 	// Setup background refresh runner
 	ctx, mdl.cancel = context.WithCancel(ctx)
-
+	mdl.closeCh = make(chan error)
 	go func() {
 		ticker := time.NewTicker(mdl.refreshInterval)
 		defer ticker.Stop()
-		defer func() {
-			if mdl.db != nil {
-				err := mdl.db.Close()
-				select {
-				case mdl.closeCh <- err:
-				default:
-					// Channel is full or closed, log the error
-					logger.Errorf("failed to send close error: %v", err)
-				}
-			}
-		}()
-
 		for {
 			select {
 			case <-ctx.Done():
+				// Close the dedicated connection to release the lock
 				logger.Infof("releasing metadata lock: %s", mdl.lockName)
+				mdl.closeCh <- mdl.db.Close()
 				return
-
 			case <-ticker.C:
 				if err = getLock(); err != nil {
+					// if we can't refresh the lock, it's okay.
+					// We have other safety mechanisms in place to prevent corruption
+					// for example, we watch the binary log to see metadata changes
+					// that we did not make. This makes it a warning, not an error,
+					// and we can try again on the next tick interval.
 					logger.Warnf("could not refresh metadata lock: %s", err)
 
-					// Create new connection before closing old one
-					newDB, newErr := New(dsn, dbConfig)
-					if newErr != nil {
-						logger.Warnf("could not establish new database connection: %s", newErr)
+					// try to close the existing connection
+					if closeErr := mdl.db.Close(); closeErr != nil {
+						logger.Warnf("could not close database connection: %s", closeErr)
 						continue
 					}
 
-					// Close old connection
-					if mdl.db != nil {
-						if closeErr := mdl.db.Close(); closeErr != nil {
-							logger.Warnf("could not close old database connection: %s", closeErr)
-						}
+					// try to re-establish the connection
+					mdl.db, err = New(dsn, dbConfig)
+					if err != nil {
+						logger.Warnf("could not re-establish database connection: %s", err)
+						continue
 					}
 
-					// Set new connection and try to acquire lock
-					mdl.db = newDB
+					// try to acquire the lock again with the new connection
 					if err = getLock(); err != nil {
 						logger.Warnf("could not acquire metadata lock after re-establishing connection: %s", err)
 						continue
@@ -165,32 +144,18 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 }
 
 func (m *MetadataLock) Close() error {
-	if m.cancel != nil {
-		m.cancel() // Cancel the context first
-	}
+	// Cancel the background refresh runner
+	m.cancel()
 
-	// Add timeout to prevent hanging
-	select {
-	case err := <-m.closeCh:
-		return err
-	case <-time.After(m.closeTimeout):
-		// Force close the DB connection if we timeout
-		if m.db != nil {
-			if err := m.db.Close(); err != nil {
-				return fmt.Errorf("forced close after timeout failed: %w", err)
-			}
-			m.db = nil
-		}
-		return fmt.Errorf("metadata lock close operation timed out after %v", m.closeTimeout)
-	}
+	// Wait for the dedicated connection to be closed and return its error (if any)
+	return <-m.closeCh
 }
 
 func (m *MetadataLock) CloseDBConnection(logger loggers.Advanced) error {
+	// Closes the database connection for the MetadataLock
 	logger.Infof("About to close MetadataLock database connection")
 	if m.db != nil {
-		err := m.db.Close()
-		m.db = nil // Ensure we don't try to close it again
-		return err
+		return m.db.Close()
 	}
 	return nil
 }
