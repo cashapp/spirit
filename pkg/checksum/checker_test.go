@@ -1,20 +1,24 @@
 package checksum
 
 import (
+	"os"
 	"testing"
 	"time"
-
-	"github.com/cashapp/spirit/pkg/testutils"
-
-	mysql "github.com/go-sql-driver/mysql"
-	"github.com/sirupsen/logrus"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/cashapp/spirit/pkg/testutils"
+	mysql "github.com/go-sql-driver/mysql"
+	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 func TestBasicChecksum(t *testing.T) {
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS basic_checksum, _basic_checksum_new, _basic_checksum_chkpnt")
@@ -26,6 +30,7 @@ func TestBasicChecksum(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "basic_checksum")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -41,6 +46,7 @@ func TestBasicChecksum(t *testing.T) {
 		TargetBatchTime: time.Second,
 	})
 	assert.NoError(t, feed.Run())
+	defer feed.Close()
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -61,6 +67,7 @@ func TestBasicValidation(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "basic_validation")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -75,6 +82,7 @@ func TestBasicValidation(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
@@ -98,6 +106,7 @@ func TestFixCorrupt(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "fixcorruption_t1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -112,6 +121,7 @@ func TestFixCorrupt(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	config := NewCheckerDefaultConfig()
@@ -141,6 +151,7 @@ func TestCorruptChecksum(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "chkpcorruptt1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -155,6 +166,7 @@ func TestCorruptChecksum(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -173,6 +185,7 @@ func TestBoundaryCases(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "checkert1")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -187,6 +200,7 @@ func TestBoundaryCases(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -237,6 +251,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "tdatetime")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -251,6 +266,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -268,6 +284,7 @@ func TestFromWatermark(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "tfromwatermark")
 	assert.NoError(t, t1.SetInfo(t.Context()))
@@ -282,6 +299,7 @@ func TestFromWatermark(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	assert.NoError(t, feed.Run())
 
 	config := NewCheckerDefaultConfig()

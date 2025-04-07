@@ -228,8 +228,8 @@ func TestOnline(t *testing.T) {
 	assert.NoError(t, err)
 	assert.False(t, m.usedInplaceDDL) // uses instant DDL first
 
-	// TODO: can only check this against 8.0
-	// assert.True(t, m.usedInstantDDL)
+	// can only check this against 8.0
+	assert.True(t, m.usedInstantDDL)
 	assert.NoError(t, m.Close())
 
 	// Finally, this will work.
@@ -354,18 +354,6 @@ func TestTableLength(t *testing.T) {
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "table name must be less than 54 characters")
 	assert.NoError(t, m.Close())
-}
-
-func TestMigrationStateString(t *testing.T) {
-	assert.Equal(t, "initial", stateInitial.String())
-	assert.Equal(t, "copyRows", stateCopyRows.String())
-	assert.Equal(t, "waitingOnSentinelTable", stateWaitingOnSentinelTable.String())
-	assert.Equal(t, "applyChangeset", stateApplyChangeset.String())
-	assert.Equal(t, "checksum", stateChecksum.String())
-	assert.Equal(t, "cutOver", stateCutOver.String())
-	assert.Equal(t, "errCleanup", stateErrCleanup.String())
-	assert.Equal(t, "analyzeTable", stateAnalyzeTable.String())
-	assert.Equal(t, "close", stateClose.String())
 }
 
 func TestBadOptions(t *testing.T) {
@@ -680,32 +668,6 @@ func TestChangeNonIntPK(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
-type testLogger struct {
-	sync.Mutex
-	logrus.FieldLogger
-	lastInfof  string
-	lastWarnf  string
-	lastDebugf string
-}
-
-func (l *testLogger) Infof(format string, args ...interface{}) {
-	l.Lock()
-	defer l.Unlock()
-	l.lastInfof = fmt.Sprintf(format, args...)
-}
-
-func (l *testLogger) Warnf(format string, args ...interface{}) {
-	l.Lock()
-	defer l.Unlock()
-	l.lastWarnf = fmt.Sprintf(format, args...)
-}
-
-func (l *testLogger) Debugf(format string, args ...interface{}) {
-	l.Lock()
-	defer l.Unlock()
-	l.lastDebugf = fmt.Sprintf(format, args...)
-}
-
 func TestCheckpoint(t *testing.T) {
 	tbl := `CREATE TABLE cpt1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -722,7 +684,7 @@ func TestCheckpoint(t *testing.T) {
 	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 b JOIN cpt1 c`)
 	testutils.RunSQL(t, `insert into cpt1 (id2,pad) SELECT 1, REPEAT('a', 100) FROM cpt1 a JOIN cpt1 LIMIT 100000`) // ~100k rows
 
-	testLogger := &testLogger{}
+	testLogger := newTestLogger()
 
 	preSetup := func() *Runner {
 		r, err := NewRunner(&Migration{
@@ -751,7 +713,6 @@ func TestCheckpoint(t *testing.T) {
 		go r.dumpStatus(t.Context()) // start periodically writing status
 		return r
 	}
-
 	r := preSetup()
 	// migrationRunner.Run usually calls r.Setup() here.
 	// Which first checks if the table can be restored from checkpoint.
@@ -770,8 +731,7 @@ func TestCheckpoint(t *testing.T) {
 	})
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
-	assert.NoError(t, err)
+	assert.NoError(t, r.replClient.Run())
 
 	// Now we are ready to start copying rows.
 	// Instead of calling r.copyRows() we will step through it manually.
@@ -826,22 +786,17 @@ func TestCheckpoint(t *testing.T) {
 	// Dump a checkpoint
 	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 
-	// Close everything, we can't use r.Close() because it will delete
-	// the checkpoint table.
-	r.setCurrentState(stateClose)
-	r.replClient.Close()
-	assert.NoError(t, r.db.Close())
+	// Clean up first runner
+	assert.NoError(t, r.Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
 	r = preSetup()
-	assert.NoError(t, r.resumeFromCheckpoint(t.Context()))
-
+	defer r.Close()
 	// Start the binary log feed just before copy rows starts.
-	err = r.replClient.Run()
-	assert.NoError(t, err)
-
+	// replClient.Run() is already called in resumeFromCheckpoint.
+	assert.NoError(t, r.resumeFromCheckpoint(t.Context()))
 	// This opens the table at the checkpoint (table.OpenAtWatermark())
 	// which sets the chunkPtr at the LowerBound. It also has to position
 	// the watermark to this point so new watermarks "align" correctly.
@@ -871,7 +826,6 @@ func TestCheckpoint(t *testing.T) {
 	watermark, err = r.copier.GetLowWatermark()
 	assert.NoError(t, err)
 	assert.JSONEq(t, "{\"Key\":[\"id\"],\"ChunkSize\":1000,\"LowerBound\":{\"Value\": [\"11001\"],\"Inclusive\":true},\"UpperBound\":{\"Value\": [\"12001\"],\"Inclusive\":false}}", watermark)
-	assert.NoError(t, r.db.Close())
 }
 
 func TestCheckpointRestore(t *testing.T) {
@@ -940,6 +894,7 @@ func TestCheckpointRestore(t *testing.T) {
 		r.migration.Alter,
 	)
 	assert.NoError(t, err)
+	assert.NoError(t, r.Close())
 
 	r2, err := NewRunner(&Migration{
 		Host:     cfg.Addr,
@@ -954,6 +909,7 @@ func TestCheckpointRestore(t *testing.T) {
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint)
+	assert.NoError(t, r2.Close())
 }
 
 // https://github.com/cashapp/spirit/issues/381
@@ -1019,10 +975,9 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NoError(t, r.copier.CopyChunk(ctx, chunk))
 	}
-	// Dump checkpoint
+	// Dump checkpoint and close runner.
 	assert.NoError(t, r.dumpCheckpoint(t.Context()))
 	assert.NoError(t, r.Close())
-
 	// Try and resume and then check if we used a checkpoint
 	// for resuming.
 	r2, err := NewRunner(&Migration{
@@ -1039,6 +994,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, r2.usedResumeFromCheckpoint) // managed to resume.
+	assert.NoError(t, r2.Close())
 }
 
 func TestCheckpointResumeDuringChecksum(t *testing.T) {
@@ -1110,6 +1066,7 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 	assert.NoError(t, err)
 	err = r2.Run(t.Context())
 	assert.NoError(t, err)
+	defer r2.Close()
 	assert.True(t, r2.usedResumeFromCheckpoint)
 	assert.NotEmpty(t, r2.checksumWatermark) // it had a checksum watermark
 }
@@ -1216,14 +1173,15 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	// Dump a checkpoint
 	assert.NoError(t, m.dumpCheckpoint(t.Context()))
 
-	// Close the db connection since m is to be destroyed.
-	assert.NoError(t, m.db.Close())
+	// Close m
+	assert.NoError(t, m.Close())
 
 	// Now lets imagine that everything fails and we need to start
 	// from checkpoint again.
 
 	m = preSetup("ADD COLUMN id4 INT NOT NULL DEFAULT 0, ADD INDEX(id2)")
 	assert.Error(t, m.resumeFromCheckpoint(t.Context())) // it should error because the ALTER does not match.
+	assert.NoError(t, m.Close())
 }
 
 // TestE2EBinlogSubscribingCompositeKey and TestE2EBinlogSubscribingNonCompositeKey tests
@@ -1341,6 +1299,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
+	defer m.Close()
 	assert.Equal(t, "initial", m.getCurrentState().String())
 	assert.Equal(t, Progress{CurrentState: "initial", Summary: ""}, m.GetProgress())
 
@@ -1471,6 +1430,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
+	defer m.Close()
 	assert.Equal(t, "initial", m.getCurrentState().String())
 
 	// Usually we would call m.Run() but we want to step through
@@ -2182,6 +2142,7 @@ func TestE2ERogueValues(t *testing.T) {
 		Alter:    "ENGINE=InnoDB",
 	})
 	assert.NoError(t, err)
+	defer m.Close()
 	assert.Equal(t, "initial", m.getCurrentState().String())
 
 	// Usually we would call m.Run() but we want to step through
@@ -2451,7 +2412,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	m.dbConfig = dbconn.NewDBConfig()
 	m.table = table.NewTableInfo(m.db, m.migration.Database, m.migration.Table)
 	assert.NoError(t, m.table.SetInfo(ctx))
-	// check we can resume from checkpoint.
+	// check we can resume from checkpoint
+	// this is normally done in m.setup() but we want to call it in isolation.
 	assert.NoError(t, m.resumeFromCheckpoint(ctx))
 	// setup callbacks.
 	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
@@ -2471,6 +2433,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// correctly finds the high watermark.
 	err = m.checksum(ctx)
 	assert.NoError(t, err)
+	assert.NoError(t, m.Close())
 }
 
 func TestVarcharE2E(t *testing.T) {
@@ -2968,6 +2931,7 @@ func TestForNonInstantBurn(t *testing.T) {
 		Alter:    "add newcol2 int",
 	})
 	assert.NoError(t, err)
+	defer m.Close()
 	err = m.Run(t.Context())
 	assert.NoError(t, err)
 
@@ -3114,6 +3078,7 @@ func TestPreventConcurrentRuns(t *testing.T) {
 		DeferCutOver:         true,
 	})
 	assert.NoError(t, err)
+	defer m.Close()
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -3139,6 +3104,7 @@ func TestPreventConcurrentRuns(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	err = m2.Run(t.Context())
+	defer m2.Close()
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "could not acquire metadata lock")
 	wg.Wait()

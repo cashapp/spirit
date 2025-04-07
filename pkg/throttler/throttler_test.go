@@ -7,10 +7,16 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"go.uber.org/goleak"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 func TestThrottlerInterface(t *testing.T) {
 	replicaDSN := os.Getenv("REPLICA_DSN")
@@ -19,6 +25,7 @@ func TestThrottlerInterface(t *testing.T) {
 	}
 	db, err := sql.Open("mysql", replicaDSN)
 	assert.NoError(t, err)
+	defer db.Close()
 
 	//	NewReplicationThrottler will attach either MySQL 8.0 or MySQL 5.7 throttler
 	loopInterval = 1 * time.Millisecond

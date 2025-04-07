@@ -36,6 +36,7 @@ func TestCutOver(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 
 	t1 := table.NewTableInfo(db, "test", "cutovert1")
@@ -50,6 +51,7 @@ func TestCutOver(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -98,6 +100,7 @@ func TestMDLLockFails(t *testing.T) {
 
 	db, err := dbconn.New(testutils.DSN(), config)
 	assert.NoError(t, err)
+	defer db.Close()
 
 	t1 := table.NewTableInfo(db, "test", "mdllocks")
 	assert.NoError(t, t1.SetInfo(t.Context())) // required to extract PK.
@@ -111,6 +114,7 @@ func TestMDLLockFails(t *testing.T) {
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
 	})
+	defer feed.Close()
 	// the feed must be started.
 	assert.NoError(t, feed.Run())
 
@@ -135,6 +139,7 @@ func TestMDLLockFails(t *testing.T) {
 func TestInvalidOptions(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 	logger := logrus.New()
 
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS invalid_t1, _invalid_t1_new`)
