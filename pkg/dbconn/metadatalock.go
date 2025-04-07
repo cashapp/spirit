@@ -88,7 +88,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 	if err = getLock(); err != nil {
 		return nil, err
 	}
-	logger.Infof("acquired metadata lock: %s.%s", table.SchemaName, table.TableName)
+	logger.Infof("acquired metadata lock: %s", mdl.lockName)
 
 	// Setup background refresh runner
 	ctx, mdl.cancel = context.WithCancel(ctx)
@@ -100,7 +100,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 			select {
 			case <-ctx.Done():
 				// Close the dedicated connection to release the lock
-				logger.Warnf("releasing metadata lock for %s", mdl.lockName)
+				logger.Infof("releasing metadata lock: %s", mdl.lockName)
 				mdl.closeCh <- mdl.db.Close()
 				return
 			case <-ticker.C:
@@ -131,7 +131,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 						continue
 					}
 
-					logger.Infof("re-acquired metadata lock after re-establishing connection: %s.%s", table.SchemaName, table.TableName)
+					logger.Infof("re-acquired metadata lock after re-establishing connection: %s", mdl.lockName)
 				} else {
 					logger.Debugf("refreshed metadata lock for %s", mdl.lockName)
 				}
@@ -178,6 +178,5 @@ func computeLockName(table *table.TableInfo) string {
 	hash.Write([]byte(table.SchemaName + table.TableName))
 	hashPart := hex.EncodeToString(hash.Sum(nil))[:8]
 
-	lockName := fmt.Sprintf("%s.%s-%s", schemaNamePart, tableNamePart, hashPart)
-	return lockName
+	return fmt.Sprintf("%s.%s-%s", schemaNamePart, tableNamePart, hashPart)
 }

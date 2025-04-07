@@ -105,6 +105,7 @@ type Client struct {
 	concurrency     int
 
 	isMySQL84 bool
+	isRunning bool
 
 	// The periodic flush lock is just used for ensuring only one periodic flush runs at a time,
 	// and when we disable it, no more periodic flushes will run. The actual flushing is protected
@@ -289,6 +290,13 @@ func (c *Client) getCurrentBinlogPosition() (mysql.Position, error) {
 }
 
 func (c *Client) Run() (err error) {
+	c.Lock()
+	defer c.Unlock()
+	if c.isRunning {
+		return errors.New("Run() has already been called")
+	}
+	c.isRunning = true
+
 	// We have to disable the delta map
 	// if the primary key is *not* memory comparable.
 	// We use a FIFO queue instead.

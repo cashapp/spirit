@@ -24,21 +24,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type migrationState int32
-
-const (
-	stateInitial migrationState = iota
-	stateCopyRows
-	stateWaitingOnSentinelTable
-	stateApplyChangeset // first mass apply
-	stateAnalyzeTable
-	stateChecksum
-	statePostChecksum // second mass apply
-	stateCutOver
-	stateClose
-	stateErrCleanup
-)
-
 // These are really consts, but set to var for testing.
 var (
 	checkpointDumpInterval  = 50 * time.Second
@@ -47,32 +32,6 @@ var (
 	sentinelCheckInterval   = 1 * time.Second
 	sentinelWaitLimit       = 48 * time.Hour
 )
-
-func (s migrationState) String() string {
-	switch s {
-	case stateInitial:
-		return "initial"
-	case stateCopyRows:
-		return "copyRows"
-	case stateWaitingOnSentinelTable:
-		return "waitingOnSentinelTable"
-	case stateApplyChangeset:
-		return "applyChangeset"
-	case stateAnalyzeTable:
-		return "analyzeTable"
-	case stateChecksum:
-		return "checksum"
-	case statePostChecksum:
-		return "postChecksum"
-	case stateCutOver:
-		return "cutOver"
-	case stateClose:
-		return "close"
-	case stateErrCleanup:
-		return "errCleanup"
-	}
-	return "unknown"
-}
 
 type Runner struct {
 	migration       *Migration

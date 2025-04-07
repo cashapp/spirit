@@ -6,11 +6,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/siddontang/loggers"
-
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/repl"
 	"github.com/cashapp/spirit/pkg/table"
+	"github.com/siddontang/loggers"
 )
 
 type CutOver struct {
