@@ -1,15 +1,14 @@
 package dbconn
 
 import (
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/cashapp/spirit/pkg/testutils"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func testConfig() *DBConfig {
@@ -78,19 +77,13 @@ func TestTableLockFail(t *testing.T) {
 	// We acquire an exclusive lock first, so the tablelock should fail.
 	trx, err := db.Begin()
 	assert.NoError(t, err)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		_, err = trx.Exec("LOCK TABLES test.testlockfail WRITE")
-		assert.NoError(t, err)
-		wg.Done()
-		time.Sleep(5 * time.Second)
-		err = trx.Rollback()
-		assert.NoError(t, err)
-	}()
-	wg.Wait()
 
+	_, err = trx.Exec("LOCK TABLES test.testlockfail WRITE")
+	assert.NoError(t, err)
+
+	// Try to get a table lock - this should fail since we already have an exclusive lock
 	tbl := &table.TableInfo{SchemaName: "test", TableName: "testlockfail"}
 	_, err = NewTableLock(t.Context(), db, tbl, testConfig(), logrus.New())
-	assert.Error(t, err)
+	assert.Error(t, err) // failed to acquire lock
+	require.NoError(t, trx.Rollback())
 }

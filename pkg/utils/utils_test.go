@@ -1,12 +1,19 @@
 package utils
 
 import (
+	"os"
 	"testing"
 
 	"github.com/cashapp/spirit/pkg/table"
 	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 func TestIntersectColumns(t *testing.T) {
 	t1 := table.NewTableInfo(nil, "test", "t1")

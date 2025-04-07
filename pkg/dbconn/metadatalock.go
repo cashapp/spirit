@@ -86,6 +86,7 @@ func NewMetadataLock(ctx context.Context, dsn string, table *table.TableInfo, lo
 	// We only Infof the initial acquisition.
 	logger.Infof("attempting to acquire metadata lock %s", mdl.lockName)
 	if err = getLock(); err != nil {
+		mdl.db.Close() // close if we are not returning an MDL.
 		return nil, err
 	}
 	logger.Infof("acquired metadata lock: %s", mdl.lockName)

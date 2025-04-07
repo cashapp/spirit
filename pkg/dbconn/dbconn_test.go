@@ -2,14 +2,21 @@ package dbconn
 
 import (
 	"database/sql"
+	"os"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/testutils"
+	"go.uber.org/goleak"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 
 func getVariable(trx *sql.Tx, name string, sessionScope bool) (string, error) {
 	var value string
@@ -37,6 +44,7 @@ func TestLockWaitTimeouts(t *testing.T) {
 	innodbLockWaitTimeout, err := getVariable(trx, "innodb_lock_wait_timeout", true)
 	assert.NoError(t, err)
 	assert.Equal(t, strconv.Itoa(config.InnodbLockWaitTimeout), innodbLockWaitTimeout)
+	assert.NoError(t, trx.Rollback())
 }
 
 func TestRetryableTrx(t *testing.T) {
@@ -85,12 +93,14 @@ func TestRetryableTrx(t *testing.T) {
 	}()
 	_, err = RetryableTransaction(t.Context(), db, false, config, "UPDATE test.dbexec SET colb=123 WHERE id = 1")
 	assert.NoError(t, err)
+	assert.NoError(t, db.Close())
 
 	// Same again, but make the retry unsuccessful
 	config.InnodbLockWaitTimeout = 1
 	config.MaxRetries = 2
 	db, err = New(testutils.DSN(), config)
 	assert.NoError(t, err)
+	defer db.Close()
 
 	trx, err = db.Begin()
 	assert.NoError(t, err)

@@ -1,11 +1,17 @@
 package statement
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/goleak"
 )
 
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
 func TestExtractFromStatement(t *testing.T) {
 	abstractStmt, err := New("ALTER TABLE t1 ADD INDEX (something)")
 	assert.NoError(t, err)
