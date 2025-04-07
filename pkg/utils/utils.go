@@ -3,7 +3,6 @@ package utils
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/cashapp/spirit/pkg/dbconn/sqlescape"
@@ -60,16 +59,4 @@ func StripPort(hostname string) string {
 		return strings.Split(hostname, ":")[0]
 	}
 	return hostname
-}
-
-func SplitHostAndPort(hostname string) (string, int) {
-	if strings.Contains(hostname, ":") {
-		tmp := strings.Split(hostname, ":")
-		port, err := strconv.Atoi(tmp[1])
-		if err != nil {
-			return hostname, 3306
-		}
-		return tmp[0], port
-	}
-	return hostname, 3306
 }

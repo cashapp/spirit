@@ -831,7 +831,6 @@ func TestCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointRestore(t *testing.T) {
-	t.Skip("leaks")
 	tbl := `CREATE TABLE cpt2 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
@@ -919,7 +918,6 @@ func TestCheckpointRestore(t *testing.T) {
 
 // https://github.com/cashapp/spirit/issues/381
 func TestCheckpointRestoreBinaryPK(t *testing.T) {
-	t.Skip("test is leaking")
 	ctx := t.Context()
 	tbl := `CREATE TABLE binarypk (
  main_id varbinary(16) NOT NULL,
@@ -1006,7 +1004,6 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 }
 
 func TestCheckpointResumeDuringChecksum(t *testing.T) {
-	t.Skip("test is leaking")
 	tbl := `CREATE TABLE cptresume (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
@@ -1081,7 +1078,6 @@ func TestCheckpointResumeDuringChecksum(t *testing.T) {
 }
 
 func TestCheckpointDifferentRestoreOptions(t *testing.T) {
-	t.Skip("test is leaking")
 	tbl := `CREATE TABLE cpt1difft1 (
 		id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
 		id2 INT NOT NULL,
@@ -2303,7 +2299,6 @@ func TestPartitionedTable(t *testing.T) {
 // - When resuming from checkpoint, we need to initialize the high watermark from a SELECT MAX(key) FROM the _new table.
 // - If this is done correctly, then on resume the DELETE will no longer be ignored.
 func TestResumeFromCheckpointPhantom(t *testing.T) {
-	t.Skip("test is leaking")
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS phantomtest, _phantomtest_old, _phantomtest_chkpnt`)
 	tbl := `CREATE TABLE phantomtest (
 		id int(11) NOT NULL AUTO_INCREMENT,

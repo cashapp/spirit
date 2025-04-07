@@ -7,18 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/siddontang/loggers"
-	"github.com/sirupsen/logrus"
-
 	"github.com/cashapp/spirit/pkg/dbconn"
 	"github.com/cashapp/spirit/pkg/table"
-	"github.com/cashapp/spirit/pkg/utils"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/siddontang/loggers"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -228,7 +228,15 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	c.Lock()
 	defer c.Unlock()
 
-	host, port := utils.SplitHostAndPort(c.host)
+	host, portStr, err := net.SplitHostPort(c.host)
+	if err != nil {
+		return fmt.Errorf("failed to parse host: %w", err)
+	}
+	// convert portStr to a uint16
+	port, err := strconv.ParseUint(portStr, 10, 16)
+	if err != nil {
+		return fmt.Errorf("failed to parse port: %w", err)
+	}
 	cfg := replication.BinlogSyncerConfig{
 		ServerID: c.serverID,
 		Flavor:   "mysql",

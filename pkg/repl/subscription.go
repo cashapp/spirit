@@ -32,9 +32,6 @@ type subscription struct {
 
 	enableKeyAboveWatermark bool
 	keyAboveCopierCallback  func(interface{}) bool
-
-	//physicalRowsApplied int64
-	//logicalRowsApplied  int64 // eliminated by optimizations
 }
 
 func (s *subscription) getDeltaLen() int {
@@ -44,7 +41,7 @@ func (s *subscription) getDeltaLen() int {
 	if s.disableDeltaMap {
 		return len(s.deltaQueue)
 	}
-	return len(s.deltaMap) // + int(atomic.LoadInt64(&s.binlogChangesetDelta))
+	return len(s.deltaMap)
 }
 
 func (s *subscription) keyHasChanged(key []interface{}, deleted bool) {
