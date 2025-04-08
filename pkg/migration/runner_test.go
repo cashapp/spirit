@@ -730,7 +730,7 @@ func TestCheckpoint(t *testing.T) {
 		TargetBatchTime: r.migration.TargetChunkTime,
 		ServerID:        repl.NewServerID(),
 	})
-	r.replClient.AddSubscription(r.table, r.newTable, nil)
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	assert.NoError(t, r.replClient.Run(t.Context()))
@@ -873,7 +873,7 @@ func TestCheckpointRestore(t *testing.T) {
 		TargetBatchTime: r.migration.TargetChunkTime,
 		ServerID:        repl.NewServerID(),
 	})
-	r.replClient.AddSubscription(r.table, r.newTable, nil)
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = r.replClient.Run(t.Context())
@@ -968,7 +968,7 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 		TargetBatchTime: r.migration.TargetChunkTime,
 		ServerID:        repl.NewServerID(),
 	})
-	r.replClient.AddSubscription(r.table, r.newTable, nil)
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = r.replClient.Run(t.Context())
@@ -1135,7 +1135,7 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 		TargetBatchTime: m.migration.TargetChunkTime,
 		ServerID:        repl.NewServerID(),
 	})
-	m.replClient.AddSubscription(m.table, m.newTable, nil)
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, nil))
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	err = m.replClient.Run(t.Context())
@@ -1345,7 +1345,7 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark)
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
 	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
@@ -1476,7 +1476,7 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark)
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
 	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 	m.replClient.SetKeyAboveWatermarkOptimization(true)
@@ -2188,7 +2188,7 @@ func TestE2ERogueValues(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark)
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
 	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
@@ -2353,7 +2353,7 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark)
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
 	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 

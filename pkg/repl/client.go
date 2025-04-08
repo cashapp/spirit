@@ -133,19 +133,25 @@ func NewClientDefaultConfig() *ClientConfig {
 	}
 }
 
-// AddSubscription adds a new subscription
-// Subscriptions are never removed
-func (c *Client) AddSubscription(currentTable, newTable *table.TableInfo, keyAboveCopierCallback func(interface{}) bool) {
+// AddSubscription adds a new subscription.
+// Returns an error if a subscription already exists for the given table.
+func (c *Client) AddSubscription(currentTable, newTable *table.TableInfo, keyAboveCopierCallback func(interface{}) bool) error {
 	c.Lock()
 	defer c.Unlock()
 
-	c.subscriptions[EncodeSchemaTable(currentTable.SchemaName, currentTable.TableName)] = &subscription{
+	subKey := EncodeSchemaTable(currentTable.SchemaName, currentTable.TableName)
+	if _, exists := c.subscriptions[subKey]; exists {
+		return fmt.Errorf("subscription already exists for table %s.%s", currentTable.SchemaName, currentTable.TableName)
+	}
+
+	c.subscriptions[subKey] = &subscription{
 		table:                  currentTable,
 		newTable:               newTable,
 		deltaMap:               make(map[string]bool),
 		c:                      c,
 		keyAboveCopierCallback: keyAboveCopierCallback,
 	}
+	return nil
 }
 
 // setBufferedPos updates the in-memory position that all changes have been read

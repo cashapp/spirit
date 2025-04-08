@@ -53,7 +53,7 @@ func TestCutOver(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t1new, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t1new, nil))
 	// the feed must be started.
 	assert.NoError(t, feed.Run(t.Context()))
 
@@ -118,7 +118,7 @@ func TestMDLLockFails(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t1new, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t1new, nil))
 	// the feed must be started.
 	assert.NoError(t, feed.Run(t.Context()))
 
@@ -174,7 +174,7 @@ func TestInvalidOptions(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        repl.NewServerID(),
 	})
-	feed.AddSubscription(t1, t1new, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t1new, nil))
 	_, err = NewCutOver(db, nil, t1new, t1old, feed, dbconn.NewDBConfig(), logger)
 	assert.Error(t, err)
 	_, err = NewCutOver(db, nil, t1new, "", feed, dbconn.NewDBConfig(), logger)

@@ -48,7 +48,7 @@ func TestReplClient(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
@@ -96,7 +96,7 @@ func TestReplClientComplex(t *testing.T) {
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
-	client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark)
+	assert.NoError(t, client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 	client.SetKeyAboveWatermarkOptimization(true)
@@ -167,7 +167,7 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	client.SetFlushedPos(mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
@@ -199,7 +199,7 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	if dbconn.IsMySQL84(db) { // handle MySQL 8.4
 		client.isMySQL84 = true
 	}
@@ -240,7 +240,7 @@ func TestReplClientOpts(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
@@ -296,7 +296,7 @@ func TestReplClientQueue(t *testing.T) {
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
-	client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark)
+	assert.NoError(t, client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
@@ -356,7 +356,7 @@ func TestFeedback(t *testing.T) {
 	assert.NoError(t, err)
 
 	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
@@ -415,7 +415,7 @@ func TestBlockWait(t *testing.T) {
 		TargetBatchTime: time.Second,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
@@ -463,7 +463,7 @@ func TestDDLNotification(t *testing.T) {
 		OnDDL:           ddlNotifications,
 		ServerID:        NewServerID(),
 	})
-	client.AddSubscription(t1, t2, nil)
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
@@ -500,7 +500,7 @@ func TestSetDDLNotificationChannel(t *testing.T) {
 			TargetBatchTime: time.Second,
 			ServerID:        NewServerID(),
 		})
-		client.AddSubscription(t1, t2, nil)
+		assert.NoError(t, client.AddSubscription(t1, t2, nil))
 		assert.NoError(t, client.Run(t.Context()))
 		defer client.Close()
 

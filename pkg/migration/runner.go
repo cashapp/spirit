@@ -455,7 +455,9 @@ func (r *Runner) setup(ctx context.Context) error {
 			OnDDL:           r.ddlNotification,
 			ServerID:        repl.NewServerID(),
 		})
-		r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark)
+		if err := r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark); err != nil {
+			return err
+		}
 		// Start the binary log feed now
 		if err := r.replClient.Run(ctx); err != nil {
 			return err
@@ -780,7 +782,9 @@ func (r *Runner) resumeFromCheckpoint(ctx context.Context) error {
 		OnDDL:           r.ddlNotification,
 		ServerID:        repl.NewServerID(),
 	})
-	r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark)
+	if err := r.replClient.AddSubscription(r.table, r.newTable, r.copier.KeyAboveHighWatermark); err != nil {
+		return err
+	}
 	r.replClient.SetFlushedPos(mysql.Position{
 		Name: binlogName,
 		Pos:  uint32(binlogPos),

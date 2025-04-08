@@ -48,7 +48,7 @@ func TestBasicChecksum(t *testing.T) {
 	})
 	assert.NoError(t, feed.Run(t.Context()))
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
 	assert.NoError(t, err)
@@ -86,7 +86,7 @@ func TestBasicValidation(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	_, err = NewChecker(db, nil, t2, feed, NewCheckerDefaultConfig())
@@ -127,7 +127,7 @@ func TestFixCorrupt(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
@@ -174,7 +174,7 @@ func TestCorruptChecksum(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -210,8 +210,7 @@ func TestBoundaryCases(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
-
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -279,8 +278,7 @@ func TestChangeDataTypeDatetime(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
-
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	checker, err := NewChecker(db, t1, t2, feed, NewCheckerDefaultConfig())
@@ -315,7 +313,7 @@ func TestFromWatermark(t *testing.T) {
 		ServerID:        repl.NewServerID(),
 	})
 	defer feed.Close()
-	feed.AddSubscription(t1, t2, nil)
+	assert.NoError(t, feed.AddSubscription(t1, t2, nil))
 	assert.NoError(t, feed.Run(t.Context()))
 
 	config := NewCheckerDefaultConfig()
