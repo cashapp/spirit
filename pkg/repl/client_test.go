@@ -476,3 +476,147 @@ func TestDDLNotification(t *testing.T) {
 	tableModified := <-ddlNotifications
 	assert.Equal(t, "test.ddl_t3", tableModified)
 }
+
+func TestSetDDLNotificationChannel(t *testing.T) {
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS ddl_channel_t1, ddl_channel_t2")
+	testutils.RunSQL(t, "CREATE TABLE ddl_channel_t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE ddl_channel_t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+
+	t1 := table.NewTableInfo(db, "test", "ddl_channel_t1")
+	assert.NoError(t, t1.SetInfo(t.Context()))
+	t2 := table.NewTableInfo(db, "test", "ddl_channel_t2")
+	assert.NoError(t, t2.SetInfo(t.Context()))
+
+	logger := logrus.New()
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	t.Run("change notification channels", func(t *testing.T) {
+		client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
+			Logger:          logger,
+			Concurrency:     4,
+			TargetBatchTime: time.Second,
+			ServerID:        NewServerID(),
+		})
+		client.AddSubscription(t1, t2, nil)
+		assert.NoError(t, client.Run(t.Context()))
+		defer client.Close()
+
+		// Test 1: Set initial channel
+		ch1 := make(chan string, 1)
+		client.SetDDLNotificationChannel(ch1)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t1 ADD COLUMN d INT")
+		select {
+		case tableModified := <-ch1:
+			assert.Equal(t, "test.ddl_channel_t1", tableModified)
+		case <-time.After(time.Second):
+			t.Fatal("Did not receive DDL notification on first channel")
+		}
+
+		// Test 2: Change to new channel
+		ch2 := make(chan string, 1)
+		client.SetDDLNotificationChannel(ch2)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t2 ADD COLUMN d INT")
+		select {
+		case tableModified := <-ch2:
+			assert.Equal(t, "test.ddl_channel_t2", tableModified)
+		case <-time.After(time.Second):
+			t.Fatal("Did not receive DDL notification on second channel")
+		}
+
+		// Test 3: Verify old channel doesn't receive notifications
+		select {
+		case <-ch1:
+			t.Fatal("Should not receive notification on old channel")
+		case <-time.After(100 * time.Millisecond):
+			// This is expected
+		}
+
+		// Test 4: Set to nil
+		client.SetDDLNotificationChannel(nil)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t1 ADD COLUMN e INT")
+		select {
+		case <-ch2:
+			t.Fatal("Should not receive notification when channel is nil")
+		case <-time.After(100 * time.Millisecond):
+			// This is expected
+		}
+	})
+}
+
+func TestAllChangesFlushed(t *testing.T) {
+	srcTable, dstTable := setupTestTables(t)
+
+	client := &Client{
+		db:              nil,
+		logger:          logrus.New(),
+		concurrency:     2,
+		targetBatchSize: 1000,
+		dbConfig:        dbconn.NewDBConfig(),
+		subscriptions:   make(map[string]*subscription),
+	}
+
+	// Test 1: Initial state - should be flushed when no changes
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with no changes")
+
+	// Test 2: Add a subscription and verify initial state
+	sub := &subscription{
+		c:          client,
+		table:      srcTable,
+		newTable:   dstTable,
+		deltaMap:   make(map[string]bool),
+		deltaQueue: nil,
+	}
+	client.subscriptions[EncodeSchemaTable(srcTable.SchemaName, srcTable.TableName)] = sub
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with empty subscription")
+
+	// Test 3: Add changes and verify not flushed
+	sub.keyHasChanged([]interface{}{1}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with pending changes")
+
+	// Test 4: Test with buffered position ahead
+	client.bufferedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	client.flushedPos = mysql.Position{Name: "binlog.000001", Pos: 50}
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with buffered position ahead")
+
+	// Test 5: Test with multiple subscriptions
+	sub2 := &subscription{
+		c:          client,
+		table:      srcTable,
+		newTable:   dstTable,
+		deltaMap:   make(map[string]bool),
+		deltaQueue: nil,
+	}
+	client.subscriptions["test2"] = sub2
+	sub2.keyHasChanged([]interface{}{2}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with changes in any subscription")
+
+	// Test 6: Clear changes but keep positions different - should still be considered flushed
+	sub.deltaMap = make(map[string]bool)
+	sub2.deltaMap = make(map[string]bool)
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed when no pending changes, even with positions different")
+
+	// Test 7: Align positions and verify still flushed
+	client.bufferedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	client.flushedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with aligned positions and no changes")
+
+	// Test 8: Test with queue-based subscription
+	subQueue := &subscription{
+		c:               client,
+		table:           srcTable,
+		newTable:        dstTable,
+		deltaMap:        nil,
+		deltaQueue:      make([]queuedChange, 0),
+		disableDeltaMap: true,
+	}
+	client.subscriptions["test3"] = subQueue
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with empty queue")
+
+	subQueue.keyHasChanged([]interface{}{3}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with items in queue")
+}
