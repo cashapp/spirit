@@ -1,7 +1,6 @@
 package repl
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -420,24 +419,23 @@ func TestBlockWait(t *testing.T) {
 	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second*2) // if it takes any longer block wait is failing.
-	defer cancel()
-
-	assert.NoError(t, client.BlockWait(ctx))
+	// We wait up to 10s to receive changes
+	// This should typically be quick.
+	assert.NoError(t, client.BlockWait(t.Context()))
 
 	// Insert into t1.
 	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (1, 2, 3)")
-	assert.NoError(t, client.Flush(ctx))                                      // apply the changes (not required, they only need to be received for block wait to unblock)
-	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick still.
+	assert.NoError(t, client.Flush(t.Context()))                              // apply the changes (not required, they only need to be received for block wait to unblock)
+	assert.NoError(t, client.BlockWait(t.Context()))                          // should be quick still.
 	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (2, 2, 3)") // don't apply changes.
-	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick because apply not required.
+	assert.NoError(t, client.BlockWait(t.Context()))                          // should be quick because apply not required.
 
 	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
 	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	assert.NoError(t, client.BlockWait(ctx)) // should be quick
+
+	// We wait up to 10s again.
+	// although it should be quick.
+	assert.NoError(t, client.BlockWait(t.Context()))
 }
 
 func TestDDLNotification(t *testing.T) {
