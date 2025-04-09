@@ -166,7 +166,7 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafe() error {
 // statement are "safe" similar to AlgorithmInplaceConsideredSafe above.
 // However, certain clauses (so far seems like just PARTITION clauses) have ALGORITHM=INPLACE by default
 // they return a syntax error if ALGORITHM=INPLACE is specified explicitly. see
-// https://dev.mysql.com/doc/refman/8.4/en/innodb-online-ddl-operations.html#online-ddl-partitioning
+// https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html#online-ddl-partitioning
 // for details
 func (a *AbstractStatement) AlgorithmInplaceConsideredSafeAndDefault() error {
 	alterStmt, ok := (*a.StmtNode).(*ast.AlterTableStmt)
