@@ -381,7 +381,9 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
 	err = r.stmt.AlgorithmInplaceConsideredSafeAndDefault()
-	if r.migration.ForceInplace || err == nil {
+	// Don't allow force here
+	// We can't guarantee the alter statement is safe to run with defaults
+	if err == nil {
 		err = r.attemptInplaceDefaultDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
