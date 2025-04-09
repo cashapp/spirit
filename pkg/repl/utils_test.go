@@ -3,8 +3,6 @@ package repl
 import (
 	"testing"
 
-	"github.com/pingcap/tidb/pkg/parser/ast"
-	"github.com/pingcap/tidb/pkg/parser/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -109,69 +107,6 @@ func TestEncodeSchemaTable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := EncodeSchemaTable(tt.schema, tt.table)
 			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestGetTableIdentity(t *testing.T) {
-	tests := []struct {
-		name          string
-		defaultSchema string
-		node          ast.Node
-		wantSchema    string
-		wantTable     string
-	}{
-		{
-			name:          "table name with schema",
-			defaultSchema: "default_db",
-			node: &ast.TableName{
-				Schema: model.NewCIStr("test_schema"),
-				Name:   model.NewCIStr("test_table"),
-			},
-			wantSchema: "test_schema",
-			wantTable:  "test_table",
-		},
-		{
-			name:          "table name without schema",
-			defaultSchema: "default_db",
-			node: &ast.TableName{
-				Schema: model.NewCIStr(""),
-				Name:   model.NewCIStr("test_table"),
-			},
-			wantSchema: "default_db",
-			wantTable:  "test_table",
-		},
-		{
-			name:          "table source with schema",
-			defaultSchema: "default_db",
-			node: &ast.TableSource{
-				Source: &ast.TableName{
-					Schema: model.NewCIStr("test_schema"),
-					Name:   model.NewCIStr("test_table"),
-				},
-			},
-			wantSchema: "test_schema",
-			wantTable:  "test_table",
-		},
-		{
-			name:          "table source without schema",
-			defaultSchema: "default_db",
-			node: &ast.TableSource{
-				Source: &ast.TableName{
-					Schema: model.NewCIStr(""),
-					Name:   model.NewCIStr("test_table"),
-				},
-			},
-			wantSchema: "default_db",
-			wantTable:  "test_table",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			schema, table := getTableIdentity(tt.defaultSchema, tt.node)
-			assert.Equal(t, tt.wantSchema, schema)
-			assert.Equal(t, tt.wantTable, table)
 		})
 	}
 }
