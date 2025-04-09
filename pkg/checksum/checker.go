@@ -347,10 +347,10 @@ func (c *Checker) initConnPool(ctx context.Context) error {
 	if err := c.feed.Flush(ctx); err != nil {
 		return err
 	}
-	// Lock the source table in a trx
+	// Lock the source and target table in a trx
 	// so the connection is not used by others
 	c.logger.Info("starting checksum operation, this will require a table lock")
-	tableLock, err := dbconn.NewTableLock(ctx, c.db, c.table, c.dbConfig, c.logger)
+	tableLock, err := dbconn.NewTableLock(ctx, c.db, []*table.TableInfo{c.table, c.newTable}, c.dbConfig, c.logger)
 	if err != nil {
 		return err
 	}

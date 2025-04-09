@@ -191,7 +191,7 @@ func TestFlushWithLock(t *testing.T) {
 	sub.keyHasChanged([]interface{}{2}, true)
 
 	// Create a table lock
-	lock, err := dbconn.NewTableLock(t.Context(), db, srcTable, dbconn.NewDBConfig(), logrus.New())
+	lock, err := dbconn.NewTableLock(t.Context(), db, []*table.TableInfo{srcTable, dstTable}, dbconn.NewDBConfig(), logrus.New())
 	assert.NoError(t, err)
 
 	// Test flush with lock
@@ -583,7 +583,7 @@ func TestFlushDeltaQueue(t *testing.T) {
 		sub.keyHasChanged([]interface{}{2}, true)
 
 		// Create a table lock
-		lock, err := dbconn.NewTableLock(t.Context(), db, srcTable, dbconn.NewDBConfig(), logrus.New())
+		lock, err := dbconn.NewTableLock(t.Context(), db, []*table.TableInfo{srcTable, dstTable}, dbconn.NewDBConfig(), logrus.New())
 		assert.NoError(t, err)
 
 		// Flush under lock
