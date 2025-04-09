@@ -187,11 +187,9 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafeAndDefault() error {
 	}
 	if unsafeClauses > 0 {
 		if len(alterStmt.Specs) > 1 {
-			// TODO: Fix this error message
-			return errors.New("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements. Use --force-inplace to override this safety check")
+			return errors.New("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements.")
 		}
-		// TODO: Fix this error message
-		return errors.New("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time. Use --force-inplace to override this safety check")
+		return errors.New("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time.")
 	}
 	return nil
 }
