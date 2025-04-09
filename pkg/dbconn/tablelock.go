@@ -3,7 +3,6 @@ package dbconn
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"github.com/siddontang/loggers"
 
@@ -11,21 +10,29 @@ import (
 )
 
 type TableLock struct {
-	table   *table.TableInfo
+	tables  []*table.TableInfo
 	lockTxn *sql.Tx
 	logger  loggers.Advanced
 }
 
-// NewTableLock creates a new server wide lock on a table.
+// NewTableLock creates a new server wide lock on multiple tables.
 // i.e. LOCK TABLES .. WRITE.
 // It uses a short-timeout with backoff and retry, since if there is a long-running
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
 // and acquire the lock again.
-func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
+func NewTableLock(ctx context.Context, db *sql.DB, tables []*table.TableInfo, config *DBConfig, logger loggers.Advanced) (*TableLock, error) {
 	var err error
 	var isFatal bool
 	var lockTxn *sql.Tx
+	var lockStmt = "LOCK TABLES "
+	// Build the LOCK TABLES statement
+	for idx, table := range tables {
+		if idx > 0 {
+			lockStmt += ", "
+		}
+		lockStmt += table.QuotedName + " WRITE"
+	}
 	for i := range config.MaxRetries {
 		func() {
 			lockTxn, _ = db.BeginTx(ctx, nil)
@@ -38,30 +45,24 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 				}
 			}()
 			// We need to lock all the tables we intend to write to while we have the lock.
-			// So this is at least the table and the new table, but in the multi-subscription
-			// case it could be a lot more tables. If they are not locked, mysql will return
-			// an error when trying to write to them.
-			// TODO: accept a slice of tables to be locked as a parameter.
-			logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
-			_, err = lockTxn.ExecContext(ctx, fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
-				table.QuotedName,
-				table.SchemaName, table.TableName,
-			))
+			// For each table, we need to lock both the main table and its _new table.
+			logger.Warnf("trying to acquire table locks, timeout: %d", config.LockWaitTimeout)
+			_, err = lockTxn.ExecContext(ctx, lockStmt)
 			if err != nil {
 				// See if the error is retryable, many are
 				if !canRetryError(err) {
 					isFatal = true
 					return
 				}
-				logger.Warnf("failed trying to acquire table lock, backing off and retrying: %v", err)
+				logger.Warnf("failed trying to acquire table lock(s), backing off and retrying: %v", err)
 				return
 			}
 		}()
 		// check if successful
 		if err == nil {
-			logger.Warn("table lock acquired")
+			logger.Warn("table lock(s) acquired")
 			return &TableLock{
-				table:   table,
+				tables:  tables,
 				lockTxn: lockTxn,
 				logger:  logger,
 			}, nil
