@@ -380,16 +380,25 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// If the operator has specified that they want to attempt
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
-	err = r.stmt.AlgorithmInplaceConsideredSafe()
-	if err != nil {
-		r.logger.Infof("unable to use INPLACE: %v", err)
+	err = r.stmt.AlgorithmInplaceConsideredSafeAndDefault()
+	if r.migration.ForceInplace || err == nil {
+		err = r.attemptInplaceDefaultDDL(ctx)
+		if err == nil {
+			r.usedInplaceDDL = true // success
+			return nil
+		}
 	}
+	err = r.stmt.AlgorithmInplaceConsideredSafe()
 	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
 		if err == nil {
 			r.usedInplaceDDL = true // success
 			return nil
 		}
+	}
+
+	if err != nil {
+		r.logger.Infof("unable to use INPLACE: %v", err)
 	}
 
 	// Failure is expected, since MySQL DDL only applies in limited scenarios
@@ -597,6 +606,12 @@ func (r *Runner) attemptInstantDDL(ctx context.Context) error {
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INPLACE, LOCK=NONE", r.table.SchemaName, r.table.TableName)
+}
+
+// Needed because certain statements (e.g., DROP PARTITION) run INPLACE by default
+// but return a syntax error if ALGORITHM or LOCK is defined explicitly
+func (r *Runner) attemptInplaceDefaultDDL(ctx context.Context) error {
+	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter, r.table.SchemaName, r.table.TableName)
 }
 
 func (r *Runner) createCheckpointTable(ctx context.Context) error {
