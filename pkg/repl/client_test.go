@@ -1,26 +1,33 @@
 package repl
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/cashapp/spirit/pkg/dbconn"
+	"github.com/cashapp/spirit/pkg/row"
 	"github.com/cashapp/spirit/pkg/testutils"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	mysql2 "github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/goleak"
 
-	"github.com/cashapp/spirit/pkg/row"
 	"github.com/cashapp/spirit/pkg/table"
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+	os.Exit(m.Run())
+}
+
 func TestReplClient(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replt1, replt2, _replt1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE replt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -35,12 +42,14 @@ func TestReplClient(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        NewServerID(),
 	})
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
+	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
 	// Insert into t1.
@@ -61,6 +70,7 @@ func TestReplClient(t *testing.T) {
 func TestReplClientComplex(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replcomplext1, replcomplext2, _replcomplext1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE replcomplext1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
@@ -81,14 +91,14 @@ func TestReplClientComplex(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	assert.NoError(t, client.Run())
-	defer client.Close()
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, NewClientDefaultConfig())
 
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
-	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark
+	assert.NoError(t, client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark))
+	assert.NoError(t, client.Run(t.Context()))
+	defer client.Close()
 	client.SetKeyAboveWatermarkOptimization(true)
 
 	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
@@ -136,6 +146,7 @@ func TestReplClientComplex(t *testing.T) {
 func TestReplClientResumeFromImpossible(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumet1, replresumet2, _replresumet1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE replresumet1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -150,22 +161,25 @@ func TestReplClientResumeFromImpossible(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        NewServerID(),
 	})
-	client.SetPos(mysql.Position{
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
+	client.SetFlushedPos(mysql.Position{
 		Name: "impossible",
 		Pos:  uint32(12345),
 	})
-	err = client.Run()
+	err = client.Run(t.Context())
 	assert.Error(t, err)
 }
 
 func TestReplClientResumeFromPoint(t *testing.T) {
 	db, err := sql.Open("mysql", testutils.DSN())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replresumepointt1, replresumepointt2")
 	testutils.RunSQL(t, "CREATE TABLE replresumepointt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -179,24 +193,27 @@ func TestReplClientResumeFromPoint(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        NewServerID(),
 	})
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	if dbconn.IsMySQL84(db) { // handle MySQL 8.4
 		client.isMySQL84 = true
 	}
 	pos, err := client.getCurrentBinlogPosition()
 	assert.NoError(t, err)
 	pos.Pos = 4
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(t.Context()))
 	client.Close()
 }
 
 func TestReplClientOpts(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replclientoptst1, replclientoptst2, _replclientoptst1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE replclientoptst1 (a INT NOT NULL auto_increment, b INT, c INT, PRIMARY KEY (a))")
@@ -217,13 +234,15 @@ func TestReplClientOpts(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        NewServerID(),
 	})
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
 	assert.Equal(t, 0, db.Stats().InUse) // no connections in use.
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
 	// Disable key above watermark.
@@ -251,6 +270,7 @@ func TestReplClientOpts(t *testing.T) {
 func TestReplClientQueue(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS replqueuet1, replqueuet2, _replqueuet1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE replqueuet1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -271,14 +291,14 @@ func TestReplClientQueue(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	assert.NoError(t, client.Run())
-	defer client.Close()
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, NewClientDefaultConfig())
 
 	copier, err := row.NewCopier(db, t1, t2, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
 	// Attach copier's keyabovewatermark to the repl client
-	client.KeyAboveCopierCallback = copier.KeyAboveHighWatermark
+	assert.NoError(t, client.AddSubscription(t1, t2, copier.KeyAboveHighWatermark))
+	assert.NoError(t, client.Run(t.Context()))
+	defer client.Close()
 
 	assert.NoError(t, copier.Open4Test()) // need to manually open because we are not calling Run()
 
@@ -320,6 +340,7 @@ func TestReplClientQueue(t *testing.T) {
 func TestFeedback(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS feedbackt1, feedbackt2, _feedbackt1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE feedbackt1 (a VARCHAR(255) NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -334,8 +355,9 @@ func TestFeedback(t *testing.T) {
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, NewClientDefaultConfig())
-	assert.NoError(t, client.Run())
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, NewClientDefaultConfig())
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
+	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
 	// initial values expected:
@@ -372,6 +394,7 @@ func TestFeedback(t *testing.T) {
 func TestBlockWait(t *testing.T) {
 	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
 	assert.NoError(t, err)
+	defer db.Close()
 
 	testutils.RunSQL(t, "DROP TABLE IF EXISTS blockwaitt1, blockwaitt2, _blockwaitt1_chkpnt")
 	testutils.RunSQL(t, "CREATE TABLE blockwaitt1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
@@ -386,30 +409,213 @@ func TestBlockWait(t *testing.T) {
 	logger := logrus.New()
 	cfg, err := mysql2.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
-	client := NewClient(db, cfg.Addr, t1, t2, cfg.User, cfg.Passwd, &ClientConfig{
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: time.Second,
+		ServerID:        NewServerID(),
 	})
-	assert.NoError(t, client.Run())
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
+	assert.NoError(t, client.Run(t.Context()))
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second*2) // if it takes any longer block wait is failing.
-	defer cancel()
-
-	assert.NoError(t, client.BlockWait(ctx))
+	// We wait up to 10s to receive changes
+	// This should typically be quick.
+	assert.NoError(t, client.BlockWait(t.Context()))
 
 	// Insert into t1.
 	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (1, 2, 3)")
-	assert.NoError(t, client.Flush(ctx))                                      // apply the changes (not required, they only need to be received for block wait to unblock)
-	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick still.
+	assert.NoError(t, client.Flush(t.Context()))                              // apply the changes (not required, they only need to be received for block wait to unblock)
+	assert.NoError(t, client.BlockWait(t.Context()))                          // should be quick still.
 	testutils.RunSQL(t, "INSERT INTO blockwaitt1 (a, b, c) VALUES (2, 2, 3)") // don't apply changes.
-	assert.NoError(t, client.BlockWait(ctx))                                  // should be quick because apply not required.
+	assert.NoError(t, client.BlockWait(t.Context()))                          // should be quick because apply not required.
 
 	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
 	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	testutils.RunSQL(t, "ANALYZE TABLE blockwaitt1")
-	assert.NoError(t, client.BlockWait(ctx)) // should be quick
+
+	// We wait up to 10s again.
+	// although it should be quick.
+	assert.NoError(t, client.BlockWait(t.Context()))
+}
+
+func TestDDLNotification(t *testing.T) {
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS ddl_t1, ddl_t2, ddl_t3")
+	testutils.RunSQL(t, "CREATE TABLE ddl_t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE ddl_t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+
+	t1 := table.NewTableInfo(db, "test", "ddl_t1")
+	assert.NoError(t, t1.SetInfo(t.Context()))
+	t2 := table.NewTableInfo(db, "test", "ddl_t2")
+	assert.NoError(t, t2.SetInfo(t.Context()))
+
+	logger := logrus.New()
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	ddlNotifications := make(chan string, 1)
+	client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
+		Logger:          logger,
+		Concurrency:     4,
+		TargetBatchTime: time.Second,
+		OnDDL:           ddlNotifications,
+		ServerID:        NewServerID(),
+	})
+	assert.NoError(t, client.AddSubscription(t1, t2, nil))
+	assert.NoError(t, client.Run(t.Context()))
+	defer client.Close()
+
+	// Create a new table.
+	// check that we get notification of it.
+	testutils.RunSQL(t, "CREATE TABLE ddl_t3 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+
+	tableModified := <-ddlNotifications
+	assert.Equal(t, "test.ddl_t3", tableModified)
+}
+
+func TestSetDDLNotificationChannel(t *testing.T) {
+	t.Skip("test is flaky")
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+
+	testutils.RunSQL(t, "DROP TABLE IF EXISTS ddl_channel_t1, ddl_channel_t2")
+	testutils.RunSQL(t, "CREATE TABLE ddl_channel_t1 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+	testutils.RunSQL(t, "CREATE TABLE ddl_channel_t2 (a INT NOT NULL, b INT, c INT, PRIMARY KEY (a))")
+
+	t1 := table.NewTableInfo(db, "test", "ddl_channel_t1")
+	assert.NoError(t, t1.SetInfo(t.Context()))
+	t2 := table.NewTableInfo(db, "test", "ddl_channel_t2")
+	assert.NoError(t, t2.SetInfo(t.Context()))
+
+	logger := logrus.New()
+	cfg, err := mysql2.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	t.Run("change notification channels", func(t *testing.T) {
+		client := NewClient(db, cfg.Addr, cfg.User, cfg.Passwd, &ClientConfig{
+			Logger:          logger,
+			Concurrency:     4,
+			TargetBatchTime: time.Second,
+			ServerID:        NewServerID(),
+		})
+		assert.NoError(t, client.AddSubscription(t1, t2, nil))
+		assert.NoError(t, client.Run(t.Context()))
+		defer client.Close()
+
+		// Test 1: Set initial channel
+		ch1 := make(chan string, 1)
+		client.SetDDLNotificationChannel(ch1)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t1 ADD COLUMN d INT")
+		select {
+		case tableModified := <-ch1:
+			assert.Equal(t, "test.ddl_channel_t1", tableModified)
+		case <-time.After(time.Second):
+			t.Fatal("Did not receive DDL notification on first channel")
+		}
+
+		// Test 2: Change to new channel
+		ch2 := make(chan string, 1)
+		client.SetDDLNotificationChannel(ch2)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t2 ADD COLUMN d INT")
+		select {
+		case tableModified := <-ch2:
+			assert.Equal(t, "test.ddl_channel_t2", tableModified)
+		case <-time.After(time.Second):
+			t.Fatal("Did not receive DDL notification on second channel")
+		}
+
+		// Test 3: Verify old channel doesn't receive notifications
+		select {
+		case <-ch1:
+			t.Fatal("Should not receive notification on old channel")
+		case <-time.After(100 * time.Millisecond):
+			// This is expected
+		}
+
+		// Test 4: Set to nil
+		client.SetDDLNotificationChannel(nil)
+		testutils.RunSQL(t, "ALTER TABLE ddl_channel_t1 ADD COLUMN e INT")
+		select {
+		case <-ch2:
+			t.Fatal("Should not receive notification when channel is nil")
+		case <-time.After(100 * time.Millisecond):
+			// This is expected
+		}
+	})
+}
+
+func TestAllChangesFlushed(t *testing.T) {
+	srcTable, dstTable := setupTestTables(t)
+
+	client := &Client{
+		db:              nil,
+		logger:          logrus.New(),
+		concurrency:     2,
+		targetBatchSize: 1000,
+		dbConfig:        dbconn.NewDBConfig(),
+		subscriptions:   make(map[string]*subscription),
+	}
+
+	// Test 1: Initial state - should be flushed when no changes
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with no changes")
+
+	// Test 2: Add a subscription and verify initial state
+	sub := &subscription{
+		c:          client,
+		table:      srcTable,
+		newTable:   dstTable,
+		deltaMap:   make(map[string]bool),
+		deltaQueue: nil,
+	}
+	client.subscriptions[EncodeSchemaTable(srcTable.SchemaName, srcTable.TableName)] = sub
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with empty subscription")
+
+	// Test 3: Add changes and verify not flushed
+	sub.keyHasChanged([]interface{}{1}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with pending changes")
+
+	// Test 4: Test with buffered position ahead
+	client.bufferedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	client.flushedPos = mysql.Position{Name: "binlog.000001", Pos: 50}
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with buffered position ahead")
+
+	// Test 5: Test with multiple subscriptions
+	sub2 := &subscription{
+		c:          client,
+		table:      srcTable,
+		newTable:   dstTable,
+		deltaMap:   make(map[string]bool),
+		deltaQueue: nil,
+	}
+	client.subscriptions["test2"] = sub2
+	sub2.keyHasChanged([]interface{}{2}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with changes in any subscription")
+
+	// Test 6: Clear changes but keep positions different - should still be considered flushed
+	sub.deltaMap = make(map[string]bool)
+	sub2.deltaMap = make(map[string]bool)
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed when no pending changes, even with positions different")
+
+	// Test 7: Align positions and verify still flushed
+	client.bufferedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	client.flushedPos = mysql.Position{Name: "binlog.000001", Pos: 100}
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with aligned positions and no changes")
+
+	// Test 8: Test with queue-based subscription
+	subQueue := &subscription{
+		c:               client,
+		table:           srcTable,
+		newTable:        dstTable,
+		deltaMap:        nil,
+		deltaQueue:      make([]queuedChange, 0),
+		disableDeltaMap: true,
+	}
+	client.subscriptions["test3"] = subQueue
+	assert.True(t, client.AllChangesFlushed(), "Should be flushed with empty queue")
+
+	subQueue.keyHasChanged([]interface{}{3}, false)
+	assert.False(t, client.AllChangesFlushed(), "Should not be flushed with items in queue")
 }

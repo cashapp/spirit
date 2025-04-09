@@ -724,14 +724,16 @@ func TestCheckpoint(t *testing.T) {
 	assert.NoError(t, r.createNewTable(t.Context()))
 	assert.NoError(t, r.alterNewTable(t.Context()))
 	assert.NoError(t, r.createCheckpointTable(t.Context()))
-	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          logrus.New(), // don't use the logger for migration since we feed status to it.
 		Concurrency:     4,
 		TargetBatchTime: r.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	assert.NoError(t, r.replClient.Run())
+	assert.NoError(t, r.replClient.Run(t.Context()))
 
 	// Now we are ready to start copying rows.
 	// Instead of calling r.copyRows() we will step through it manually.
@@ -865,14 +867,16 @@ func TestCheckpointRestore(t *testing.T) {
 	assert.NoError(t, r.alterNewTable(t.Context()))
 	assert.NoError(t, r.createCheckpointTable(t.Context()))
 
-	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          logrus.New(),
 		Concurrency:     4,
 		TargetBatchTime: r.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// Now insert a fake checkpoint, this uses a known bad value
@@ -958,14 +962,16 @@ func TestCheckpointRestoreBinaryPK(t *testing.T) {
 	assert.NoError(t, r.alterNewTable(ctx))
 	assert.NoError(t, r.createCheckpointTable(ctx))
 
-	r.replClient = repl.NewClient(r.db, r.migration.Host, r.table, r.newTable, r.migration.Username, r.migration.Password, &repl.ClientConfig{
+	r.replClient = repl.NewClient(r.db, r.migration.Host, r.migration.Username, r.migration.Password, &repl.ClientConfig{
 		Logger:          logrus.New(),
 		Concurrency:     4,
 		TargetBatchTime: r.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
+	assert.NoError(t, r.replClient.AddSubscription(r.table, r.newTable, nil))
 	r.copier, err = row.NewCopier(r.db, r.table, r.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = r.replClient.Run()
+	err = r.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// copy a few batches and then dump a checkpoint.
@@ -1123,14 +1129,16 @@ func TestCheckpointDifferentRestoreOptions(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(t.Context()))
 	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: m.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, nil))
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, row.NewCopierDefaultConfig())
 	assert.NoError(t, err)
-	err = m.replClient.Run()
+	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1321,10 +1329,11 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(t.Context()))
 	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: m.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -1336,8 +1345,8 @@ func TestE2EBinlogSubscribingCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
+	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -1451,10 +1460,11 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(t.Context()))
 	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: m.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -1466,8 +1476,8 @@ func TestE2EBinlogSubscribingNonCompositeKey(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
+	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 	m.replClient.SetKeyAboveWatermarkOptimization(true)
 
@@ -2162,10 +2172,11 @@ func TestE2ERogueValues(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(t.Context()))
 	assert.NoError(t, m.createCheckpointTable(t.Context()))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: m.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -2177,8 +2188,8 @@ func TestE2ERogueValues(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
+	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -2326,10 +2337,11 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	assert.NoError(t, m.alterNewTable(ctx))
 	assert.NoError(t, m.createCheckpointTable(ctx))
 	logger := logrus.New()
-	m.replClient = repl.NewClient(m.db, m.migration.Host, m.table, m.newTable, m.migration.Username, m.migration.Password, &repl.ClientConfig{
+	m.replClient = repl.NewClient(m.db, m.migration.Host, m.migration.Username, m.migration.Password, &repl.ClientConfig{
 		Logger:          logger,
 		Concurrency:     4,
 		TargetBatchTime: m.migration.TargetChunkTime,
+		ServerID:        repl.NewServerID(),
 	})
 	m.copier, err = row.NewCopier(m.db, m.table, m.newTable, &row.CopierConfig{
 		Concurrency:     m.migration.Threads,
@@ -2341,8 +2353,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 		DBConfig:        dbconn.NewDBConfig(),
 	})
 	assert.NoError(t, err)
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-	err = m.replClient.Run()
+	assert.NoError(t, m.replClient.AddSubscription(m.table, m.newTable, m.copier.KeyAboveHighWatermark))
+	err = m.replClient.Run(t.Context())
 	assert.NoError(t, err)
 
 	// Now we are ready to start copying rows.
@@ -2415,10 +2427,8 @@ func TestResumeFromCheckpointPhantom(t *testing.T) {
 	// check we can resume from checkpoint
 	// this is normally done in m.setup() but we want to call it in isolation.
 	assert.NoError(t, m.resumeFromCheckpoint(ctx))
-	// setup callbacks.
-	m.replClient.TableChangeNotificationCallback = m.tableChangeNotification
-	m.replClient.KeyAboveCopierCallback = m.copier.KeyAboveHighWatermark
-
+	// This is normally done in m.setup()
+	m.replClient.SetKeyAboveWatermarkOptimization(true)
 	// doublecheck that the highPtr is 1002 in the _new table and not in the original table.
 	assert.Equal(t, "10", m.table.MaxValue().String())
 	assert.Equal(t, "1002", m.newTable.MaxValue().String())

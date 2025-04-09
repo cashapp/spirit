@@ -17,7 +17,7 @@ type TableLock struct {
 }
 
 // NewTableLock creates a new server wide lock on a table.
-// i.e. LOCK TABLES .. READ.
+// i.e. LOCK TABLES .. WRITE.
 // It uses a short-timeout with backoff and retry, since if there is a long-running
 // process that currently prevents the lock by being acquired, it is considered "nice"
 // to let a few short-running processes slip in and proceed, then optimistically try
@@ -37,10 +37,11 @@ func NewTableLock(ctx context.Context, db *sql.DB, table *table.TableInfo, confi
 					}
 				}
 			}()
-			// In gh-ost they lock the _old table name as well.
-			// this might prevent a weird case that we don't handle yet.
-			// instead, we DROP IF EXISTS just before the rename, which
-			// has a brief race.
+			// We need to lock all the tables we intend to write to while we have the lock.
+			// So this is at least the table and the new table, but in the multi-subscription
+			// case it could be a lot more tables. If they are not locked, mysql will return
+			// an error when trying to write to them.
+			// TODO: accept a slice of tables to be locked as a parameter.
 			logger.Warnf("trying to acquire table lock, timeout: %d", config.LockWaitTimeout)
 			_, err = lockTxn.ExecContext(ctx, fmt.Sprintf("LOCK TABLES %s WRITE, `%s`.`_%s_new` WRITE",
 				table.QuotedName,

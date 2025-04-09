@@ -6,10 +6,9 @@ import (
 	"github.com/siddontang/loggers"
 )
 
-// Canal accepts a loggers.advanced. If we pass our loggers.Advanced directly,
+// If we pass our loggers.Advanced directly,
 // it will write a bunch of spam to the log. So we use this hack
 // to filter out the noisiest messages.
-
 func NewLogWrapper(logger loggers.Advanced) *LogWrapper {
 	return &LogWrapper{
 		logger: logger,
