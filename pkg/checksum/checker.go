@@ -446,8 +446,8 @@ func (c *Checker) Run(ctx context.Context) error {
 // The cast is to c.newTable type.
 func (c *Checker) intersectColumns() string {
 	var intersection []string
-	for _, col := range c.table.Columns {
-		for _, col2 := range c.newTable.Columns {
+	for _, col := range c.table.NonGeneratedColumns {
+		for _, col2 := range c.newTable.NonGeneratedColumns {
 			if col == col2 {
 				// Column exists in both, so we add intersection wrapped in
 				// IFNULL, ISNULL and CAST.

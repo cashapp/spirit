@@ -251,6 +251,60 @@ func TestGeneratedColumns(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestStoredGeneratedColumns(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1stored, _t1stored_new`)
+	table := `CREATE TABLE t1stored (
+  id bigint NOT NULL AUTO_INCREMENT,
+  pa bigint DEFAULT NULL,
+  p1 bigint DEFAULT NULL,
+  p2 bigint DEFAULT NULL,
+  s1 tinyint(1) GENERATED ALWAYS AS (if((pa is not null),1,NULL)) STORED,
+  s2 tinyint(1) GENERATED ALWAYS AS (if((p1 is not null),1,NULL)) STORED,
+  s3 tinyint(1) GENERATED ALWAYS AS (if((p2 is not null),1,NULL)) STORED,
+  s4 tinyint(1) GENERATED ALWAYS AS (if((pa <> p2),1,NULL)) STORED,
+  PRIMARY KEY (id)
+);`
+	testutils.RunSQL(t, table)
+	testutils.RunSQL(t, `INSERT INTO t1stored (pa, p1, p2)
+VALUES
+(1, 1, 1),
+(1, NULL, 1),
+(1, 1, NULL),
+(1, NULL, NULL),
+(1, 1, 0),
+(1, 0, 1),
+(1, 0, 0),
+(1, NULL, 0),
+(1, 0, NULL),
+(1, NULL, NULL),
+(NULL, NULL, NULL)
+`)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+
+	migration := &Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  2,
+		Checksum: true,
+		Statement: `ALTER TABLE t1stored
+MODIFY COLUMN s4 TINYINT(1)
+GENERATED ALWAYS AS (
+IF(
+ pa <> p2
+     OR (pa IS NULL AND p2 IS NOT NULL)
+     OR (pa IS NOT NULL AND p2 IS NULL),
+ 1,
+ NULL
+)
+) STORED`,
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}
+
 type testcase struct {
 	OldType string
 	NewType string
