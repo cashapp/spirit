@@ -330,4 +330,24 @@ func TestDiscoveryGeneratedCols(t *testing.T) {
 	// Can't check estimated rows (depends on MySQL version etc)
 	assert.Equal(t, []string{"id", "name", "b", "c1", "c2", "c3", "d"}, t1.Columns)
 	assert.Equal(t, []string{"id", "name", "b", "d"}, t1.NonGeneratedColumns)
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS generatedcolst2`)
+	table = `CREATE TABLE generatedcolst2 (
+  id bigint NOT NULL AUTO_INCREMENT,
+  pa bigint DEFAULT NULL,
+  p1 bigint DEFAULT NULL,
+  p2 bigint DEFAULT NULL,
+  s1 tinyint(1) GENERATED ALWAYS AS (if((pa is not null),1,NULL)) STORED,
+  s2 tinyint(1) GENERATED ALWAYS AS (if((p1 is not null),1,NULL)) STORED,
+  s3 tinyint(1) GENERATED ALWAYS AS (if((p2 is not null),1,NULL)) STORED,
+  s4 tinyint(1) GENERATED ALWAYS AS (if((pa <> p2),1,NULL)) STORED,
+  PRIMARY KEY (id)
+);`
+	testutils.RunSQL(t, table)
+	t2 := NewTableInfo(db, "test", "generatedcolst2")
+	assert.NoError(t, t2.SetInfo(t.Context()))
+
+	// Can't check estimated rows (depends on MySQL version etc)
+	assert.Equal(t, []string{"id", "pa", "p1", "p2", "s1", "s2", "s3", "s4"}, t2.Columns)
+	assert.Equal(t, []string{"id", "pa", "p1", "p2"}, t2.NonGeneratedColumns)
 }
