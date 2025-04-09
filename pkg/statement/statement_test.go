@@ -116,6 +116,17 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	assert.Error(t, test("ALTER INDEX b INVISIBLE, add column `c` int"))
 }
 
+func TestSafeForDirect(t *testing.T) {
+	var test = func(stmt string) error {
+		return MustNew("ALTER TABLE `t1` " + stmt).SafeForDirect()
+	}
+	assert.NoError(t, test("drop partition `p1`, `p2`"))
+	assert.NoError(t, test("truncate partition `p1`, `p3`"))
+	assert.Error(t, test("engine=innodb"))
+	// This runs with ALGORITHM=COPY by default
+	assert.Error(t, test("drop index `a`, drop partition `p1`"))
+}
+
 func TestAlterIsAddUnique(t *testing.T) {
 	var test = func(stmt string) error {
 		return MustNew("ALTER TABLE `t1` " + stmt).AlterContainsAddUnique()

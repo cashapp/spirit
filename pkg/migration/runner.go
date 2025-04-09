@@ -372,6 +372,17 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 		return nil
 	}
 
+	// These statements are considered safe to run with defaults
+	err = r.stmt.SafeForDirect()
+	// Don't allow force here
+	// We can't guarantee the alter statement is safe to run with defaults
+	if err == nil {
+		err = r.attemptDirectDDL(ctx)
+		if err == nil {
+			r.usedInplaceDDL = true // success
+			return nil
+		}
+	}
 	// Many "inplace" operations (such as adding an index)
 	// are only online-safe to do in Aurora GLOBAL
 	// because replicas do not use the binlog. Some, however,
@@ -380,16 +391,6 @@ func (r *Runner) attemptMySQLDDL(ctx context.Context) error {
 	// If the operator has specified that they want to attempt
 	// an inplace add index, we will attempt inplace regardless
 	// of the statement.
-	err = r.stmt.AlgorithmInplaceConsideredSafeAndDefault()
-	// Don't allow force here
-	// We can't guarantee the alter statement is safe to run with defaults
-	if err == nil {
-		err = r.attemptInplaceDefaultDDL(ctx)
-		if err == nil {
-			r.usedInplaceDDL = true // success
-			return nil
-		}
-	}
 	err = r.stmt.AlgorithmInplaceConsideredSafe()
 	if r.migration.ForceInplace || err == nil {
 		err = r.attemptInplaceDDL(ctx)
@@ -610,9 +611,7 @@ func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
 	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INPLACE, LOCK=NONE", r.table.SchemaName, r.table.TableName)
 }
 
-// Needed because certain statements (e.g., DROP PARTITION) run INPLACE by default
-// but return a syntax error if ALGORITHM or LOCK is defined explicitly
-func (r *Runner) attemptInplaceDefaultDDL(ctx context.Context) error {
+func (r *Runner) attemptDirectDDL(ctx context.Context) error {
 	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter, r.table.SchemaName, r.table.TableName)
 }
 

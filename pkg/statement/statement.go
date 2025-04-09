@@ -162,13 +162,12 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafe() error {
 	return nil
 }
 
-// AlgorithmInplaceConsideredSafe checks to see if all clauses of an ALTER
-// statement are "safe" similar to AlgorithmInplaceConsideredSafe above.
+// SafeForDirect checks to see if all clauses of an ALTER
+// statement are safe to run with default algorithm and lock settings.
 // However, certain clauses (so far seems like just PARTITION clauses) have ALGORITHM=INPLACE by default
-// they return a syntax error if ALGORITHM=INPLACE is specified explicitly. see
-// https://dev.mysql.com/doc/refman/8.0/en/innodb-online-ddl-operations.html#online-ddl-partitioning
-// for details
-func (a *AbstractStatement) AlgorithmInplaceConsideredSafeAndDefault() error {
+// but return a syntax error if algorithm or lock are specified explicitly. see
+// https://dev.mysql.com/doc/refman/8.0/en/alter-table.html for details
+func (a *AbstractStatement) SafeForDirect() error {
 	alterStmt, ok := (*a.StmtNode).(*ast.AlterTableStmt)
 	if !ok {
 		return ErrNotAlterTable
@@ -187,9 +186,9 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafeAndDefault() error {
 	}
 	if unsafeClauses > 0 {
 		if len(alterStmt.Specs) > 1 {
-			return errors.New("ALTER contains multiple clauses. Combinations of INSTANT and INPLACE operations cannot be detected safely. Consider executing these as separate ALTER statements")
+			return errors.New("ALTER contains multiple clauses at least one of which cannot be run directly without copying rows or locking. Consider executing these as separate ALTER statements")
 		}
-		return errors.New("ALTER either does not support INPLACE or when performed as INPLACE could take considerable time")
+		return errors.New("ALTER cannot be run directly without copying rows or locking")
 	}
 	return nil
 }
