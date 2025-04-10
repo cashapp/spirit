@@ -254,6 +254,9 @@ func (c *Client) Run(ctx context.Context) (err error) {
 	}
 	if dbconn.IsRDSHost(c.host) {
 		cfg.TLSConfig = dbconn.NewTLSConfig()
+	}
+	if cfg.TLSConfig != nil {
+		// Set the ServerName so that the TLS config can verify the server's certificate.
 		cfg.TLSConfig.ServerName = host
 	}
 	if dbconn.IsMySQL84(c.db) { // handle MySQL 8.4
