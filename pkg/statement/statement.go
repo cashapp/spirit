@@ -147,7 +147,8 @@ func (a *AbstractStatement) AlgorithmInplaceConsideredSafe() error {
 			ast.AlterTableRenameIndex,
 			ast.AlterTableIndexInvisible,
 			ast.AlterTableDropPartition,
-			ast.AlterTableTruncatePartition:
+			ast.AlterTableTruncatePartition,
+			ast.AlterTableAddPartitions:
 			continue
 		default:
 			unsafeClauses++

@@ -311,6 +311,60 @@ func TestOnline(t *testing.T) {
 	assert.False(t, m.usedInstantDDL) // unfortunately false in 8.0, see https://bugs.mysql.com/bug.php?id=113355
 	assert.False(t, m.usedInplaceDDL) // unfortunately false, since it combines INSTANT and INPLACE operations
 	assert.NoError(t, m.Close())
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline6`)
+	table = `CREATE TABLE testonline6 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		PRIMARY KEY (id)
+		)
+		PARTITION BY HASH (id)
+		PARTITIONS 4
+	`
+	testutils.RunSQL(t, table)
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline6",
+		Alter:        "add partition partitions 4",
+		ForceInplace: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(t.Context())
+	assert.NoError(t, err)
+	assert.False(t, m.usedInstantDDL)
+	assert.False(t, m.usedInplaceDDL) // false, hash/key partitioned tables require a lock
+	assert.NoError(t, m.Close())
+
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS testonline7`)
+	table = `CREATE TABLE testonline7 (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		PRIMARY KEY (id)
+		)
+		PARTITION BY RANGE (id) (
+			PARTITION p0 VALUES LESS THAN (100000), 
+			PARTITION p1 VALUES LESS THAN (200000)
+		)
+	`
+	testutils.RunSQL(t, table)
+	m, err = NewRunner(&Migration{
+		Host:         cfg.Addr,
+		Username:     cfg.User,
+		Password:     cfg.Passwd,
+		Database:     cfg.DBName,
+		Threads:      16,
+		Table:        "testonline7",
+		Alter:        "add partition (partition p2 values less than (300000))",
+		ForceInplace: false,
+	})
+	assert.NoError(t, err)
+	err = m.Run(t.Context())
+	assert.NoError(t, err)
+	assert.False(t, m.usedInstantDDL)
+	assert.True(t, m.usedInplaceDDL) // true, range/list partitioned tables can run inplace without a lock
+	assert.NoError(t, m.Close())
 }
 
 func TestTableLength(t *testing.T) {
@@ -2927,8 +2981,8 @@ func TestForNonInstantBurn(t *testing.T) {
 
 	testutils.RunSQL(t, table)
 	for range 32 { // requires 64 instants
-		testutils.RunSQL(t, "ALTER TABLE instantburn ADD newcol INT, ALGORITHM=INSTANT")
-		testutils.RunSQL(t, "ALTER TABLE instantburn DROP newcol, ALGORITHM=INSTANT")
+		testutils.RunSQL(t, "ALTER TABLE instantburn ALGORITHM=INSTANT, ADD newcol INT")
+		testutils.RunSQL(t, "ALTER TABLE instantburn ALGORITHM=INSTANT, DROP newcol")
 	}
 	assert.Equal(t, 64, rowVersions()) // confirm all 64 are used.
 	m, err := NewRunner(&Migration{

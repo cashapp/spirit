@@ -592,11 +592,11 @@ func (r *Runner) oldTableName() string {
 }
 
 func (r *Runner) attemptInstantDDL(ctx context.Context) error {
-	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INSTANT", r.table.SchemaName, r.table.TableName)
+	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n ALGORITHM=INSTANT, "+r.stmt.Alter, r.table.SchemaName, r.table.TableName)
 }
 
 func (r *Runner) attemptInplaceDDL(ctx context.Context) error {
-	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n "+r.stmt.Alter+", ALGORITHM=INPLACE, LOCK=NONE", r.table.SchemaName, r.table.TableName)
+	return dbconn.Exec(ctx, r.db, "ALTER TABLE %n.%n ALGORITHM=INPLACE, LOCK=NONE, "+r.stmt.Alter, r.table.SchemaName, r.table.TableName)
 }
 
 func (r *Runner) createCheckpointTable(ctx context.Context) error {

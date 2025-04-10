@@ -104,6 +104,8 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	assert.NoError(t, test("ALTER INDEX b VISIBLE"))
 	assert.NoError(t, test("drop partition `p1`, `p2`"))
 	assert.NoError(t, test("truncate partition `p1`, `p3`"))
+	assert.NoError(t, test("add partition (partition `p1` values less than (100))"))
+	assert.NoError(t, test("add partition partitions 4"))
 
 	assert.Error(t, test("ADD COLUMN `a` INT"))
 	assert.Error(t, test("ADD index (a)"))
@@ -114,6 +116,7 @@ func TestAlgorithmInplaceConsideredSafe(t *testing.T) {
 	// guess which operations are INSTANT
 	assert.Error(t, test("drop index `a`, add column `b` int"))
 	assert.Error(t, test("ALTER INDEX b INVISIBLE, add column `c` int"))
+	assert.Error(t, test("remove partitioning"))
 }
 
 func TestAlterIsAddUnique(t *testing.T) {
