@@ -320,7 +320,16 @@ func (c *Client) readStream(ctx context.Context) {
 			queryEvent := ev.Event.(*replication.QueryEvent)
 			tables, err := extractTablesFromDDLStmts(string(queryEvent.Schema), string(queryEvent.Query))
 			if err != nil {
-				panic("could not process statement") // could not parse DDL stmts, need to error
+				// The parser does not understand all syntax.
+				// For example, it won't parse [CREATE|DROP] TRIGGER statements.
+				// This behavior is copied from canal:
+				// https://github.com/go-mysql-org/go-mysql/blob/ee9447d96b48783abb05ab76a12501e5f1161e47/canal/sync.go#L144C1-L150C1
+				c.logger.Errorf("error parsing query '%s', skipping event at file %s Pos: %d",
+					queryEvent.Query,
+					currentLogName,
+					ev.Header.LogPos,
+				)
+				continue
 			}
 			for _, table := range tables {
 				c.processDDLNotification(table)
