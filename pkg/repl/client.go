@@ -321,11 +321,13 @@ func (c *Client) readStream(ctx context.Context) {
 			tables, err := extractTablesFromDDLStmts(string(queryEvent.Schema), string(queryEvent.Query))
 			if err != nil {
 				// The parser does not understand all syntax.
-				// For example, it won't parse [CREATE|DROP] TRIGGER statements.
+				// For example, it won't parse [CREATE|DROP] TRIGGER statements *or*
+				// ALTER USER x IDENTIFIED WITH x RETAIN CURRENT PASSWORD
 				// This behavior is copied from canal:
 				// https://github.com/go-mysql-org/go-mysql/blob/ee9447d96b48783abb05ab76a12501e5f1161e47/canal/sync.go#L144C1-L150C1
-				c.logger.Errorf("error parsing query '%s', skipping event at file %s Pos: %d",
-					queryEvent.Query,
+				// We can't print the statement because it could contain user-data.
+				// We instead rely on file + pos being useful.
+				c.logger.Errorf("Skipping query that was unable to parse at File %s Pos: %d",
 					currentLogName,
 					ev.Header.LogPos,
 				)
