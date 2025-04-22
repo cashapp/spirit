@@ -38,7 +38,7 @@ func mySQLTypeToDatumTp(mysqlTp string) datumTp {
 	return unknownType
 }
 
-func newDatum(val interface{}, tp datumTp) Datum {
+func NewDatum(val interface{}, tp datumTp) Datum {
 	var err error
 	switch tp { //nolint:exhaustive
 	case signedType:

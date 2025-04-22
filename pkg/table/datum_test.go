@@ -9,8 +9,8 @@ import (
 )
 
 func TestDatum(t *testing.T) {
-	signed := newDatum(1, signedType)
-	unsigned := newDatum(uint(1), unsignedType)
+	signed := NewDatum(1, signedType)
+	unsigned := NewDatum(uint(1), unsignedType)
 
 	assert.Equal(t, "1", signed.String())
 	assert.Equal(t, "1", unsigned.String())
@@ -31,16 +31,16 @@ func TestDatum(t *testing.T) {
 	// Test that add operations do not overflow. i.e.
 	// We initialize the values to max-10 of the range, but then add 100 to each.
 	// The add operation truncates: so both should equal the maxValue exactly.
-	overflowSigned := newDatum(uint64(math.MaxInt64)-10, signedType) // wrong type, converts.
-	overflowUnsigned := newDatum(uint64(math.MaxUint64)-10, unsignedType)
+	overflowSigned := NewDatum(uint64(math.MaxInt64)-10, signedType) // wrong type, converts.
+	overflowUnsigned := NewDatum(uint64(math.MaxUint64)-10, unsignedType)
 	assert.Equal(t, strconv.Itoa(math.MaxInt64), overflowSigned.Add(100).String())
 	assert.Equal(t, "18446744073709551615", overflowUnsigned.Add(100).String())
 
 	// Test unsigned with signed input
-	unsigned = newDatum(int(1), unsignedType)
+	unsigned = NewDatum(int(1), unsignedType)
 	assert.Equal(t, "1", unsigned.String())
 
 	// Test binary type.
-	binary := newDatum("0", binaryType)
+	binary := NewDatum("0", binaryType)
 	assert.Equal(t, `"0"`, binary.String())
 }

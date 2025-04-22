@@ -168,7 +168,7 @@ func (t *chunkerComposite) nextQueryToDatums(query string) ([]Datum, error) {
 	var datums []Datum
 	for i, name := range columnNames {
 		newVal := reflect.ValueOf(columns[i]).Interface().(sql.RawBytes)
-		datums = append(datums, newDatum(string(newVal), t.Ti.datumTp(name)))
+		datums = append(datums, NewDatum(string(newVal), t.Ti.datumTp(name)))
 	}
 	return datums, nil
 }

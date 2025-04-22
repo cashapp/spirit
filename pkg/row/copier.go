@@ -112,7 +112,9 @@ func NewCopierFromCheckpoint(db *sql.DB, tbl, newTable *table.TableInfo, config 
 		return c, err
 	}
 	// Overwrite the previously attached chunker with one at a specific watermark.
-	if err := c.chunker.OpenAtWatermark(lowWatermark, newTable.MaxValue()); err != nil {
+	// For high watermark, use the type of old table, not the new one.
+	highPtr := table.NewDatum(newTable.MaxValue().Val, tbl.MaxValue().Tp)
+	if err := c.chunker.OpenAtWatermark(lowWatermark, highPtr); err != nil {
 		return c, err
 	}
 	c.isOpen = true
