@@ -13,8 +13,8 @@ import (
 
 func TestOptimisticChunkerBasic(t *testing.T) {
 	t1 := &TableInfo{
-		minValue:          newDatum(1, signedType),
-		maxValue:          newDatum(1000000, signedType),
+		minValue:          NewDatum(1, signedType),
+		maxValue:          NewDatum(1000000, signedType),
 		EstimatedRows:     1000000,
 		SchemaName:        "test",
 		TableName:         "t1",
@@ -75,8 +75,8 @@ func TestOptimisticChunkerBasic(t *testing.T) {
 
 func TestLowWatermark(t *testing.T) {
 	t1 := newTableInfo4Test("test", "t1")
-	t1.minValue = newDatum(1, signedType)
-	t1.maxValue = newDatum(1000000, signedType)
+	t1.minValue = NewDatum(1, signedType)
+	t1.maxValue = NewDatum(1000000, signedType)
 	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"bigint"}
@@ -169,8 +169,8 @@ func TestLowWatermark(t *testing.T) {
 
 func TestOptimisticDynamicChunking(t *testing.T) {
 	t1 := newTableInfo4Test("test", "t1")
-	t1.minValue = newDatum(1, signedType)
-	t1.maxValue = newDatum(1000000, signedType)
+	t1.minValue = NewDatum(1, signedType)
+	t1.maxValue = NewDatum(1000000, signedType)
 	t1.EstimatedRows = 1000000
 	t1.KeyColumns = []string{"id"}
 	t1.keyColumnsMySQLTp = []string{"bigint"}
@@ -236,8 +236,8 @@ func TestOptimisticDynamicChunking(t *testing.T) {
 
 	// Start everything over again as t2.
 	t2 := newTableInfo4Test("test", "t1")
-	t2.minValue = newDatum(1, signedType)
-	t2.maxValue = newDatum(1000000, signedType)
+	t2.minValue = NewDatum(1, signedType)
+	t2.maxValue = NewDatum(1000000, signedType)
 	t2.EstimatedRows = 1000000
 	t2.KeyColumns = []string{"id"}
 	t2.keyColumnsMySQLTp = []string{"bigint"}

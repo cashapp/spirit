@@ -130,7 +130,7 @@ func jsonStrings2Datums(ti *TableInfo, keys []string, vals []string) ([]Datum, e
 	datums := make([]Datum, len(keys))
 	for i, str := range vals {
 		tp := ti.datumTp(keys[i])
-		datums[i] = newDatum(str, tp)
+		datums[i] = NewDatum(str, tp)
 	}
 	return datums, nil
 }

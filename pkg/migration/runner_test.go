@@ -694,7 +694,91 @@ func TestAddUniqueIndexChecksumEnabled(t *testing.T) {
 	assert.NoError(t, m.Close())
 }
 
-// Test a non-integer primary key.
+// Test int to bigint primary key while resuming from checkpoint.
+func TestChangeIntToBigIntPKResumeFromChkPt(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS bigintpk, _bigintpk_chkpnt, _bigintpk_new`)
+	table := `CREATE TABLE bigintpk (
+			pk int(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+			name varchar(255) NOT NULL,
+			b varchar(10) NOT NULL,
+            version bigint unsigned NOT NULL DEFAULT '1' COMMENT 'Used for
+optimistic concurrency.'
+		)`
+	testutils.RunSQL(t, table)
+
+	// Insert initial data
+	testutils.RunSQL(t, "INSERT INTO bigintpk (name, b) VALUES ('a', 'a')")
+	testutils.RunSQL(t, `INSERT INTO bigintpk (name, b) SELECT a.name,
+a.b FROM bigintpk a JOIN bigintpk b JOIN
+bigintpk c`)
+	testutils.RunSQL(t, `INSERT INTO bigintpk (name, b) SELECT a.name,
+a.b FROM bigintpk a JOIN bigintpk b JOIN
+bigintpk c`)
+	testutils.RunSQL(t, `INSERT INTO bigintpk (name, b) SELECT a.name,
+a.b FROM bigintpk a JOIN bigintpk b JOIN
+bigintpk c`)
+	testutils.RunSQL(t, `INSERT INTO bigintpk (name, b) SELECT a.name,
+a.b FROM bigintpk a JOIN bigintpk b JOIN
+bigintpk c lIMIT 100000`)
+
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	m, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bigintpk",
+		Alter:    "modify column pk bigint unsigned not null auto_increment",
+	})
+	assert.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		err := m.Run(ctx)
+		assert.Error(t, err) // it gets interrupted as soon as there is a checkpoint saved.
+	}()
+
+	// wait until a checkpoint is saved (which means copy is in progress)
+	db, err := dbconn.New(testutils.DSN(), dbconn.NewDBConfig())
+	assert.NoError(t, err)
+	defer db.Close()
+	for {
+		var rowCount int
+		err = db.QueryRow(`SELECT count(*) from _bigintpk_chkpnt`).Scan(&rowCount)
+		if err != nil {
+			continue // table does not exist yet
+		}
+		if rowCount > 0 {
+			break
+		}
+	}
+	// Between cancel and Close() every resource is freed.
+	cancel()
+	assert.NoError(t, m.Close())
+
+	// Insert some more dummy data
+	testutils.RunSQL(t, "INSERT INTO bigintpk (name,b) VALUES('t', 't')")
+	// Start a new migration with the same parameters.
+	// Let it complete.
+	m2, err := NewRunner(&Migration{
+		Host:     cfg.Addr,
+		Username: cfg.User,
+		Password: cfg.Passwd,
+		Database: cfg.DBName,
+		Threads:  16,
+		Table:    "bigintpk",
+		Alter:    "modify column pk bigint unsigned not null auto_increment",
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, m2)
+
+	err = m2.Run(t.Context())
+	assert.NoError(t, err)
+	assert.True(t, m2.usedResumeFromCheckpoint)
+	assert.NoError(t, m2.Close())
+}
 
 func TestChangeNonIntPK(t *testing.T) {
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS nonintpk`)

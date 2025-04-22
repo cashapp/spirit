@@ -10,11 +10,11 @@ func TestChunk2String(t *testing.T) {
 	chunk := &Chunk{
 		Key: []string{"id"},
 		LowerBound: &Boundary{
-			Value:     []Datum{newDatum(100, signedType)},
+			Value:     []Datum{NewDatum(100, signedType)},
 			Inclusive: true,
 		},
 		UpperBound: &Boundary{
-			Value:     []Datum{newDatum(200, signedType)},
+			Value:     []Datum{NewDatum(200, signedType)},
 			Inclusive: false,
 		},
 	}
@@ -22,7 +22,7 @@ func TestChunk2String(t *testing.T) {
 	chunk = &Chunk{
 		Key: []string{"id"},
 		LowerBound: &Boundary{
-			Value:     []Datum{newDatum(100, signedType)},
+			Value:     []Datum{NewDatum(100, signedType)},
 			Inclusive: false,
 		},
 	}
@@ -30,7 +30,7 @@ func TestChunk2String(t *testing.T) {
 	chunk = &Chunk{
 		Key: []string{"id"},
 		UpperBound: &Boundary{
-			Value:     []Datum{newDatum(200, signedType)},
+			Value:     []Datum{NewDatum(200, signedType)},
 			Inclusive: true,
 		},
 	}
@@ -45,13 +45,13 @@ func TestChunk2String(t *testing.T) {
 
 func TestBoundary_ValueString(t *testing.T) {
 	boundary1 := &Boundary{
-		Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType)},
+		Value:     []Datum{NewDatum(100, signedType), NewDatum(200, signedType)},
 		Inclusive: false,
 	}
 	assert.Equal(t, "\"100\",\"200\"", boundary1.valuesString())
 
 	boundary2 := &Boundary{
-		Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType)},
+		Value:     []Datum{NewDatum(100, signedType), NewDatum(200, signedType)},
 		Inclusive: true,
 	}
 	// Tests that Inclusive doesn't matter between Boundaries for valuesString
@@ -59,7 +59,7 @@ func TestBoundary_ValueString(t *testing.T) {
 
 	// Tests composite key boundary with mixed types
 	boundary3 := &Boundary{
-		Value: []Datum{newDatum("PENDING", binaryType), newDatum(2, signedType)},
+		Value: []Datum{NewDatum("PENDING", binaryType), NewDatum(2, signedType)},
 	}
 	assert.Equal(t, "\"PENDING\",\"2\"", boundary3.valuesString())
 }
@@ -68,11 +68,11 @@ func TestCompositeChunks(t *testing.T) {
 	chunk := &Chunk{
 		Key: []string{"id1", "id2"},
 		LowerBound: &Boundary{
-			Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType)},
+			Value:     []Datum{NewDatum(100, signedType), NewDatum(200, signedType)},
 			Inclusive: false,
 		},
 		UpperBound: &Boundary{
-			Value:     []Datum{newDatum(100, signedType), newDatum(300, signedType)},
+			Value:     []Datum{NewDatum(100, signedType), NewDatum(300, signedType)},
 			Inclusive: false,
 		},
 	}
@@ -81,11 +81,11 @@ func TestCompositeChunks(t *testing.T) {
 	chunk = &Chunk{
 		Key: []string{"id1", "id2", "id3", "id4"},
 		LowerBound: &Boundary{
-			Value:     []Datum{newDatum(100, signedType), newDatum(200, signedType), newDatum(200, signedType), newDatum(200, signedType)},
+			Value:     []Datum{NewDatum(100, signedType), NewDatum(200, signedType), NewDatum(200, signedType), NewDatum(200, signedType)},
 			Inclusive: true,
 		},
 		UpperBound: &Boundary{
-			Value:     []Datum{newDatum(101, signedType), newDatum(12, signedType), newDatum(123, signedType), newDatum(1, signedType)},
+			Value:     []Datum{NewDatum(101, signedType), NewDatum(12, signedType), NewDatum(123, signedType), NewDatum(1, signedType)},
 			Inclusive: false,
 		},
 	}
@@ -94,11 +94,11 @@ func TestCompositeChunks(t *testing.T) {
 	chunk = &Chunk{
 		Key: []string{"status", "id"},
 		LowerBound: &Boundary{
-			Value:     []Datum{newDatum("ARCHIVED", binaryType), newDatum(1234, signedType)},
+			Value:     []Datum{NewDatum("ARCHIVED", binaryType), NewDatum(1234, signedType)},
 			Inclusive: true,
 		},
 		UpperBound: &Boundary{
-			Value:     []Datum{newDatum("ARCHIVED", binaryType), newDatum(5412, signedType)},
+			Value:     []Datum{NewDatum("ARCHIVED", binaryType), NewDatum(5412, signedType)},
 			Inclusive: false,
 		},
 	}
@@ -107,29 +107,29 @@ func TestCompositeChunks(t *testing.T) {
 
 func TestComparesTo(t *testing.T) {
 	b1 := &Boundary{
-		Value:     []Datum{newDatum(200, signedType)},
+		Value:     []Datum{NewDatum(200, signedType)},
 		Inclusive: true,
 	}
 	b2 := &Boundary{
-		Value:     []Datum{newDatum(200, signedType)},
+		Value:     []Datum{NewDatum(200, signedType)},
 		Inclusive: true,
 	}
 	assert.True(t, b1.comparesTo(b2))
 	b2.Inclusive = false              // change operator
 	assert.True(t, b1.comparesTo(b2)) // still compares
-	b2.Value = []Datum{newDatum(300, signedType)}
+	b2.Value = []Datum{NewDatum(300, signedType)}
 	assert.False(t, b1.comparesTo(b2))
 
 	// Compound values.
 	b1 = &Boundary{
-		Value:     []Datum{newDatum(200, signedType), newDatum(300, signedType)},
+		Value:     []Datum{NewDatum(200, signedType), NewDatum(300, signedType)},
 		Inclusive: true,
 	}
 	b2 = &Boundary{
-		Value:     []Datum{newDatum(200, signedType), newDatum(300, signedType)},
+		Value:     []Datum{NewDatum(200, signedType), NewDatum(300, signedType)},
 		Inclusive: true,
 	}
 	assert.True(t, b1.comparesTo(b2))
-	b2.Value = []Datum{newDatum(200, signedType), newDatum(400, signedType)}
+	b2.Value = []Datum{NewDatum(200, signedType), NewDatum(400, signedType)}
 	assert.False(t, b1.comparesTo(b2))
 }

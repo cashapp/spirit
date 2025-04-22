@@ -63,7 +63,7 @@ func (t *chunkerOptimistic) nextChunkByPrefetching() (*Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		maxVal := newDatum(upperVal, t.chunkPtr.Tp)
+		maxVal := NewDatum(upperVal, t.chunkPtr.Tp)
 		t.chunkPtr = maxVal
 
 		// If the difference between min and max is less than
@@ -420,7 +420,7 @@ func (t *chunkerOptimistic) KeyAboveHighWatermark(key interface{}) bool {
 	if t.finalChunkSent {
 		return false // we're done, so everything is below.
 	}
-	keyDatum := newDatum(key, t.chunkPtr.Tp)
+	keyDatum := NewDatum(key, t.chunkPtr.Tp)
 
 	// If there is a checkpoint high pointer, first verify that
 	// the key is above it. If it's not above it, we return FALSE
