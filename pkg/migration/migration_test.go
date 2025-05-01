@@ -536,3 +536,29 @@ func TestSchemaNameIncluded(t *testing.T) {
 	err = migration.Run()
 	assert.NoError(t, err)
 }
+
+// TestSecondaryEngineAttribute tests that we can add a secondary engine attribute
+// We can't quite test to the original bug report, because the vector type + index
+// may not be supported in the version of MySQL we are using:
+// https://github.com/cashapp/spirit/issues/405
+func TestSecondaryEngineAttribute(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1secondary, _t1secondary_new`)
+	tbl := `CREATE /*vt+ QUERY_TIMEOUT_MS=0 */ TABLE t1secondary (
+	id int not null primary key auto_increment,
+	title VARCHAR(250)
+	)`
+	testutils.RunSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: `ALTER TABLE t1secondary ADD KEY (title) SECONDARY_ENGINE_ATTRIBUTE='{"type":"spann", "distance":"l2", "product_quantization":{"dimensions":96}}'`,
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}
