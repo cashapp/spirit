@@ -431,7 +431,7 @@ func TestStmtWorkflow(t *testing.T) {
 // Example TiDB bug: https://github.com/pingcap/tidb/issues/54700
 func TestUnparsableStatements(t *testing.T) {
 	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1parse, _t1parse_new`)
-	table := `CREATE TABLE t1parse (b BLOB DEFAULT ('abc'))`
+	table := `CREATE TABLE t1parse (id int not null primary key auto_increment, b BLOB DEFAULT ('abc'))`
 	cfg, err := mysql.ParseDSN(testutils.DSN())
 	assert.NoError(t, err)
 	migration := &Migration{
@@ -444,11 +444,9 @@ func TestUnparsableStatements(t *testing.T) {
 		Statement: table,
 	}
 	err = migration.Run()
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "could not parse SQL statement")
+	assert.NoError(t, err)
 
 	// Try again as ALTER TABLE, with --statement
-	testutils.RunSQL(t, table)
 	migration = &Migration{
 		Host:      cfg.Addr,
 		Username:  cfg.User,
@@ -460,7 +458,9 @@ func TestUnparsableStatements(t *testing.T) {
 	}
 	err = migration.Run()
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "could not parse SQL statement")
+	// this is permitted by MySQL now, it's the TiDB parser that won't allow it.
+	// TODO: we should figure this out so that usage between --statement and --alter is orthogonal.
+	assert.ErrorContains(t, err, "can't have a default value")
 
 	// With ALTER TABLE as --table and --alter
 	migration = &Migration{
@@ -474,8 +474,7 @@ func TestUnparsableStatements(t *testing.T) {
 		Alter:    "ADD COLUMN c BLOB DEFAULT ('abc')",
 	}
 	err = migration.Run()
-	assert.Error(t, err)
-	assert.ErrorContains(t, err, "could not parse SQL statement")
+	assert.NoError(t, err) // in this context it works! This is a problem.
 
 	// With CREATE TRIGGER.
 	migration = &Migration{
@@ -532,6 +531,32 @@ func TestSchemaNameIncluded(t *testing.T) {
 		Threads:   1,
 		Checksum:  true,
 		Statement: "ALTER TABLE test.t1schemaname ADD COLUMN c int",
+	}
+	err = migration.Run()
+	assert.NoError(t, err)
+}
+
+// TestSecondaryEngineAttribute tests that we can add a secondary engine attribute
+// We can't quite test to the original bug report, because the vector type + index
+// may not be supported in the version of MySQL we are using:
+// https://github.com/cashapp/spirit/issues/405
+func TestSecondaryEngineAttribute(t *testing.T) {
+	testutils.RunSQL(t, `DROP TABLE IF EXISTS t1secondary, _t1secondary_new`)
+	tbl := `CREATE /*vt+ QUERY_TIMEOUT_MS=0 */ TABLE t1secondary (
+	id int not null primary key auto_increment,
+	title VARCHAR(250)
+	)`
+	testutils.RunSQL(t, tbl)
+	cfg, err := mysql.ParseDSN(testutils.DSN())
+	assert.NoError(t, err)
+	migration := &Migration{
+		Host:      cfg.Addr,
+		Username:  cfg.User,
+		Password:  cfg.Passwd,
+		Database:  cfg.DBName,
+		Threads:   1,
+		Checksum:  true,
+		Statement: `ALTER TABLE t1secondary ADD KEY (title) SECONDARY_ENGINE_ATTRIBUTE='{"type":"spann", "distance":"l2", "product_quantization":{"dimensions":96}}'`,
 	}
 	err = migration.Run()
 	assert.NoError(t, err)

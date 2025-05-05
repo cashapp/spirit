@@ -239,7 +239,7 @@ func convertCreateIndexToAlterTable(stmt ast.StmtNode) (*AbstractStatement, erro
 	switch ciStmt.KeyType {
 	case ast.IndexKeyTypeUnique:
 		keyType = "UNIQUE INDEX"
-	case ast.IndexKeyTypeFullText:
+	case ast.IndexKeyTypeFulltext:
 		keyType = "FULLTEXT INDEX"
 	case ast.IndexKeyTypeSpatial:
 		keyType = "SPATIAL INDEX"
