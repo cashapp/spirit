@@ -42,7 +42,6 @@ type Runner struct {
 	newTable        *table.TableInfo
 	checkpointTable *table.TableInfo
 	stmt            *statement.AbstractStatement
-	metadataLock    *dbconn.MetadataLock
 
 	currentState migrationState // must use atomic to get/set
 	replClient   *repl.Client   // feed contains all binlog subscription activity.
@@ -153,10 +152,14 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	}
 
 	// Take a metadata lock to prevent other migrations from running concurrently.
-	r.metadataLock, err = dbconn.NewMetadataLock(ctx, r.dsn(), r.table, r.logger)
+	// We release the lock when this function finishes executing.
+	// We need to call this after r.table is ready - otherwise we'd move this to
+	// the start of the execution.
+	metadataLock, err := dbconn.NewMetadataLock(ctx, r.dsn(), r.table, r.logger)
 	if err != nil {
 		return err
 	}
+	defer metadataLock.Close()
 
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
@@ -699,12 +702,6 @@ func (r *Runner) Close() error {
 	}
 	if r.db != nil {
 		err := r.db.Close()
-		if err != nil {
-			return err
-		}
-	}
-	if r.metadataLock != nil {
-		err := r.metadataLock.Close()
 		if err != nil {
 			return err
 		}
