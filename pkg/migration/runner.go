@@ -159,8 +159,11 @@ func (r *Runner) Run(originalCtx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer metadataLock.Close()
-
+	defer func() {
+		if err := metadataLock.Close(); err != nil {
+			r.logger.Errorf("failed to release metadata lock: %v", err)
+		}
+	}()
 	// This step is technically optional, but first we attempt to
 	// use MySQL's built-in DDL. This is because it's usually faster
 	// when it is compatible. If it returns no error, that means it
