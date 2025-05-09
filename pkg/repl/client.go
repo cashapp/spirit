@@ -41,7 +41,7 @@ const (
 	// I expect we will change this to 1hr-24hr in the future.
 	DefaultFlushInterval = 30 * time.Second
 	// DefaultTimeout is how long BlockWait is supposed to wait before returning errors.
-	DefaultTimeout = 10 * time.Second
+	DefaultTimeout = 30 * time.Second
 )
 
 type Client struct {
@@ -489,7 +489,9 @@ func (c *Client) Flush(ctx context.Context) error {
 		}
 		// BlockWait to ensure we've read everything from the server
 		// into our buffer. This can timeout, in which case we start
-		// a new loop.
+		// a new loop. Typically a timeout occurs when we resume from a checkpoint
+		// and move from the copy phase to the apply phase, and there's
+		// actually a lot to do!
 		if err := c.BlockWait(ctx); err != nil {
 			c.logger.Warnf("error waiting for binlog reader to catch up: %v", err)
 			continue
@@ -562,23 +564,23 @@ func (c *Client) BlockWait(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, DefaultTimeout)
-	defer cancel()
-	for ctx.Err() == nil { // end when the timeout is reached.
-		// Inject some noise into the binlog stream
-		// This is to ensure that we are past the current position
-		// without an off-by-one error
-		if err := dbconn.Exec(ctx, c.db, "FLUSH BINARY LOGs"); err != nil {
-			break // error flushing binary logs
+	c.logger.Infof("waiting to catch up to source position: %v, current position is: %v", targetPos, c.getBufferedPos())
+	timer := time.NewTimer(DefaultTimeout)
+	for {
+		select {
+		case <-timer.C:
+			return fmt.Errorf("timed out waiting to catch up to source position: %v, current position is: %v", targetPos, c.getBufferedPos())
+		default:
+			if err := dbconn.Exec(ctx, c.db, "FLUSH BINARY LOGS"); err != nil {
+				break // error flushing binary logs
+			}
+			if c.getBufferedPos().Compare(targetPos) >= 0 {
+				return nil // we are up to date!
+			}
+			// We are not caught up yet, so we need to wait.
+			time.Sleep(100 * time.Millisecond)
 		}
-		// fetch the bufferPos under a mutex.
-		if c.getBufferedPos().Compare(targetPos) >= 0 {
-			return nil // we are up to date!
-		}
-		// We are not caught up yet, so we need to wait.
-		time.Sleep(100 * time.Millisecond)
 	}
-	return errors.New("timed out waiting for buffered position to catch up to target position")
 }
 
 // feedback provides feedback on the apply time of changesets.
